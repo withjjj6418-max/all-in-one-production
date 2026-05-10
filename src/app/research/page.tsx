@@ -1,8 +1,55 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Search, TrendingUp, BookOpen, ExternalLink, Filter, Play, FileText, Trash2, Loader2, Plus } from 'lucide-react'
+import { Search, TrendingUp, BookOpen, ExternalLink, Filter, Play, FileText, Trash2, Loader2, Plus, Tv } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+
+/* ─── 헬퍼 함수 ─── */
+
+/**
+ * ISO 8601 duration (PT4M13S) -> "4:13" 또는 "1:30:05" 형식
+ */
+function formatDuration(iso: string | null | undefined): string {
+    if (!iso) return "";
+    const match = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+    if (!match) return "";
+    const [, h, m, s] = match.map(v => parseInt(v || "0"));
+    if (h > 0) return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+/**
+ * 조회수 한국식 축약 (1.7억회, 5만회 등)
+ */
+function formatViewCount(count: number | null | undefined): string {
+    if (count === null || count === undefined) return "0회";
+    if (count >= 100000000) return `${(count / 100000000).toFixed(1)}억회`.replace(".0", "");
+    if (count >= 10000) return `${(count / 10000).toFixed(1)}만회`.replace(".0", "");
+    return `${count.toLocaleString()}회`;
+}
+
+/**
+ * 상대 시간 (3개월 전, 2주 전 등)
+ */
+function formatRelativeTime(isoDate: string | null | undefined): string {
+    if (!isoDate) return "";
+    const now = new Date();
+    const past = new Date(isoDate);
+    const diff = now.getTime() - past.getTime();
+    
+    const sec = Math.floor(diff / 1000);
+    const min = Math.floor(sec / 60);
+    const hr = Math.floor(min / 60);
+    const day = Math.floor(hr / 24);
+    const month = Math.floor(day / 30);
+    const year = Math.floor(day / 365);
+
+    if (day < 1) return "오늘";
+    if (day < 7) return `${day}일 전`;
+    if (day < 30) return `${Math.floor(day / 7)}주 전`;
+    if (month < 12) return `${month}개월 전`;
+    return `${year}년 전`;
+}
 
 type Research = {
     id: number
@@ -291,27 +338,76 @@ export default function ResearchPage() {
                         ) : youtubeItems.length === 0 ? (
                             <p className="text-sm text-gray-400 text-center py-8">저장된 유튜브 리서치가 없습니다.</p>
                         ) : (
-                            <div className="space-y-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                                 {youtubeItems.map(item => (
-                                    <div key={item.id} className="flex items-center gap-4 p-4 rounded-xl bg-gray-50 hover:bg-gray-100 transition">
-                                        <div className="w-24 h-16 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
-                                            <Play size={20} className="text-gray-400" />
-                                        </div>
-                                        <div className="flex-1">
-                                            <p className="text-sm font-medium text-gray-800">{item.title}</p>
-                                            {item.url && <p className="text-xs text-blue-500 mt-0.5 truncate">{item.url}</p>}
-                                            {Array.isArray(item.tags) && item.tags.length > 0 && (
-                                                <div className="flex gap-1 mt-1">
-                                                    {item.tags.map(tag => (
-                                                        <span key={tag} className="text-xs bg-pink-100 text-pink-600 px-2 py-0.5 rounded-full">{tag}</span>
-                                                    ))}
+                                    <div key={item.id} className="group flex flex-col bg-white rounded-2xl overflow-hidden border border-gray-100 hover:shadow-md transition-all duration-200">
+                                        {/* 썸네일 영역 */}
+                                        <div className="relative aspect-video bg-gray-200 overflow-hidden cursor-pointer">
+                                            {item.thumbnail_url ? (
+                                                <img 
+                                                    src={item.thumbnail_url} 
+                                                    alt={item.title} 
+                                                    className="w-full h-full object-cover transition duration-300 group-hover:brightness-75"
+                                                    onClick={() => item.url && window.open(item.url, '_blank')}
+                                                />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center text-gray-400">
+                                                    <Play size={24} />
+                                                </div>
+                                            )}
+                                            {item.duration && (
+                                                <div className="absolute bottom-2 right-2 bg-black/80 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
+                                                    {formatDuration(item.duration)}
                                                 </div>
                                             )}
                                         </div>
-                                        <button onClick={() => handleDelete(item.id)}
-                                            className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition">
-                                            <Trash2 size={14} />
-                                        </button>
+
+                                        {/* 정보 영역 */}
+                                        <div className="p-4 flex flex-col flex-1">
+                                            <h3 
+                                                className="text-sm font-bold text-gray-800 line-clamp-2 leading-snug cursor-pointer hover:text-[#7C8C4E]"
+                                                onClick={() => item.url && window.open(item.url, '_blank')}
+                                            >
+                                                {item.title}
+                                            </h3>
+                                            
+                                            <div className="mt-2 flex flex-col gap-1">
+                                                <p className="text-xs text-gray-500 flex items-center gap-1">
+                                                    <Tv size={12} className="text-gray-400" />
+                                                    {item.channel_name || "알 수 없는 채널"}
+                                                </p>
+                                                <p className="text-[11px] text-gray-400 flex items-center gap-1">
+                                                    {formatViewCount(item.view_count)} · {formatRelativeTime(item.published_at)}
+                                                </p>
+                                            </div>
+
+                                            {item.memo && (
+                                                <div className="mt-3 py-2 px-3 bg-gray-50 rounded-lg border border-gray-50">
+                                                    <p className="text-[11px] text-gray-500 line-clamp-1 italic">
+                                                        ✏️ {item.memo}
+                                                    </p>
+                                                </div>
+                                            )}
+
+                                            {Array.isArray(item.tags) && item.tags.length > 0 && (
+                                                <div className="mt-3 flex gap-1 overflow-x-auto pb-1 no-scrollbar">
+                                                    {item.tags.map(tag => (
+                                                        <span key={tag} className="flex-shrink-0 text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium border border-gray-200/50">
+                                                            #{tag}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            <div className="mt-auto pt-3 flex justify-end">
+                                                <button 
+                                                    onClick={() => handleDelete(item.id)}
+                                                    className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
+                                                >
+                                                    <Trash2 size={14} />
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
