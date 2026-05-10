@@ -65,6 +65,11 @@ export default function ProjectsPage() {
   const [sort, setSort] = useState<SortKey>("modified");
   const [view, setView] = useState<ViewMode>("grid");
   const [cardSize, setCardSize] = useState<CardSize>("md");
+  
+  // 편집 모달 관련 상태
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editForm, setEditForm] = useState<Partial<Project>>({});
 
   const fetchProjects = useCallback(async () => {
     setLoading(true);
@@ -98,11 +103,43 @@ export default function ProjectsPage() {
   };
 
   const handleDelete = async (id: number) => {
+    if (!confirm("정말 이 프로젝트를 삭제하시겠습니까?")) return;
     const { error } = await supabase.from("projects").delete().eq("id", id);
     if (error) {
       console.error("delete error:", error);
       return;
     }
+    fetchProjects();
+  };
+
+  const openEditModal = (project: Project) => {
+    setSelectedProject(project);
+    setEditForm({
+      title: project.title,
+      status: project.status,
+      progress: project.progress,
+      memo: project.memo,
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleUpdate = async () => {
+    if (!selectedProject) return;
+    const { error } = await supabase
+      .from("projects")
+      .update({
+        ...editForm,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", selectedProject.id);
+
+    if (error) {
+      alert("업데이트 중 오류가 발생했습니다.");
+      console.error(error);
+      return;
+    }
+
+    setIsModalOpen(false);
     fetchProjects();
   };
 
@@ -208,30 +245,122 @@ export default function ProjectsPage() {
           <p className="text-sm text-muted-foreground">아직 프로젝트가 없습니다.</p>
           <p className="text-xs text-muted-foreground">아래 버튼으로 첫 프로젝트를 만들어보세요!</p>
         </div>
-      ) : view === "grid" ? (
-        <div className={`grid gap-4 ${gridColsMap[cardSize]}`}>
-          {projects.map((project, i) => (
-            <GridCard
-              key={project.id}
-              project={project}
-              thumbHeight={thumbHeightMap[cardSize]}
-              color={bgColors[i % bgColors.length]}
-              timeAgo={timeAgo}
-              onDelete={handleDelete}
-            />
-          ))}
-        </div>
       ) : (
-        <div className="space-y-3">
-          {projects.map((project, i) => (
-            <ListCard
-              key={project.id}
-              project={project}
-              color={bgColors[i % bgColors.length]}
-              timeAgo={timeAgo}
-              onDelete={handleDelete}
-            />
-          ))}
+        <div className={view === "grid" ? `grid gap-6 ${gridColsMap[cardSize]}` : "space-y-4"}>
+          {projects.map((project, idx) =>
+            view === "grid" ? (
+              <GridCard
+                key={project.id}
+                project={project}
+                thumbHeight={thumbHeightMap[cardSize]}
+                color={bgColors[idx % bgColors.length]}
+                timeAgo={timeAgo}
+                onDelete={handleDelete}
+                onClick={() => openEditModal(project)}
+              />
+            ) : (
+              <ListCard
+                key={project.id}
+                project={project}
+                color={bgColors[idx % bgColors.length]}
+                timeAgo={timeAgo}
+                onDelete={handleDelete}
+                onClick={() => openEditModal(project)}
+              />
+            ),
+          )}
+        </div>
+      )}
+
+      {/* ── 편집 모달 ── */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md animate-in fade-in zoom-in duration-200 rounded-2xl bg-white p-6 shadow-2xl">
+            <h2 className="mb-5 text-xl font-bold text-gray-800">프로젝트 편집</h2>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-600">제목</label>
+                <input
+                  type="text"
+                  value={editForm.title || ""}
+                  onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                  className="w-full rounded-lg border border-gray-200 px-4 py-2.5 outline-none focus:border-brand-pink focus:ring-1 focus:ring-brand-pink"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-600">상태</label>
+                <select
+                  value={editForm.status || "시작 전"}
+                  onChange={(e) => {
+                    const newStatus = e.target.value;
+                    const statusProgressMap: Record<string, number> = {
+                      "시작 전": 0,
+                      "리서치": 15,
+                      "대본 작성": 30,
+                      "대본 완성": 40,
+                      "녹음 중": 55,
+                      "편집 중": 70,
+                      "검토 중": 85,
+                      "업로드 완료": 100,
+                    };
+                    setEditForm({ 
+                      ...editForm, 
+                      status: newStatus, 
+                      progress: statusProgressMap[newStatus] ?? editForm.progress 
+                    });
+                  }}
+                  className="w-full rounded-lg border border-gray-200 px-4 py-2.5 outline-none focus:border-brand-pink focus:ring-1 focus:ring-brand-pink"
+                >
+                  {["시작 전", "리서치", "대본 작성", "대본 완성", "녹음 중", "편집 중", "검토 중", "업로드 완료"].map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <div className="mb-1 flex justify-between">
+                  <label className="text-sm font-medium text-gray-600">진행률</label>
+                  <span className="text-sm font-bold text-brand-pink">{editForm.progress}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={editForm.progress || 0}
+                  onChange={(e) => setEditForm({ ...editForm, progress: parseInt(e.target.value) })}
+                  className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-100 accent-brand-pink"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-600">메모</label>
+                <textarea
+                  value={editForm.memo || ""}
+                  onChange={(e) => setEditForm({ ...editForm, memo: e.target.value })}
+                  rows={3}
+                  className="w-full rounded-lg border border-gray-200 px-4 py-2.5 outline-none focus:border-brand-pink focus:ring-1 focus:ring-brand-pink"
+                  placeholder="메모를 입력하세요..."
+                />
+              </div>
+            </div>
+
+            <div className="mt-8 flex gap-3">
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="flex-1 rounded-xl bg-gray-100 py-3 text-sm font-semibold text-gray-600 transition hover:bg-gray-200"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleUpdate}
+                className="flex-1 rounded-xl bg-brand-pink py-3 text-sm font-semibold text-white transition hover:bg-brand-pink-dark shadow-md"
+              >
+                저장하기
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -256,15 +385,20 @@ function GridCard({
   color,
   timeAgo,
   onDelete,
+  onClick,
 }: {
   project: Project;
   thumbHeight: string;
   color: string;
   timeAgo: (d: string | null) => string;
   onDelete: (id: number) => void;
+  onClick: () => void;
 }) {
   return (
-    <div className="group cursor-pointer overflow-hidden rounded-xl border border-border bg-white shadow-sm transition-all duration-200 hover:shadow-md">
+    <div 
+      onClick={onClick}
+      className="group cursor-pointer overflow-hidden rounded-xl border border-border bg-white shadow-sm transition-all duration-200 hover:shadow-md"
+    >
       {/* 썸네일 */}
       <div
         className={`${thumbHeight} ${color} flex items-center justify-center transition-all duration-200 group-hover:brightness-95`}
@@ -293,14 +427,17 @@ function GridCard({
 
         {/* 이름 + 삭제 */}
         <div className="flex items-start justify-between">
-          <h3 className="text-sm font-semibold text-foreground group-hover:text-brand-olive-dark">
+          <h3 className="line-clamp-1 flex-1 text-base font-bold text-foreground group-hover:text-brand-olive-dark">
             {project.title}
           </h3>
           <button
-            onClick={(e) => { e.stopPropagation(); onDelete(project.id); }}
-            className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-50 text-muted-foreground hover:text-red-500 transition-all"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(project.id);
+            }}
+            className="ml-2 rounded-md p-1.5 text-muted-foreground transition hover:bg-rose-50 hover:text-rose-500"
           >
-            <Trash2 size={13} />
+            <Trash2 size={16} />
           </button>
         </div>
 
@@ -317,9 +454,12 @@ function GridCard({
 /* ================================================================
    리스트 카드
    ================================================================ */
-function ListCard({ project, color, timeAgo, onDelete }: { project: Project; color: string; timeAgo: (d: string | null) => string; onDelete: (id: number) => void }) {
+function ListCard({ project, color, timeAgo, onDelete, onClick }: { project: Project; color: string; timeAgo: (d: string | null) => string; onDelete: (id: number) => void; onClick: () => void }) {
   return (
-    <div className="group flex cursor-pointer items-center gap-4 rounded-xl border border-border bg-white p-4 shadow-sm transition-all duration-200 hover:shadow-md">
+    <div 
+      onClick={onClick}
+      className="group flex cursor-pointer items-center gap-4 rounded-xl border border-border bg-white p-4 shadow-sm transition-all duration-200 hover:shadow-md"
+    >
       {/* 썸네일 */}
       <div
         className={`${color} flex h-14 w-14 shrink-0 items-center justify-center rounded-lg`}
@@ -344,11 +484,15 @@ function ListCard({ project, color, timeAgo, onDelete }: { project: Project; col
         <Tag color="muted">{project.progress}%</Tag>
       </div>
 
+      {/* 삭제 버튼 */}
       <button
-        onClick={(e) => { e.stopPropagation(); onDelete(project.id); }}
-        className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-500 transition-all"
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete(project.id);
+        }}
+        className="rounded-md p-2 text-muted-foreground transition hover:bg-rose-50 hover:text-rose-500"
       >
-        <Trash2 size={14} />
+        <Trash2 size={18} />
       </button>
     </div>
   );
