@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { Copy, FileUp, ChevronDown, Flame } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { Copy, FileUp, ChevronDown, Flame, Loader2, Check } from "lucide-react";
 
 /* ─── 타입 ─── */
 type MaterialMode = "ai" | "manual" | null;
@@ -10,29 +10,21 @@ type ModelKey = "gemini" | "claude-sonnet" | "claude-opus";
 type FormatKey = "longform" | "shorts";
 
 /* ─── 데이터 ─── */
-const styles: { key: StyleKey & string; emoji: string; name: string; desc: string }[] = [
-  { key: "standard", emoji: "📋", name: "스탠다드 롱폼", desc: "독독한 임집 형 · 6000자 즐글" },
-  { key: "community", emoji: "🔥", name: "커뮤니티", desc: "팔감자 음슴체 · 쇼츠 250~350자" },
-  { key: "shopping", emoji: "🛒", name: "쇼핑", desc: "동적 타겟팅 · 구매 합리화 웃폼" },
-  { key: "knowledge", emoji: "📝", name: "지식", desc: "정보 각인 프로토콜 · 지식 쇼츠" },
-  { key: "humanism", emoji: "⚖️", name: "휴머니즘 사이다", desc: "빌런 참교육 · 감동 사이다 쇼츠" },
+const styles: { key: StyleKey & string; emoji: string; name: string; desc: string; prompt: string }[] = [
+  { key: "standard", emoji: "📋", name: "스탠다드 롱폼", desc: "독독한 임집 형 · 6000자 즐글", prompt: "독독한 임집 형식, 6000자 줄글 스타일로 작성해줘" },
+  { key: "community", emoji: "🔥", name: "커뮤니티", desc: "팔감자 음슴체 · 쇼츠 250~350자", prompt: "팔감자 음슴체, 쇼츠 250~350자 스타일로 작성해줘" },
+  { key: "shopping", emoji: "🛒", name: "쇼핑", desc: "동적 타겟팅 · 구매 합리화 웃폼", prompt: "동적 타겟팅, 구매 합리화 롱폼 스타일로 작성해줘" },
+  { key: "knowledge", emoji: "📝", name: "지식", desc: "정보 각인 프로토콜 · 지식 쇼츠", prompt: "정보 각인 프로토콜, 지식 쇼츠 스타일로 작성해줘" },
+  { key: "humanism", emoji: "⚖️", name: "휴머니즘 사이다", desc: "빌런 참교육 · 감동 사이다 쇼츠", prompt: "빌런 참교육, 감동 사이다 쇼츠 스타일로 작성해줘" },
 ];
 
-const models: { key: ModelKey; emoji: string; name: string; desc: string; price: string; recommended?: boolean }[] = [
-  { key: "gemini", emoji: "✨", name: "Gemini 2.5 Pro", desc: "웹 검색으로 최신 정보 반영", price: "$0.015/편", recommended: true },
-  { key: "claude-sonnet", emoji: "💜", name: "Claude Sonnet 4.5", desc: "자연스러운 한국어", price: "$0.021/편" },
-  { key: "claude-opus", emoji: "🔮", name: "Claude Opus 4.5", desc: "최고 수준 스토리텔링", price: "$0.035/편" },
-];
-
-const durations = ["5분", "8분", "10분", "15분"];
+const durations = ["1분", "3분", "5분", "8분", "10분", "15분"];
 
 /* ================================================================
    메인 페이지
    ================================================================ */
 export default function ScriptsPage() {
   /* STEP 1 */
-  const [materialMode, setMaterialMode] = useState<MaterialMode>(null);
-  const [hint, setHint] = useState("");
   const [title, setTitle] = useState("");
   const [synopsis, setSynopsis] = useState("");
 
@@ -40,22 +32,94 @@ export default function ScriptsPage() {
   const [selectedStyle, setSelectedStyle] = useState<StyleKey>(null);
 
   /* STEP 3 */
-  const [selectedModel, setSelectedModel] = useState<ModelKey>("gemini");
   const [format, setFormat] = useState<FormatKey>("longform");
   const [duration, setDuration] = useState("8분");
   const [durationOpen, setDurationOpen] = useState(false);
   const [target, setTarget] = useState("🌏 한국 (한국어)");
   const [targetOpen, setTargetOpen] = useState(false);
   const [wordCount, setWordCount] = useState("2400");
+  const [loading, setLoading] = useState(false);
+  const [generatedScript, setGeneratedScript] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [showGeminiHint, setShowGeminiHint] = useState(false);
 
-  /* 글자수 → 시간 자동 계산 (분당 ~300자 기준) */
-  const estimatedTime = useMemo(() => {
+  /* 시간-글자수 자동 연동 */
+  const updateDurationByWordCount = (count: string) => {
+    const num = parseInt(count) || 0;
+    const mins = Math.floor(num / 300);
+    if (mins > 0) setDuration(`${mins}분`);
+    setWordCount(count);
+  };
+
+  const updateWordCountByDuration = (dur: string) => {
+    const mins = parseInt(dur.replace("분", "")) || 0;
+    setWordCount((mins * 300).toString());
+    setDuration(dur);
+  };
+
+  /* 쇼츠 전환 시 기본값 설정 */
+  useEffect(() => {
+    if (format === "shorts") {
+      setWordCount("300");
+    } else {
+      setWordCount("2400");
+      setDuration("8분");
+    }
+  }, [format]);
+
+  /* 실시간 계산 표시 */
+  const estimatedTimeText = useMemo(() => {
     const count = parseInt(wordCount) || 0;
     const totalSec = Math.round((count / 300) * 60);
     const min = Math.floor(totalSec / 60);
     const sec = totalSec % 60;
     return `약 ${min}분 ${sec.toString().padStart(2, "0")}초`;
   }, [wordCount]);
+
+  /* ─── 액션 ─── */
+  const handleGenerateScript = async () => {
+    if (!title) { alert("제목을 입력해 주세요."); return; }
+
+    const styleObj = styles.find(s => s.key === selectedStyle);
+    const styleInfo = styleObj ? `${styleObj.name} - ${styleObj.prompt}` : '선택 안 함';
+    
+    const finalDuration = format === 'shorts' ? '약 1분 분량' : duration;
+
+    const text = `[대본 요청]
+소재 - 제목: ${title}
+소재 - 줄거리: ${synopsis || '없음'}
+스타일: ${styleInfo}
+형식: ${format === 'longform' ? '롱폼' : '쇼츠'}
+시간: ${finalDuration}
+글자수: ${wordCount}`;
+
+    await navigator.clipboard.writeText(text);
+    setShowGeminiHint(true);
+    setTimeout(() => setShowGeminiHint(false), 4000);
+  };
+
+  const handleCopy = async () => {
+    if (!generatedScript) return;
+    try {
+      await navigator.clipboard.writeText(generatedScript);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("복사 실패:", err);
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      setGeneratedScript(content);
+    };
+    reader.readAsText(file);
+  };
 
   return (
     <div className="mx-auto max-w-4xl space-y-8 pb-16">
@@ -72,76 +136,31 @@ export default function ScriptsPage() {
       <section>
         <SectionHeader number={1} title="소재 정하기" />
 
-        {/* 모드 선택 카드 */}
-        <div className="mt-4 grid grid-cols-2 gap-4">
-          <ModeCard
-            emoji="🔍"
-            title="AI가 추천해줘"
-            desc="주제가 없어도 OK"
-            selected={materialMode === "ai"}
-            onClick={() => setMaterialMode("ai")}
-          />
-          <ModeCard
-            emoji="✏️"
-            title="직접 입력할게"
-            desc="제목 + 줄거리"
-            selected={materialMode === "manual"}
-            onClick={() => setMaterialMode("manual")}
-          />
-        </div>
-
-        {/* AI 추천 입력 */}
-        {materialMode === "ai" && (
-          <Card className="mt-4">
+        <Card className="mt-4 space-y-4">
+          <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-              주제 힌트 (선택사항)
+              제목
             </label>
             <input
-              value={hint}
-              onChange={(e) => setHint(e.target.value)}
-              placeholder="예: 최근 이슈, 역사, 과학 등 관심 분야"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="영상 제목을 입력하세요"
               className="h-10 w-full rounded-lg border border-border bg-brand-cream/50 px-3 text-sm outline-none transition-colors focus:border-brand-olive focus:ring-2 focus:ring-brand-olive/20"
             />
-          </Card>
-        )}
-
-        {/* 직접 입력 */}
-        {materialMode === "manual" && (
-          <Card className="mt-4 space-y-3">
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                제목
-              </label>
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="영상 제목을 입력하세요"
-                className="h-10 w-full rounded-lg border border-border bg-brand-cream/50 px-3 text-sm outline-none transition-colors focus:border-brand-olive focus:ring-2 focus:ring-brand-olive/20"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                줄거리
-              </label>
-              <textarea
-                value={synopsis}
-                onChange={(e) => setSynopsis(e.target.value)}
-                rows={3}
-                placeholder="영상의 줄거리나 핵심 내용을 입력하세요"
-                className="w-full resize-none rounded-lg border border-border bg-brand-cream/50 px-3 py-2.5 text-sm outline-none transition-colors focus:border-brand-olive focus:ring-2 focus:ring-brand-olive/20"
-              />
-            </div>
-          </Card>
-        )}
-
-        {/* 바이럴 소재 추천 버튼 */}
-        <button className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-brand-olive py-3.5 text-sm font-semibold text-white transition-colors hover:bg-brand-olive-dark">
-          <Flame size={16} />
-          지금 뜨는 바이럴 소재 5개 추천받기
-        </button>
-        <p className="mt-1.5 text-center text-[11px] text-muted-foreground">
-          고급: 본능 기제 / 벤치마크로 정교한 추천
-        </p>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              줄거리
+            </label>
+            <textarea
+              value={synopsis}
+              onChange={(e) => setSynopsis(e.target.value)}
+              rows={4}
+              placeholder="영상의 줄거리나 핵심 내용을 입력하세요"
+              className="w-full resize-none rounded-lg border border-border bg-brand-cream/50 px-3 py-2.5 text-sm outline-none transition-colors focus:border-brand-olive focus:ring-2 focus:ring-brand-olive/20"
+            />
+          </div>
+        </Card>
       </section>
 
       {/* ============================================================
@@ -176,43 +195,10 @@ export default function ScriptsPage() {
       </section>
 
       {/* ============================================================
-          STEP 3: 대본 생성
+          STEP 3: 프롬프트 생성
           ============================================================ */}
       <section>
-        <SectionHeader number={3} title="대본 생성" />
-
-        {/* AI 모델 선택 */}
-        <div className="mt-4 grid grid-cols-3 gap-3">
-          {models.map((m) => (
-            <button
-              key={m.key}
-              onClick={() => setSelectedModel(m.key)}
-              className={`relative flex flex-col gap-1.5 rounded-xl border p-4 text-left transition-all duration-200 ${
-                selectedModel === m.key
-                  ? "border-brand-pink bg-brand-pink/5 shadow-sm"
-                  : "border-border bg-white hover:border-brand-pink-light hover:shadow-sm"
-              }`}
-            >
-              {m.recommended && (
-                <span className="absolute -top-2 right-3 rounded-full bg-brand-olive px-2 py-0.5 text-[10px] font-semibold text-white">
-                  추천
-                </span>
-              )}
-              <div className="flex items-center gap-1.5">
-                <span className="text-lg">{m.emoji}</span>
-                <span className="text-sm font-semibold text-foreground">
-                  {m.name}
-                </span>
-              </div>
-              <span className="text-[11px] text-muted-foreground">
-                {m.desc}
-              </span>
-              <span className="text-[11px] font-medium text-brand-olive">
-                {m.price}
-              </span>
-            </button>
-          ))}
-        </div>
+        <SectionHeader number={3} title="프롬프트 생성" />
 
         {/* 옵션 영역 */}
         <Card className="mt-4">
@@ -255,7 +241,7 @@ export default function ScriptsPage() {
                       <button
                         key={d}
                         onClick={() => {
-                          setDuration(d);
+                          updateWordCountByDuration(d);
                           setDurationOpen(false);
                         }}
                         className={`w-full px-3 py-1.5 text-left text-sm transition-colors hover:bg-brand-cream ${
@@ -317,25 +303,46 @@ export default function ScriptsPage() {
                 <input
                   type="number"
                   value={wordCount}
-                  onChange={(e) => setWordCount(e.target.value)}
+                  onChange={(e) => updateDurationByWordCount(e.target.value)}
                   className="h-9 w-24 rounded-lg border border-border bg-white px-3 text-sm outline-none transition-colors focus:border-brand-olive focus:ring-2 focus:ring-brand-olive/20"
                 />
                 <span className="whitespace-nowrap text-xs text-muted-foreground">
-                  {estimatedTime}
+                  {estimatedTimeText}
                 </span>
               </div>
             </div>
 
-            {/* 생성 버튼 */}
-            <div className="ml-auto">
-              <button className="flex h-9 items-center gap-1.5 rounded-lg bg-brand-pink px-5 text-sm font-semibold text-white transition-colors hover:bg-brand-pink-dark">
-                ✨ AI 대본 생성
-              </button>
+            {/* 생성 버튼 그룹 */}
+            <div className="ml-auto flex flex-col items-end gap-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.open("https://gemini.google.com/gem/1g3AYashdcp4qPp4i4yBqdDweWdfGolSB", "_blank")}
+                  className="flex h-10 items-center gap-1.5 rounded-lg border border-brand-olive/30 bg-white px-4 text-sm font-semibold text-brand-olive transition-colors hover:bg-brand-cream"
+                >
+                  💎 Gemini Gems 열기
+                </button>
+                <button
+                  type="button"
+                  onClick={handleGenerateScript}
+                  className="flex h-10 items-center gap-1.5 rounded-lg bg-brand-pink px-6 text-sm font-semibold text-white shadow-sm transition-all hover:bg-brand-pink-dark hover:shadow-md"
+                >
+                  ✨ 프롬프트 복사
+                </button>
+              </div>
+              
+              {showGeminiHint && (
+                <div className="animate-in fade-in slide-in-from-top-1 text-right">
+                  <p className="text-[12px] font-bold text-brand-pink">
+                    클립보드에 복사됐어요! Gemini Gems에 붙여넣어 주세요 😊
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
           <p className="mt-3 text-[11px] text-muted-foreground">
-            STEP 1에서 소재를 선택하거나 직접 입력하세요
+            버튼을 누르면 요청 프롬프트가 복사됩니다. STEP 1 소재를 확인해주세요.
           </p>
         </Card>
       </section>
@@ -349,21 +356,39 @@ export default function ScriptsPage() {
             ✏️ 대본
           </h3>
           <div className="flex gap-2">
-            <button className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-brand-olive-light hover:text-foreground">
+            <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-brand-olive-light hover:text-foreground">
               <FileUp size={13} />
               파일 불러오기
-            </button>
-            <button className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-brand-olive-light hover:text-foreground">
-              <Copy size={13} />
-              복사
+              <input 
+                type="file" 
+                accept=".txt" 
+                className="hidden" 
+                onChange={handleFileUpload}
+              />
+            </label>
+            <button
+              onClick={handleCopy}
+              disabled={!generatedScript}
+              className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-brand-olive-light hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              {copied ? <Check size={13} className="text-brand-olive" /> : <Copy size={13} />}
+              {copied ? "복사됨" : "복사"}
             </button>
           </div>
         </div>
 
-        <div className="mt-3 flex min-h-[200px] items-center justify-center rounded-xl border border-border bg-white p-6 shadow-sm">
-          <p className="text-sm text-muted-foreground">
-            AI가 생성한 대본이 여기에 표시됩니다.
-          </p>
+        <div className="group relative mt-3 flex min-h-[400px] flex-col rounded-xl border border-border bg-white shadow-sm focus-within:border-brand-olive-light focus-within:ring-2 focus-within:ring-brand-olive/5 transition-all">
+          <textarea
+            value={generatedScript}
+            onChange={(e) => setGeneratedScript(e.target.value)}
+            placeholder="Gemini Gems에서 생성한 대본을 여기에 붙여넣으세요..."
+            className="min-h-[400px] w-full resize-none rounded-xl bg-transparent p-6 text-sm leading-relaxed text-foreground outline-none"
+          />
+          
+          <div className="absolute bottom-4 right-6 flex items-center gap-2 rounded-full bg-brand-cream/80 px-3 py-1 backdrop-blur-sm border border-border/50 shadow-sm">
+            <span className="text-[10px] font-bold text-brand-olive uppercase tracking-wider">Words</span>
+            <span className="text-xs font-bold text-foreground">{generatedScript.length.toLocaleString()}</span>
+          </div>
         </div>
       </section>
     </div>
