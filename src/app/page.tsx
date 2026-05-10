@@ -1,7 +1,14 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { createClient } from '@supabase/supabase-js'
 import { Search, FolderKanban, BarChart3, PenLine, Music, Image, Film, Upload, Settings, ArrowRight, TrendingUp, Clock, Zap } from 'lucide-react'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 const workflows = [
   { step: 1, label: '리서치', desc: '레퍼런스 탐색', href: '/research', icon: Search, color: 'bg-pink-100 text-pink-500' },
@@ -19,13 +26,55 @@ const quickLinks = [
   { label: '리서치 시작', href: '/research', icon: Search, color: 'bg-orange-400' },
 ]
 
-const recentProjects = [
-  { name: '호르무즈 해협', status: '편집 중', progress: 70, date: '8분 전' },
-  { name: '임시 프로젝트 03/22', status: '대본 완성', progress: 40, date: '34분 전' },
-  { name: '새 프로젝트', status: '시작 전', progress: 0, date: '34분 전' },
-]
+function timeAgo(dateStr: string): string {
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diff = Math.floor((now.getTime() - date.getTime()) / 1000)
+  if (diff < 60) return `${diff}초 전`
+  if (diff < 3600) return `${Math.floor(diff / 60)}분 전`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`
+  return `${Math.floor(diff / 86400)}일 전`
+}
+
+type Project = {
+  id: number
+  title: string
+  status: string
+  progress: number
+  updated_at: string
+}
 
 export default function Home() {
+  const [projects, setProjects] = useState<Project[]>([])
+  const [totalProjects, setTotalProjects] = useState(0)
+  const [inProgressCount, setInProgressCount] = useState(0)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function fetchData() {
+      const { data } = await supabase
+        .from('projects')
+        .select('id, title, status, progress, updated_at')
+        .order('updated_at', { ascending: false })
+        .limit(3)
+      setProjects(data || [])
+
+      const { count: total } = await supabase
+        .from('projects')
+        .select('*', { count: 'exact', head: true })
+      setTotalProjects(total || 0)
+
+      const { count: inProgress } = await supabase
+        .from('projects')
+        .select('*', { count: 'exact', head: true })
+        .not('status', 'in', '("시작 전","업로드 완료")')
+      setInProgressCount(inProgress || 0)
+
+      setLoading(false)
+    }
+    fetchData()
+  }, [])
+
   return (
     <div className="p-6 space-y-6">
 
@@ -51,9 +100,9 @@ export default function Home() {
       {/* 통계 */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: '진행 중인 프로젝트', value: '3개', icon: <FolderKanban size={20} />, color: 'bg-pink-100 text-pink-500' },
-          { label: '이번 주 업로드', value: '2개', icon: <TrendingUp size={20} />, color: 'bg-green-100 text-green-600' },
-          { label: '총 제작 시간', value: '12시간', icon: <Clock size={20} />, color: 'bg-blue-100 text-blue-500' },
+          { label: '진행 중인 프로젝트', value: loading ? '...' : `${inProgressCount}개`, icon: <FolderKanban size={20} />, color: 'bg-pink-100 text-pink-500' },
+          { label: '전체 프로젝트', value: loading ? '...' : `${totalProjects}개`, icon: <TrendingUp size={20} />, color: 'bg-green-100 text-green-600' },
+          { label: '최근 업데이트', value: loading ? '...' : (projects[0] ? timeAgo(projects[0].updated_at) : '-'), icon: <Clock size={20} />, color: 'bg-blue-100 text-blue-500' },
         ].map((stat, i) => (
           <div key={i} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 ${stat.color}`}>
@@ -103,30 +152,53 @@ export default function Home() {
             전체 보기 <ArrowRight size={12} />
           </Link>
         </div>
-        <div className="space-y-3">
-          {recentProjects.map((project, i) => (
-            <div key={i} className="flex items-center gap-4 p-3 rounded-xl hover:bg-gray-50 transition">
-              <div className="w-10 h-10 rounded-xl bg-pink-100 flex items-center justify-center flex-shrink-0">
-                <FolderKanban size={18} className="text-pink-400" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-gray-800">{project.name}</p>
-                  <span className="text-xs text-gray-400">{project.date}</span>
+
+        {loading ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="flex items-center gap-4 p-3 rounded-xl animate-pulse">
+                <div className="w-10 h-10 rounded-xl bg-gray-100 flex-shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-3 bg-gray-100 rounded w-1/3" />
+                  <div className="h-2 bg-gray-100 rounded w-full" />
                 </div>
-                <div className="flex items-center gap-2 mt-1.5">
-                  <div className="flex-1 bg-gray-100 rounded-full h-1.5">
-                    <div
-                      className="bg-[#7C8C4E] h-1.5 rounded-full transition-all"
-                      style={{ width: `${project.progress}%` }}
-                    />
+              </div>
+            ))}
+          </div>
+        ) : projects.length === 0 ? (
+          <div className="text-center py-8 text-gray-400">
+            <FolderKanban size={32} className="mx-auto mb-2 opacity-30" />
+            <p className="text-sm">아직 프로젝트가 없어요</p>
+            <Link href="/projects" className="text-xs text-[#7C8C4E] font-medium mt-1 inline-block hover:underline">
+              첫 프로젝트 만들기 →
+            </Link>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {projects.map((project) => (
+              <div key={project.id} className="flex items-center gap-4 p-3 rounded-xl hover:bg-gray-50 transition">
+                <div className="w-10 h-10 rounded-xl bg-pink-100 flex items-center justify-center flex-shrink-0">
+                  <FolderKanban size={18} className="text-pink-400" />
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-gray-800">{project.title}</p>
+                    <span className="text-xs text-gray-400">{timeAgo(project.updated_at)}</span>
                   </div>
-                  <span className="text-xs text-gray-500 w-16 text-right">{project.status}</span>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <div className="flex-1 bg-gray-100 rounded-full h-1.5">
+                      <div
+                        className="bg-[#7C8C4E] h-1.5 rounded-full transition-all"
+                        style={{ width: `${project.progress}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-gray-500 w-16 text-right">{project.status}</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
     </div>
