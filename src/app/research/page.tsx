@@ -11,6 +11,13 @@ type Research = {
     url: string | null
     memo: string | null
     tags: string[] | null
+    thumbnail_url?: string | null
+    channel_name?: string | null
+    channel_id?: string | null
+    view_count?: number | null
+    like_count?: number | null
+    published_at?: string | null
+    duration?: string | null
 }
 
 export default function ResearchPage() {
@@ -23,6 +30,27 @@ export default function ResearchPage() {
     /* DB 데이터 */
     const [items, setItems] = useState<Research[]>([])
     const [loading, setLoading] = useState(true)
+
+    /* 추가 모달 상태 */
+    const [isModalOpen, setIsModalOpen] = useState(false)
+    const [fetchLoading, setFetchLoading] = useState(false)
+    
+    /* 폼 상태 */
+    const [newUrl, setNewUrl] = useState('')
+    const [newTitle, setNewTitle] = useState('')
+    const [newMemo, setNewMemo] = useState('')
+    const [newTags, setNewTags] = useState('')
+    
+    /* YouTube 메타데이터 상태 */
+    const [ytData, setYtData] = useState<{
+        thumbnailUrl: string;
+        channelName: string;
+        channelId: string;
+        viewCount: number;
+        likeCount: number;
+        publishedAt: string;
+        duration: string;
+    } | null>(null)
 
     const fetchItems = useCallback(async () => {
         setLoading(true)
@@ -58,13 +86,79 @@ export default function ResearchPage() {
 
     const handleSaveNote = async () => {
         if (!noteTitle) return
+        const tagsArray = noteTags.split(',').map(t => t.trim()).filter(t => t.length > 0)
         await handleSave(noteTitle, 'NotebookLM', {
             memo: noteMemo,
-            tags: noteTags.split(',').map(t => t.trim()).filter(Boolean),
+            tags: tagsArray,
         })
         setNoteTitle('')
         setNoteMemo('')
         setNoteTags('')
+    }
+
+    /* YouTube 정보 가져오기 */
+    const fetchYouTubeData = async () => {
+        if (!newUrl) return
+        setFetchLoading(true)
+        try {
+            const response = await fetch(`/api/youtube?url=${encodeURIComponent(newUrl)}`)
+            const result = await response.json()
+            
+            if (result.success) {
+                const data = result.data
+                setNewTitle(data.title)
+                setYtData({
+                    thumbnailUrl: data.thumbnailUrl,
+                    channelName: data.channelName,
+                    channelId: data.channelId,
+                    viewCount: data.viewCount,
+                    likeCount: data.likeCount,
+                    publishedAt: data.publishedAt,
+                    duration: data.duration
+                })
+            } else {
+                alert(`영상 정보를 가져올 수 없습니다: ${result.error}`)
+            }
+        } catch (error) {
+            console.error("Fetch Error:", error)
+            alert("서버에 연결할 수 없습니다.")
+        } finally {
+            setFetchLoading(false)
+        }
+    }
+
+    const handleSaveYouTube = async () => {
+        if (!newTitle) return
+        
+        const tagsArray = newTags.split(',').map(t => t.trim()).filter(t => t.length > 0)
+        
+        const { error } = await supabase.from('research').insert({
+            title: newTitle,
+            type: '유튜브',
+            url: newUrl,
+            memo: newMemo,
+            tags: tagsArray,
+            thumbnail_url: ytData?.thumbnailUrl ?? null,
+            channel_name: ytData?.channelName ?? null,
+            channel_id: ytData?.channelId ?? null,
+            view_count: ytData?.viewCount ?? null,
+            like_count: ytData?.likeCount ?? null,
+            published_at: ytData?.publishedAt ?? null,
+            duration: ytData?.duration ?? null
+        })
+
+        if (!error) {
+            fetchItems()
+            setIsModalOpen(false)
+            // 폼 초기화
+            setNewUrl('')
+            setNewTitle('')
+            setNewMemo('')
+            setNewTags('')
+            setYtData(null)
+        } else {
+            alert(`저장 실패: ${error.message}`)
+        }
     }
 
     const formatDate = (id: number) => {
@@ -184,7 +278,7 @@ export default function ResearchPage() {
                                 저장된 유튜브 리서치
                             </h2>
                             <button
-                                onClick={() => handleSave(keyword || '새 리서치', '유튜브')}
+                                onClick={() => setIsModalOpen(true)}
                                 className="flex items-center gap-1 px-3 py-1.5 text-xs bg-[#7C8C4E] text-white rounded-lg hover:opacity-90 transition"
                             >
                                 <Plus size={12} /> 직접 추가
@@ -206,7 +300,7 @@ export default function ResearchPage() {
                                         <div className="flex-1">
                                             <p className="text-sm font-medium text-gray-800">{item.title}</p>
                                             {item.url && <p className="text-xs text-blue-500 mt-0.5 truncate">{item.url}</p>}
-                                            {item.tags && item.tags.length > 0 && (
+                                            {Array.isArray(item.tags) && item.tags.length > 0 && (
                                                 <div className="flex gap-1 mt-1">
                                                     {item.tags.map(tag => (
                                                         <span key={tag} className="text-xs bg-pink-100 text-pink-600 px-2 py-0.5 rounded-full">{tag}</span>
@@ -288,7 +382,7 @@ export default function ResearchPage() {
                                 <div key={note.id} className="flex items-center justify-between p-4 rounded-xl bg-gray-50 mb-2">
                                     <div>
                                         <p className="text-sm font-medium text-gray-800">{note.title}</p>
-                                        {note.tags && note.tags.length > 0 && (
+                                        {Array.isArray(note.tags) && note.tags.length > 0 && (
                                             <div className="flex gap-1 mt-1">
                                                 {note.tags.map(tag => (
                                                     <span key={tag} className="text-xs bg-pink-100 text-pink-600 px-2 py-0.5 rounded-full">
@@ -347,6 +441,121 @@ export default function ResearchPage() {
                             ))}
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* 유튜브 리서치 추가 모달 */}
+            {isModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-3xl w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-2xl">
+                        <div className="p-6 space-y-5">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                                    <Plus size={20} className="text-[#7C8C4E]" />
+                                    새 유튜브 리서치 추가
+                                </h3>
+                                <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+                                    <Trash2 size={20} />
+                                </button>
+                            </div>
+
+                            <div className="space-y-4">
+                                {/* URL 입력 */}
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-gray-500 ml-1">YouTube URL</label>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            value={newUrl}
+                                            onChange={e => setNewUrl(e.target.value)}
+                                            placeholder="https://www.youtube.com/watch?v=..."
+                                            className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#7C8C4E]/20"
+                                        />
+                                        <button 
+                                            onClick={fetchYouTubeData}
+                                            disabled={!newUrl || fetchLoading}
+                                            className="px-4 py-2 bg-gray-800 text-white rounded-xl text-sm font-semibold hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2"
+                                        >
+                                            {fetchLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                                            {fetchLoading ? "가져오는 중..." : "정보 가져오기"}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* 제목 */}
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-gray-500 ml-1">제목</label>
+                                    <input
+                                        type="text"
+                                        value={newTitle}
+                                        onChange={e => setNewTitle(e.target.value)}
+                                        placeholder="영상 제목 (자동 입력 가능)"
+                                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#7C8C4E]/20"
+                                    />
+                                </div>
+
+                                {/* 미리보기 */}
+                                {ytData && (
+                                    <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100 flex gap-4">
+                                        <img 
+                                            src={ytData.thumbnailUrl} 
+                                            alt="Preview" 
+                                            className="w-36 aspect-video rounded-lg object-cover shadow-sm flex-shrink-0" 
+                                        />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-bold text-gray-800 line-clamp-2 leading-snug">{newTitle}</p>
+                                            <p className="text-xs text-gray-500 mt-1.5 flex items-center gap-1">
+                                                <TrendingUp size={12} /> {ytData.channelName}
+                                            </p>
+                                            <p className="text-[11px] text-gray-400 mt-0.5">
+                                                조회수 {ytData.viewCount.toLocaleString()}회
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* 메모 및 태그 */}
+                                <div className="grid grid-cols-1 gap-4">
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-bold text-gray-500 ml-1">메모</label>
+                                        <textarea
+                                            value={newMemo}
+                                            onChange={e => setNewMemo(e.target.value)}
+                                            rows={3}
+                                            placeholder="분석 내용이나 특징을 기록하세요"
+                                            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#7C8C4E]/20 resize-none"
+                                        />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-bold text-gray-500 ml-1">태그 (쉼표 구분)</label>
+                                        <input
+                                            type="text"
+                                            value={newTags}
+                                            onChange={e => setNewTags(e.target.value)}
+                                            placeholder="예: 썸네일대박, 구도가좋음, 쇼츠용"
+                                            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#7C8C4E]/20"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex gap-2 pt-2">
+                                <button 
+                                    onClick={handleSaveYouTube}
+                                    disabled={!newTitle}
+                                    className="flex-1 py-3 bg-[#7C8C4E] text-white rounded-2xl text-sm font-bold hover:opacity-90 disabled:opacity-50 transition"
+                                >
+                                    저장하기
+                                </button>
+                                <button 
+                                    onClick={() => setIsModalOpen(false)}
+                                    className="flex-1 py-3 border border-gray-200 text-gray-600 rounded-2xl text-sm font-bold hover:bg-gray-50 transition"
+                                >
+                                    취소
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
