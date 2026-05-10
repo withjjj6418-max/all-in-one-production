@@ -4,13 +4,15 @@ import { usePathname } from "next/navigation";
 
 const pageTitles: Record<string, string> = {
   "/": "대시보드",
+  "/research": "리서치",
   "/projects": "프로젝트",
   "/analytics": "채널/영상 분석",
   "/scripts": "대본작성",
-  "/post/sound": "사운드",
-  "/post/media": "이미지/영상",
-  "/post/editing": "편집",
+  "/post/sound": "사운드 스튜디오",
+  "/post/image": "이미지/영상",
+  "/post/edit": "편집실",
   "/post/upload": "업로드",
+  "/channels": "채널 관리",
 };
 
 export function Header() {
