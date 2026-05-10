@@ -24,8 +24,8 @@ const mainMenuItems = [
 
 const postProductionItems = [
   { label: "사운드", href: "/post/sound", icon: Music },
-  { label: "이미지/영상", href: "/post/media", icon: Image },
-  { label: "편집", href: "/post/editing", icon: Film },
+  { label: "이미지/영상", href: "/post/image", icon: Image },
+  { label: "편집", href: "/post/edit", icon: Film },
   { label: "업로드", href: "/post/upload", icon: Upload },
 ];
 
@@ -72,19 +72,17 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
-                isActive
+              className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${isActive
                   ? "bg-brand-pink/20 text-brand-olive-dark"
                   : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"
-              }`}
+                }`}
             >
               <Icon
                 size={18}
-                className={`transition-colors duration-200 ${
-                  isActive
+                className={`transition-colors duration-200 ${isActive
                     ? "text-brand-olive"
                     : "text-muted-foreground group-hover:text-brand-olive-light"
-                }`}
+                  }`}
               />
               <span>{item.label}</span>
               {isActive && (
@@ -97,38 +95,33 @@ export function Sidebar() {
         {/* Post-Production Toggle */}
         <button
           onClick={() => setIsPostOpen((prev) => !prev)}
-          className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
-            isPostProductionActive
+          className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${isPostProductionActive
               ? "bg-brand-pink/20 text-brand-olive-dark"
               : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"
-          }`}
+            }`}
         >
           <Clapperboard
             size={18}
-            className={`transition-colors duration-200 ${
-              isPostProductionActive
+            className={`transition-colors duration-200 ${isPostProductionActive
                 ? "text-brand-olive"
                 : "text-muted-foreground group-hover:text-brand-olive-light"
-            }`}
+              }`}
           />
           <span>후반작업</span>
           <ChevronDown
             size={16}
-            className={`ml-auto transition-transform duration-200 ${
-              isPostOpen ? "rotate-180" : ""
-            } ${
-              isPostProductionActive
+            className={`ml-auto transition-transform duration-200 ${isPostOpen ? "rotate-180" : ""
+              } ${isPostProductionActive
                 ? "text-brand-olive"
                 : "text-muted-foreground"
-            }`}
+              }`}
           />
         </button>
 
         {/* Sub-menu */}
         <div
-          className={`overflow-hidden transition-all duration-200 ${
-            isPostOpen ? "max-h-48 opacity-100" : "max-h-0 opacity-0"
-          }`}
+          className={`overflow-hidden transition-all duration-200 ${isPostOpen ? "max-h-48 opacity-100" : "max-h-0 opacity-0"
+            }`}
         >
           <div className="ml-4 space-y-0.5 border-l border-sidebar-border pl-3 py-1">
             {postProductionItems.map((item) => {
@@ -139,19 +132,17 @@ export function Sidebar() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-all duration-200 ${
-                    isActive
+                  className={`group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-all duration-200 ${isActive
                       ? "bg-brand-pink/15 text-brand-olive-dark"
                       : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"
-                  }`}
+                    }`}
                 >
                   <Icon
                     size={15}
-                    className={`transition-colors duration-200 ${
-                      isActive
+                    className={`transition-colors duration-200 ${isActive
                         ? "text-brand-olive"
                         : "text-muted-foreground group-hover:text-brand-olive-light"
-                    }`}
+                      }`}
                   />
                   <span>{item.label}</span>
                   {isActive && (
