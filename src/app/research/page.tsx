@@ -1,7 +1,18 @@
 'use client'
 
-import { useState } from 'react'
-import { Search, TrendingUp, BookOpen, ExternalLink, Filter, Play, FileText } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Search, TrendingUp, BookOpen, ExternalLink, Filter, Play, FileText, Trash2, Loader2, Plus } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
+
+type Research = {
+    id: number
+    title: string
+    type: string | null
+    url: string | null
+    memo: string | null
+    tags: string[] | null
+    created_at: string
+}
 
 export default function ResearchPage() {
     const [activeTab, setActiveTab] = useState('youtube')
@@ -9,6 +20,59 @@ export default function ResearchPage() {
     const [views, setViews] = useState('1000000')
     const [period, setPeriod] = useState('90')
     const [keyword, setKeyword] = useState('')
+
+    /* DB 데이터 */
+    const [items, setItems] = useState<Research[]>([])
+    const [loading, setLoading] = useState(true)
+
+    const fetchItems = useCallback(async () => {
+        setLoading(true)
+        const { data } = await supabase.from('research').select('*').order('created_at', { ascending: false })
+        setItems(data ?? [])
+        setLoading(false)
+    }, [])
+
+    useEffect(() => { fetchItems() }, [fetchItems])
+
+    /* 저장 (유튜브 리서치 → 저장 버튼, NotebookLM → 저장 버튼) */
+    const handleSave = async (title: string, type: string, opts?: { url?: string; memo?: string; tags?: string[] }) => {
+        const { error } = await supabase.from('research').insert({
+            title,
+            type,
+            url: opts?.url ?? null,
+            memo: opts?.memo ?? null,
+            tags: opts?.tags ?? null,
+        })
+        if (!error) fetchItems()
+    }
+
+    const handleDelete = async (id: number) => {
+        const { error } = await supabase.from('research').delete().eq('id', id)
+        if (!error) fetchItems()
+    }
+
+    /* NotebookLM 상태 */
+    const [noteMemo, setNoteMemo] = useState('')
+    const [noteTitle, setNoteTitle] = useState('')
+    const [noteTags, setNoteTags] = useState('')
+
+    const handleSaveNote = async () => {
+        if (!noteTitle) return
+        await handleSave(noteTitle, 'NotebookLM', {
+            memo: noteMemo,
+            tags: noteTags.split(',').map(t => t.trim()).filter(Boolean),
+        })
+        setNoteTitle('')
+        setNoteMemo('')
+        setNoteTags('')
+    }
+
+    const formatDate = (d: string) => new Date(d).toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\. /g, '.').replace('.', '')
+
+    /* 필터 */
+    const savedItems = items
+    const notebookItems = items.filter(i => i.type === 'NotebookLM')
+    const youtubeItems = items.filter(i => i.type === '유튜브')
 
     return (
         <div className="p-6 space-y-6">
@@ -109,41 +173,52 @@ export default function ResearchPage() {
                         </div>
                     </div>
 
-                    {/* 검색 결과 */}
+                    {/* 저장된 유튜브 자료 */}
                     <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-                        <h2 className="font-semibold text-gray-700 mb-4 flex items-center gap-2">
-                            <TrendingUp size={16} />
-                            검색 결과
-                        </h2>
-                        <div className="space-y-3">
-                            {[
-                                { title: '구독자 8천명인데 조회수 230만 터진 영상', channel: '작은채널A', views: '230만', subs: '8,200', days: '45일 전' },
-                                { title: '팔로워 5천인데 150만뷰 나온 이유', channel: '소규모크리에이터', views: '152만', subs: '5,100', days: '62일 전' },
-                                { title: '구독자 1만도 안됐는데 바이럴 터진 썰', channel: '신생채널B', views: '98만', subs: '9,800', days: '28일 전' },
-                            ].map((item, i) => (
-                                <div key={i} className="flex items-center gap-4 p-4 rounded-xl bg-gray-50 hover:bg-gray-100 transition">
-                                    <div className="w-24 h-16 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
-                                        <Play size={20} className="text-gray-400" />
-                                    </div>
-                                    <div className="flex-1">
-                                        <p className="text-sm font-medium text-gray-800">{item.title}</p>
-                                        <p className="text-xs text-gray-500 mt-1">{item.channel} · 구독자 {item.subs}</p>
-                                        <div className="flex gap-3 mt-1">
-                                            <span className="text-xs text-pink-600 font-medium">조회수 {item.views}</span>
-                                            <span className="text-xs text-gray-400">{item.days}</span>
-                                        </div>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <button className="px-3 py-1.5 text-xs bg-[#7C8C4E] text-white rounded-lg hover:opacity-90 transition">
-                                            저장
-                                        </button>
-                                        <button className="px-3 py-1.5 text-xs border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-100 transition">
-                                            분석
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="font-semibold text-gray-700 flex items-center gap-2">
+                                <TrendingUp size={16} />
+                                저장된 유튜브 리서치
+                            </h2>
+                            <button
+                                onClick={() => handleSave(keyword || '새 리서치', '유튜브')}
+                                className="flex items-center gap-1 px-3 py-1.5 text-xs bg-[#7C8C4E] text-white rounded-lg hover:opacity-90 transition"
+                            >
+                                <Plus size={12} /> 직접 추가
+                            </button>
                         </div>
+                        {loading ? (
+                            <div className="flex justify-center py-8">
+                                <Loader2 size={20} className="animate-spin text-pink-400" />
+                            </div>
+                        ) : youtubeItems.length === 0 ? (
+                            <p className="text-sm text-gray-400 text-center py-8">저장된 유튜브 리서치가 없습니다.</p>
+                        ) : (
+                            <div className="space-y-3">
+                                {youtubeItems.map(item => (
+                                    <div key={item.id} className="flex items-center gap-4 p-4 rounded-xl bg-gray-50 hover:bg-gray-100 transition">
+                                        <div className="w-24 h-16 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
+                                            <Play size={20} className="text-gray-400" />
+                                        </div>
+                                        <div className="flex-1">
+                                            <p className="text-sm font-medium text-gray-800">{item.title}</p>
+                                            {item.url && <p className="text-xs text-blue-500 mt-0.5 truncate">{item.url}</p>}
+                                            {item.tags && item.tags.length > 0 && (
+                                                <div className="flex gap-1 mt-1">
+                                                    {item.tags.map(tag => (
+                                                        <span key={tag} className="text-xs bg-pink-100 text-pink-600 px-2 py-0.5 rounded-full">{tag}</span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <button onClick={() => handleDelete(item.id)}
+                                            className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition">
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -163,18 +238,35 @@ export default function ResearchPage() {
                                 NotebookLM 열기
                             </a>
                         </div>
-                        <p className="text-sm text-gray-500 mb-4">
-                            NotebookLM에서 수집한 자료를 여기에 붙여넣어 관리하세요.
-                        </p>
-                        <textarea
-                            className="w-full h-40 p-4 rounded-xl border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-pink-200"
-                            placeholder="NotebookLM에서 정리한 내용을 붙여넣으세요..."
-                        />
+                        <div className="space-y-3">
+                            <input
+                                type="text"
+                                value={noteTitle}
+                                onChange={e => setNoteTitle(e.target.value)}
+                                placeholder="제목"
+                                className="w-full px-4 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-pink-200"
+                            />
+                            <textarea
+                                value={noteMemo}
+                                onChange={e => setNoteMemo(e.target.value)}
+                                className="w-full h-40 p-4 rounded-xl border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-pink-200"
+                                placeholder="NotebookLM에서 정리한 내용을 붙여넣으세요..."
+                            />
+                            <input
+                                type="text"
+                                value={noteTags}
+                                onChange={e => setNoteTags(e.target.value)}
+                                placeholder="태그 (쉼표 구분, 예: 지정학, 석유, 경제)"
+                                className="w-full px-4 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-pink-200"
+                            />
+                        </div>
                         <div className="flex gap-2 mt-3">
-                            <button className="px-4 py-2 bg-[#F2A8B8] text-white rounded-xl text-sm font-medium hover:opacity-90 transition">
+                            <button onClick={handleSaveNote}
+                                className="px-4 py-2 bg-[#F2A8B8] text-white rounded-xl text-sm font-medium hover:opacity-90 transition">
                                 저장
                             </button>
-                            <button className="px-4 py-2 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 transition">
+                            <button onClick={() => { setNoteTitle(''); setNoteMemo(''); setNoteTags('') }}
+                                className="px-4 py-2 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 transition">
                                 초기화
                             </button>
                         </div>
@@ -182,24 +274,37 @@ export default function ResearchPage() {
 
                     <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
                         <h2 className="font-semibold text-gray-700 mb-4">📋 저장된 노트</h2>
-                        {[
-                            { title: '호르무즈 해협 관련 자료', date: '2026.05.09', tags: ['지정학', '석유', '경제'] },
-                            { title: 'AI 영상 편집 트렌드', date: '2026.05.07', tags: ['AI', '유튜브', '편집'] },
-                        ].map((note, i) => (
-                            <div key={i} className="flex items-center justify-between p-4 rounded-xl bg-gray-50 mb-2">
-                                <div>
-                                    <p className="text-sm font-medium text-gray-800">{note.title}</p>
-                                    <div className="flex gap-1 mt-1">
-                                        {note.tags.map(tag => (
-                                            <span key={tag} className="text-xs bg-pink-100 text-pink-600 px-2 py-0.5 rounded-full">
-                                                {tag}
-                                            </span>
-                                        ))}
+                        {loading ? (
+                            <div className="flex justify-center py-8">
+                                <Loader2 size={20} className="animate-spin text-pink-400" />
+                            </div>
+                        ) : notebookItems.length === 0 ? (
+                            <p className="text-sm text-gray-400 text-center py-8">저장된 노트가 없습니다.</p>
+                        ) : (
+                            notebookItems.map(note => (
+                                <div key={note.id} className="flex items-center justify-between p-4 rounded-xl bg-gray-50 mb-2">
+                                    <div>
+                                        <p className="text-sm font-medium text-gray-800">{note.title}</p>
+                                        {note.tags && note.tags.length > 0 && (
+                                            <div className="flex gap-1 mt-1">
+                                                {note.tags.map(tag => (
+                                                    <span key={tag} className="text-xs bg-pink-100 text-pink-600 px-2 py-0.5 rounded-full">
+                                                        {tag}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs text-gray-400">{formatDate(note.created_at)}</span>
+                                        <button onClick={() => handleDelete(note.id)}
+                                            className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition">
+                                            <Trash2 size={13} />
+                                        </button>
                                     </div>
                                 </div>
-                                <span className="text-xs text-gray-400">{note.date}</span>
-                            </div>
-                        ))}
+                            ))
+                        )}
                     </div>
                 </div>
             )}
@@ -211,24 +316,34 @@ export default function ResearchPage() {
                         <FileText size={16} />
                         저장된 레퍼런스
                     </h2>
-                    <div className="space-y-2">
-                        {[
-                            { title: '구독자 8천명인데 조회수 230만 터진 영상', type: '유튜브', date: '2026.05.09' },
-                            { title: '호르무즈 해협 관련 자료', type: 'NotebookLM', date: '2026.05.09' },
-                            { title: 'AI 영상 편집 트렌드', type: 'NotebookLM', date: '2026.05.07' },
-                        ].map((item, i) => (
-                            <div key={i} className="flex items-center justify-between p-4 rounded-xl bg-gray-50">
-                                <div className="flex items-center gap-3">
-                                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${item.type === '유튜브' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'
-                                        }`}>
-                                        {item.type}
-                                    </span>
-                                    <p className="text-sm text-gray-700">{item.title}</p>
+                    {loading ? (
+                        <div className="flex justify-center py-8">
+                            <Loader2 size={20} className="animate-spin text-pink-400" />
+                        </div>
+                    ) : savedItems.length === 0 ? (
+                        <p className="text-sm text-gray-400 text-center py-8">저장된 자료가 없습니다.</p>
+                    ) : (
+                        <div className="space-y-2">
+                            {savedItems.map(item => (
+                                <div key={item.id} className="flex items-center justify-between p-4 rounded-xl bg-gray-50">
+                                    <div className="flex items-center gap-3">
+                                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${item.type === '유튜브' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'
+                                            }`}>
+                                            {item.type}
+                                        </span>
+                                        <p className="text-sm text-gray-700">{item.title}</p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs text-gray-400">{formatDate(item.created_at)}</span>
+                                        <button onClick={() => handleDelete(item.id)}
+                                            className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition">
+                                            <Trash2 size={13} />
+                                        </button>
+                                    </div>
                                 </div>
-                                <span className="text-xs text-gray-400">{item.date}</span>
-                            </div>
-                        ))}
-                    </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             )}
         </div>

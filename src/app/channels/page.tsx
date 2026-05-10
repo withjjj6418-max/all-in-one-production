@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
-import { Plus, Edit2, Trash2, ExternalLink, PlayCircle, Users, TrendingUp } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Plus, Edit2, Trash2, ExternalLink, PlayCircle, Users, TrendingUp, Loader2 } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
 
 type Channel = {
     id: number
@@ -11,28 +12,37 @@ type Channel = {
     url: string
     category: string
     memo: string
+    created_at: string
 }
 
-const dummyChannels: Channel[] = [
-    { id: 1, name: '여행 브이로그', handle: '@travel_vlog', subscribers: '8,200', url: 'https://youtube.com/@travel_vlog', category: '여행', memo: '주 2회 업로드' },
-    { id: 2, name: 'AI 정보채널', handle: '@ai_info', subscribers: '3,100', url: 'https://youtube.com/@ai_info', category: 'IT/기술', memo: '쇼츠 위주' },
-]
+const emptyForm = { name: '', handle: '', subscribers: '', url: '', category: '', memo: '' }
 
 export default function ChannelsPage() {
-    const [channels, setChannels] = useState<Channel[]>(dummyChannels)
+    const [channels, setChannels] = useState<Channel[]>([])
+    const [loading, setLoading] = useState(true)
     const [showForm, setShowForm] = useState(false)
     const [editId, setEditId] = useState<number | null>(null)
-    const [form, setForm] = useState({ name: '', handle: '', subscribers: '', url: '', category: '', memo: '' })
+    const [form, setForm] = useState(emptyForm)
 
-    const handleSubmit = () => {
+    const fetchChannels = useCallback(async () => {
+        setLoading(true)
+        const { data } = await supabase.from('channels').select('*').order('created_at', { ascending: false })
+        setChannels(data ?? [])
+        setLoading(false)
+    }, [])
+
+    useEffect(() => { fetchChannels() }, [fetchChannels])
+
+    const handleSubmit = async () => {
         if (!form.name) return
         if (editId !== null) {
-            setChannels(channels.map(c => c.id === editId ? { ...form, id: editId } : c))
-            setEditId(null)
+            const { error } = await supabase.from('channels').update(form).eq('id', editId)
+            if (!error) { setEditId(null); fetchChannels() }
         } else {
-            setChannels([...channels, { ...form, id: Date.now() }])
+            const { error } = await supabase.from('channels').insert(form)
+            if (!error) fetchChannels()
         }
-        setForm({ name: '', handle: '', subscribers: '', url: '', category: '', memo: '' })
+        setForm(emptyForm)
         setShowForm(false)
     }
 
@@ -42,8 +52,9 @@ export default function ChannelsPage() {
         setShowForm(true)
     }
 
-    const handleDelete = (id: number) => {
-        setChannels(channels.filter(c => c.id !== id))
+    const handleDelete = async (id: number) => {
+        const { error } = await supabase.from('channels').delete().eq('id', id)
+        if (!error) fetchChannels()
     }
 
     return (
@@ -56,7 +67,7 @@ export default function ChannelsPage() {
                         <p className="text-sm text-gray-500">운영 중인 유튜브 채널을 관리합니다</p>
                     </div>
                 </div>
-                <button onClick={() => { setShowForm(true); setEditId(null); setForm({ name: '', handle: '', subscribers: '', url: '', category: '', memo: '' }) }}
+                <button onClick={() => { setShowForm(true); setEditId(null); setForm(emptyForm) }}
                     className="flex items-center gap-2 px-4 py-2 bg-[#F2A8B8] text-white rounded-xl text-sm font-medium hover:opacity-90 transition">
                     <Plus size={16} />
                     채널 추가
@@ -67,8 +78,8 @@ export default function ChannelsPage() {
             <div className="grid grid-cols-3 gap-4">
                 {[
                     { label: '총 채널 수', value: `${channels.length}개`, icon: <PlayCircle size={20} />, color: 'pink' },
-                    { label: '총 구독자', value: '11,300', icon: <Users size={20} />, color: 'olive' },
-                    { label: '이번 달 업로드', value: '8개', icon: <TrendingUp size={20} />, color: 'pink' },
+                    { label: '총 구독자', value: channels.reduce((sum, c) => sum + parseInt(c.subscribers?.replace(/,/g, '') || '0', 10), 0).toLocaleString(), icon: <Users size={20} />, color: 'olive' },
+                    { label: '이번 달 업로드', value: '-', icon: <TrendingUp size={20} />, color: 'pink' },
                 ].map((stat, i) => (
                     <div key={i} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 ${stat.color === 'pink' ? 'bg-pink-100 text-pink-500' : 'bg-green-100 text-green-600'
@@ -130,35 +141,41 @@ export default function ChannelsPage() {
                     <span>카테고리</span>
                     <span>관리</span>
                 </div>
-                {channels.map((channel, i) => (
-                    <div key={channel.id} className={`grid grid-cols-6 gap-4 px-6 py-4 items-center ${i !== channels.length - 1 ? 'border-b border-gray-100' : ''}`}>
-                        <div className="col-span-2">
-                            <p className="text-sm font-medium text-gray-800">{channel.name}</p>
-                            <p className="text-xs text-gray-400 mt-0.5">{channel.memo}</p>
-                        </div>
-                        <span className="text-sm text-gray-600">{channel.handle}</span>
-                        <span className="text-sm text-gray-600">{channel.subscribers}</span>
-                        <span className="text-xs bg-pink-100 text-pink-600 px-2 py-1 rounded-full w-fit">{channel.category}</span>
-                        <div className="flex gap-2">
-                            <a href={channel.url} target="_blank" rel="noopener noreferrer"
-                                className="p-1.5 rounded-lg hover:bg-gray-100 transition text-gray-400 hover:text-gray-600">
-                                <ExternalLink size={14} />
-                            </a>
-                            <button onClick={() => handleEdit(channel)}
-                                className="p-1.5 rounded-lg hover:bg-gray-100 transition text-gray-400 hover:text-blue-500">
-                                <Edit2 size={14} />
-                            </button>
-                            <button onClick={() => handleDelete(channel.id)}
-                                className="p-1.5 rounded-lg hover:bg-gray-100 transition text-gray-400 hover:text-red-500">
-                                <Trash2 size={14} />
-                            </button>
-                        </div>
+
+                {loading ? (
+                    <div className="flex items-center justify-center py-12">
+                        <Loader2 size={24} className="animate-spin text-pink-400" />
                     </div>
-                ))}
-                {channels.length === 0 && (
+                ) : channels.length === 0 ? (
                     <div className="px-6 py-12 text-center text-gray-400 text-sm">
                         아직 채널이 없어요. 위에서 채널을 추가해보세요!
                     </div>
+                ) : (
+                    channels.map((channel, i) => (
+                        <div key={channel.id} className={`grid grid-cols-6 gap-4 px-6 py-4 items-center ${i !== channels.length - 1 ? 'border-b border-gray-100' : ''}`}>
+                            <div className="col-span-2">
+                                <p className="text-sm font-medium text-gray-800">{channel.name}</p>
+                                <p className="text-xs text-gray-400 mt-0.5">{channel.memo}</p>
+                            </div>
+                            <span className="text-sm text-gray-600">{channel.handle}</span>
+                            <span className="text-sm text-gray-600">{channel.subscribers}</span>
+                            <span className="text-xs bg-pink-100 text-pink-600 px-2 py-1 rounded-full w-fit">{channel.category}</span>
+                            <div className="flex gap-2">
+                                <a href={channel.url} target="_blank" rel="noopener noreferrer"
+                                    className="p-1.5 rounded-lg hover:bg-gray-100 transition text-gray-400 hover:text-gray-600">
+                                    <ExternalLink size={14} />
+                                </a>
+                                <button onClick={() => handleEdit(channel)}
+                                    className="p-1.5 rounded-lg hover:bg-gray-100 transition text-gray-400 hover:text-blue-500">
+                                    <Edit2 size={14} />
+                                </button>
+                                <button onClick={() => handleDelete(channel.id)}
+                                    className="p-1.5 rounded-lg hover:bg-gray-100 transition text-gray-400 hover:text-red-500">
+                                    <Trash2 size={14} />
+                                </button>
+                            </div>
+                        </div>
+                    ))
                 )}
             </div>
         </div>

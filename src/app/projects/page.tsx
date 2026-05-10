@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   LayoutGrid,
   List,
@@ -10,37 +10,25 @@ import {
   RectangleHorizontal,
   Smartphone,
   Scissors,
+  Trash2,
+  Loader2,
 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 /* ─── 타입 ─── */
 type SortKey = "modified" | "name" | "progress";
 type ViewMode = "grid" | "list";
 type CardSize = "sm" | "md" | "lg";
 
-/* ─── 더미 데이터 ─── */
-const projects = [
-  {
-    id: 1,
-    name: "호르무즈 해협",
-    tags: { type: "대본", ratio: "정방형", cuts: 17 },
-    modified: "8분 전",
-    color: "bg-amber-100",
-  },
-  {
-    id: 2,
-    name: "임시 프로젝트 03/22",
-    tags: { type: "대본", ratio: "세로", cuts: 0 },
-    modified: "34분 전",
-    color: "bg-sky-100",
-  },
-  {
-    id: 3,
-    name: "새 프로젝트",
-    tags: { type: "대본", ratio: "세로", cuts: 0 },
-    modified: "34분 전",
-    color: "bg-rose-100",
-  },
-];
+type Project = {
+  id: number;
+  title: string;
+  status: string | null;
+  progress: number;
+  memo: string | null;
+  updated_at: string;
+  created_at: string;
+};
 
 /* ─── 설정 ─── */
 const sortOptions: { key: SortKey; label: string }[] = [
@@ -67,13 +55,49 @@ const thumbHeightMap: Record<CardSize, string> = {
   lg: "h-52",
 };
 
+const bgColors = ["bg-amber-100", "bg-sky-100", "bg-rose-100", "bg-violet-100", "bg-emerald-100", "bg-orange-100"];
+
 /* ================================================================
    메인 페이지
    ================================================================ */
 export default function ProjectsPage() {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
   const [sort, setSort] = useState<SortKey>("modified");
   const [view, setView] = useState<ViewMode>("grid");
   const [cardSize, setCardSize] = useState<CardSize>("md");
+
+  const fetchProjects = useCallback(async () => {
+    setLoading(true);
+    const orderCol = sort === "modified" ? "updated_at" : sort === "name" ? "title" : "progress";
+    const asc = sort === "name";
+    const { data } = await supabase.from("projects").select("*").order(orderCol, { ascending: asc });
+    setProjects(data ?? []);
+    setLoading(false);
+  }, [sort]);
+
+  useEffect(() => { fetchProjects(); }, [fetchProjects]);
+
+  const handleCreate = async () => {
+    const { error } = await supabase.from("projects").insert({ title: "새 프로젝트", status: "시작 전", progress: 0 });
+    if (!error) fetchProjects();
+  };
+
+  const handleDelete = async (id: number) => {
+    const { error } = await supabase.from("projects").delete().eq("id", id);
+    if (!error) fetchProjects();
+  };
+
+  /* 시간 표시 헬퍼 */
+  const timeAgo = (dateStr: string) => {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "방금 전";
+    if (mins < 60) return `${mins}분 전`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}시간 전`;
+    return `${Math.floor(hours / 24)}일 전`;
+  };
 
   return (
     <div className="relative min-h-[calc(100vh-60px)]">
@@ -154,27 +178,49 @@ export default function ProjectsPage() {
         </div>
       </div>
 
-      {/* ── 프로젝트 카드 ── */}
-      {view === "grid" ? (
+      {/* ── 로딩 ── */}
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 size={24} className="animate-spin text-brand-olive" />
+        </div>
+      ) : projects.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <FileText size={40} className="mb-3 text-muted-foreground/30" />
+          <p className="text-sm text-muted-foreground">아직 프로젝트가 없습니다.</p>
+          <p className="text-xs text-muted-foreground">아래 버튼으로 첫 프로젝트를 만들어보세요!</p>
+        </div>
+      ) : view === "grid" ? (
         <div className={`grid gap-4 ${gridColsMap[cardSize]}`}>
-          {projects.map((project) => (
+          {projects.map((project, i) => (
             <GridCard
               key={project.id}
               project={project}
               thumbHeight={thumbHeightMap[cardSize]}
+              color={bgColors[i % bgColors.length]}
+              timeAgo={timeAgo}
+              onDelete={handleDelete}
             />
           ))}
         </div>
       ) : (
         <div className="space-y-3">
-          {projects.map((project) => (
-            <ListCard key={project.id} project={project} />
+          {projects.map((project, i) => (
+            <ListCard
+              key={project.id}
+              project={project}
+              color={bgColors[i % bgColors.length]}
+              timeAgo={timeAgo}
+              onDelete={handleDelete}
+            />
           ))}
         </div>
       )}
 
       {/* ── 플로팅 버튼 ── */}
-      <button className="fixed bottom-8 right-8 z-40 flex items-center gap-2 rounded-full bg-brand-pink px-6 py-3.5 text-sm font-semibold text-white shadow-lg transition-all duration-200 hover:bg-brand-pink-dark hover:shadow-xl">
+      <button
+        onClick={handleCreate}
+        className="fixed bottom-8 right-8 z-40 flex items-center gap-2 rounded-full bg-brand-pink px-6 py-3.5 text-sm font-semibold text-white shadow-lg transition-all duration-200 hover:bg-brand-pink-dark hover:shadow-xl"
+      >
         <Plus size={18} strokeWidth={2.5} />
         새 프로젝트
       </button>
@@ -185,20 +231,24 @@ export default function ProjectsPage() {
 /* ================================================================
    그리드 카드
    ================================================================ */
-type Project = (typeof projects)[number];
-
 function GridCard({
   project,
   thumbHeight,
+  color,
+  timeAgo,
+  onDelete,
 }: {
   project: Project;
   thumbHeight: string;
+  color: string;
+  timeAgo: (d: string) => string;
+  onDelete: (id: number) => void;
 }) {
   return (
     <div className="group cursor-pointer overflow-hidden rounded-xl border border-border bg-white shadow-sm transition-all duration-200 hover:shadow-md">
       {/* 썸네일 */}
       <div
-        className={`${thumbHeight} ${project.color} flex items-center justify-center transition-all duration-200 group-hover:brightness-95`}
+        className={`${thumbHeight} ${color} flex items-center justify-center transition-all duration-200 group-hover:brightness-95`}
       >
         <FileText size={32} className="text-muted-foreground/40" />
       </div>
@@ -207,37 +257,38 @@ function GridCard({
       <div className="p-4">
         {/* 태그 */}
         <div className="mb-2 flex flex-wrap gap-1.5">
-          <Tag color="olive">{project.tags.type}</Tag>
+          <Tag color="olive">{project.status ?? "대본"}</Tag>
           <Tag color="pink">
-            {project.tags.ratio === "정방형" ? (
-              <span className="flex items-center gap-1">
-                <RectangleHorizontal size={11} />
-                정방형
-              </span>
-            ) : (
-              <span className="flex items-center gap-1">
-                <Smartphone size={11} />
-                세로
-              </span>
-            )}
+            <span className="flex items-center gap-1">
+              <RectangleHorizontal size={11} />
+              정방형
+            </span>
           </Tag>
           <Tag color="muted">
             <span className="flex items-center gap-1">
               <Scissors size={11} />
-              {project.tags.cuts}컷
+              {project.progress}%
             </span>
           </Tag>
         </div>
 
-        {/* 이름 */}
-        <h3 className="text-sm font-semibold text-foreground group-hover:text-brand-olive-dark">
-          {project.name}
-        </h3>
+        {/* 이름 + 삭제 */}
+        <div className="flex items-start justify-between">
+          <h3 className="text-sm font-semibold text-foreground group-hover:text-brand-olive-dark">
+            {project.title}
+          </h3>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(project.id); }}
+            className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-50 text-muted-foreground hover:text-red-500 transition-all"
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
 
         {/* 수정 시간 */}
         <div className="mt-1.5 flex items-center gap-1 text-xs text-muted-foreground">
           <Clock size={12} />
-          {project.modified}
+          {timeAgo(project.updated_at)}
         </div>
       </div>
     </div>
@@ -247,12 +298,12 @@ function GridCard({
 /* ================================================================
    리스트 카드
    ================================================================ */
-function ListCard({ project }: { project: Project }) {
+function ListCard({ project, color, timeAgo, onDelete }: { project: Project; color: string; timeAgo: (d: string) => string; onDelete: (id: number) => void }) {
   return (
     <div className="group flex cursor-pointer items-center gap-4 rounded-xl border border-border bg-white p-4 shadow-sm transition-all duration-200 hover:shadow-md">
       {/* 썸네일 */}
       <div
-        className={`${project.color} flex h-14 w-14 shrink-0 items-center justify-center rounded-lg`}
+        className={`${color} flex h-14 w-14 shrink-0 items-center justify-center rounded-lg`}
       >
         <FileText size={22} className="text-muted-foreground/40" />
       </div>
@@ -260,24 +311,26 @@ function ListCard({ project }: { project: Project }) {
       {/* 이름 + 시간 */}
       <div className="min-w-0 flex-1">
         <h3 className="truncate text-sm font-semibold text-foreground group-hover:text-brand-olive-dark">
-          {project.name}
+          {project.title}
         </h3>
         <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
           <Clock size={12} />
-          {project.modified}
+          {timeAgo(project.updated_at)}
         </div>
       </div>
 
       {/* 태그 */}
       <div className="flex shrink-0 gap-1.5">
-        <Tag color="olive">{project.tags.type}</Tag>
-        <Tag color="pink">
-          {project.tags.ratio === "정방형" ? "정방형" : "세로"}
-        </Tag>
-        <Tag color="muted">
-          {project.tags.cuts}컷
-        </Tag>
+        <Tag color="olive">{project.status ?? "대본"}</Tag>
+        <Tag color="muted">{project.progress}%</Tag>
       </div>
+
+      <button
+        onClick={(e) => { e.stopPropagation(); onDelete(project.id); }}
+        className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-500 transition-all"
+      >
+        <Trash2 size={14} />
+      </button>
     </div>
   );
 }
