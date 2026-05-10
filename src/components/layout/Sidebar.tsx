@@ -14,9 +14,12 @@ import {
   Image,
   Film,
   Upload,
+  Search,
+  Settings,
 } from "lucide-react";
 
 const mainMenuItems = [
+  { label: "리서치", href: "/research", icon: Search },
   { label: "프로젝트", href: "/projects", icon: FolderKanban },
   { label: "채널/영상 분석", href: "/analytics", icon: BarChart3 },
   { label: "대본작성", href: "/scripts", icon: PenLine },
@@ -153,6 +156,27 @@ export function Sidebar() {
             })}
           </div>
         </div>
+
+        {/* Channel Management */}
+        <Link
+          href="/channels"
+          className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${pathname === "/channels"
+              ? "bg-brand-pink/20 text-brand-olive-dark"
+              : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"
+            }`}
+        >
+          <Settings
+            size={18}
+            className={`transition-colors duration-200 ${pathname === "/channels"
+                ? "text-brand-olive"
+                : "text-muted-foreground group-hover:text-brand-olive-light"
+              }`}
+          />
+          <span>채널 관리</span>
+          {pathname === "/channels" && (
+            <div className="ml-auto h-1.5 w-1.5 rounded-full bg-brand-pink" />
+          )}
+        </Link>
       </nav>
 
       {/* Bottom area */}
