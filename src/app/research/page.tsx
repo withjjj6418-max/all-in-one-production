@@ -11,7 +11,6 @@ type Research = {
     url: string | null
     memo: string | null
     tags: string[] | null
-    created_at: string
 }
 
 export default function ResearchPage() {
@@ -27,7 +26,8 @@ export default function ResearchPage() {
 
     const fetchItems = useCallback(async () => {
         setLoading(true)
-        const { data } = await supabase.from('research').select('*').order('created_at', { ascending: false })
+        const { data, error } = await supabase.from('research').select('*').order('id', { ascending: false })
+        if (error) console.error("fetch error:", error.message);
         setItems(data ?? [])
         setLoading(false)
     }, [])
@@ -67,7 +67,10 @@ export default function ResearchPage() {
         setNoteTags('')
     }
 
-    const formatDate = (d: string) => new Date(d).toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\. /g, '.').replace('.', '')
+    const formatDate = (id: number) => {
+        // id가 타임스탬프인 경우를 가정하거나, 현재 날짜 반환
+        return new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\. /g, '.').replace('.', '')
+    }
 
     /* 필터 */
     const savedItems = items
@@ -296,7 +299,7 @@ export default function ResearchPage() {
                                         )}
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <span className="text-xs text-gray-400">{formatDate(note.created_at)}</span>
+                                        <span className="text-xs text-gray-400">{formatDate(note.id)}</span>
                                         <button onClick={() => handleDelete(note.id)}
                                             className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition">
                                             <Trash2 size={13} />
@@ -334,7 +337,7 @@ export default function ResearchPage() {
                                         <p className="text-sm text-gray-700">{item.title}</p>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <span className="text-xs text-gray-400">{formatDate(item.created_at)}</span>
+                                        <span className="text-xs text-gray-400">{formatDate(item.id)}</span>
                                         <button onClick={() => handleDelete(item.id)}
                                             className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition">
                                             <Trash2 size={13} />

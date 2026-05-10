@@ -12,7 +12,6 @@ type Channel = {
     url: string
     category: string
     memo: string
-    created_at: string
 }
 
 const emptyForm = { name: '', handle: '', subscribers: '', url: '', category: '', memo: '' }
@@ -26,7 +25,8 @@ export default function ChannelsPage() {
 
     const fetchChannels = useCallback(async () => {
         setLoading(true)
-        const { data } = await supabase.from('channels').select('*').order('created_at', { ascending: false })
+        const { data, error } = await supabase.from('channels').select('*').order('id', { ascending: false })
+        if (error) console.error("fetch error:", error.message);
         setChannels(data ?? [])
         setLoading(false)
     }, [])
@@ -37,10 +37,19 @@ export default function ChannelsPage() {
         if (!form.name) return
         if (editId !== null) {
             const { error } = await supabase.from('channels').update(form).eq('id', editId)
-            if (!error) { setEditId(null); fetchChannels() }
+            if (error) {
+                console.error("update error details:", error.message, error.details);
+                return;
+            }
+            setEditId(null);
+            fetchChannels();
         } else {
             const { error } = await supabase.from('channels').insert(form)
-            if (!error) fetchChannels()
+            if (error) {
+                console.error("insert error details:", error.message, error.details);
+                return;
+            }
+            fetchChannels()
         }
         setForm(emptyForm)
         setShowForm(false)

@@ -26,8 +26,7 @@ type Project = {
   status: string | null;
   progress: number;
   memo: string | null;
-  updated_at: string;
-  created_at: string;
+  updated_at: string | null;
 };
 
 /* ─── 설정 ─── */
@@ -71,7 +70,11 @@ export default function ProjectsPage() {
     setLoading(true);
     const orderCol = sort === "modified" ? "updated_at" : sort === "name" ? "title" : "progress";
     const asc = sort === "name";
-    const { data } = await supabase.from("projects").select("*").order(orderCol, { ascending: asc });
+    const { data, error } = await supabase
+      .from("projects")
+      .select("id, title, status, progress, memo, updated_at")
+      .order(orderCol, { ascending: asc });
+    if (error) console.error("fetch error:", error);
     setProjects(data ?? []);
     setLoading(false);
   }, [sort]);
@@ -79,17 +82,33 @@ export default function ProjectsPage() {
   useEffect(() => { fetchProjects(); }, [fetchProjects]);
 
   const handleCreate = async () => {
-    const { error } = await supabase.from("projects").insert({ title: "새 프로젝트", status: "시작 전", progress: 0 });
-    if (!error) fetchProjects();
+    const { error } = await supabase
+      .from("projects")
+      .insert({ 
+        title: "새 프로젝트", 
+        status: "시작 전", 
+        progress: 0,
+        updated_at: new Date().toISOString() 
+      });
+    if (error) {
+      console.error("insert error details:", error.message, error.details, error.hint);
+      return;
+    }
+    fetchProjects();
   };
 
   const handleDelete = async (id: number) => {
     const { error } = await supabase.from("projects").delete().eq("id", id);
-    if (!error) fetchProjects();
+    if (error) {
+      console.error("delete error:", error);
+      return;
+    }
+    fetchProjects();
   };
 
   /* 시간 표시 헬퍼 */
-  const timeAgo = (dateStr: string) => {
+  const timeAgo = (dateStr: string | null) => {
+    if (!dateStr) return "방금 전";
     const diff = Date.now() - new Date(dateStr).getTime();
     const mins = Math.floor(diff / 60000);
     if (mins < 1) return "방금 전";
@@ -241,7 +260,7 @@ function GridCard({
   project: Project;
   thumbHeight: string;
   color: string;
-  timeAgo: (d: string) => string;
+  timeAgo: (d: string | null) => string;
   onDelete: (id: number) => void;
 }) {
   return (
@@ -298,7 +317,7 @@ function GridCard({
 /* ================================================================
    리스트 카드
    ================================================================ */
-function ListCard({ project, color, timeAgo, onDelete }: { project: Project; color: string; timeAgo: (d: string) => string; onDelete: (id: number) => void }) {
+function ListCard({ project, color, timeAgo, onDelete }: { project: Project; color: string; timeAgo: (d: string | null) => string; onDelete: (id: number) => void }) {
   return (
     <div className="group flex cursor-pointer items-center gap-4 rounded-xl border border-border bg-white p-4 shadow-sm transition-all duration-200 hover:shadow-md">
       {/* 썸네일 */}
