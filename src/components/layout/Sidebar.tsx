@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Plus,
   FolderKanban,
@@ -16,7 +16,10 @@ import {
   Upload,
   Search,
   Settings,
+  LogOut,
+  User,
 } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
 const mainMenuItems = [
   { label: "리서치", href: "/research", icon: Search },
@@ -34,8 +37,35 @@ const postProductionItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const supabase = createClient();
+  
   const isPostProductionActive = pathname.startsWith("/post");
   const [isPostOpen, setIsPostOpen] = useState(isPostProductionActive);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setUserEmail(user.email ?? null);
+      }
+    };
+    fetchUser();
+  }, []);
+
+  const handleSignOut = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      
+      router.replace('/login');
+      router.refresh();
+    } catch (error) {
+      console.error("Logout failed:", error);
+      alert("로그아웃에 실패했습니다.");
+    }
+  };
 
   return (
     <aside className="fixed left-0 top-0 z-30 flex h-screen w-60 flex-col border-r border-sidebar-border bg-sidebar">
@@ -181,14 +211,26 @@ export function Sidebar() {
 
       {/* Bottom area */}
       <div className="border-t border-sidebar-border px-4 py-3">
-        <div className="flex items-center gap-3 rounded-lg px-2 py-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-pink/30">
-            <span className="text-xs font-semibold text-brand-olive-dark">U</span>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-3 rounded-lg px-2 py-1.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-pink/30">
+              <User size={16} className="text-brand-olive-dark" />
+            </div>
+            <div className="flex flex-col min-w-0">
+              <span className="truncate text-[11px] font-medium text-foreground" title={userEmail || 'User'}>
+                {userEmail || 'Loading...'}
+              </span>
+              <span className="text-[10px] text-muted-foreground">Free Plan</span>
+            </div>
           </div>
-          <div className="flex flex-col">
-            <span className="text-xs font-medium text-foreground">User</span>
-            <span className="text-[11px] text-muted-foreground">Free Plan</span>
-          </div>
+          
+          <button 
+            onClick={handleSignOut}
+            className="group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-brand-cream hover:text-foreground"
+          >
+            <LogOut size={14} className="text-muted-foreground group-hover:text-brand-pink" />
+            <span>로그아웃</span>
+          </button>
         </div>
       </div>
     </aside>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Search, TrendingUp, BookOpen, ExternalLink, Filter, Play, FileText, Trash2, Loader2, Plus, Tv } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase/client'
 
 /* ─── 헬퍼 함수 ─── */
 
@@ -106,6 +106,7 @@ const PERIOD_OPTIONS = [
 ]
 
 export default function ResearchPage() {
+    const supabase = createClient()
     const [activeTab, setActiveTab] = useState('youtube')
     const [subscribers, setSubscribers] = useState('')
     const [views, setViews] = useState('')
@@ -155,14 +156,26 @@ export default function ResearchPage() {
 
     /* 저장 (유튜브 리서치 → 저장 버튼, NotebookLM → 저장 버튼) */
     const handleSave = async (title: string, type: string, opts?: { url?: string; memo?: string; tags?: string[] }) => {
-        const { error } = await supabase.from('research').insert({
-            title,
-            type,
-            url: opts?.url ?? null,
-            memo: opts?.memo ?? null,
-            tags: opts?.tags ?? null,
-        })
-        if (!error) fetchItems()
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                alert('로그인 세션이 만료되었습니다. 다시 로그인해주세요.');
+                window.location.href = '/login';
+                return;
+            }
+
+            const { error } = await supabase.from('research').insert({
+                title,
+                type,
+                url: opts?.url ?? null,
+                memo: opts?.memo ?? null,
+                tags: opts?.tags ?? null,
+                user_id: user.id
+            })
+            if (!error) fetchItems()
+        } catch (err) {
+            console.error("Error in handleSave:", err);
+        }
     }
 
     const handleDelete = async (id: number) => {
@@ -209,26 +222,38 @@ export default function ResearchPage() {
         const isAlreadySaved = items.some(item => item.url === videoUrl)
         if (isAlreadySaved) return;
 
-        const { error } = await supabase.from('research').insert({
-            title: video.title,
-            type: '유튜브',
-            url: videoUrl,
-            memo: '',
-            tags: [],
-            thumbnail_url: video.thumbnailUrl,
-            channel_name: video.channelName,
-            channel_id: video.channelId,
-            view_count: video.viewCount,
-            like_count: video.likeCount,
-            published_at: video.publishedAt,
-            duration: video.duration
-        })
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                alert('로그인 세션이 만료되었습니다. 다시 로그인해주세요.');
+                window.location.href = '/login';
+                return;
+            }
 
-        if (!error) {
-            alert("리서치에 저장됐어요")
-            fetchItems()
-        } else {
-            alert(`저장 실패: ${error.message}`)
+            const { error } = await supabase.from('research').insert({
+                title: video.title,
+                type: '유튜브',
+                url: videoUrl,
+                memo: '',
+                tags: [],
+                thumbnail_url: video.thumbnailUrl,
+                channel_name: video.channelName,
+                channel_id: video.channelId,
+                view_count: video.viewCount,
+                like_count: video.likeCount,
+                published_at: video.publishedAt,
+                duration: video.duration,
+                user_id: user.id
+            })
+
+            if (!error) {
+                alert("리서치에 저장됐어요")
+                fetchItems()
+            } else {
+                alert(`저장 실패: ${error.message}`)
+            }
+        } catch (err) {
+            console.error("Error in handleSaveSearchResult:", err);
         }
     }
 
@@ -285,32 +310,44 @@ export default function ResearchPage() {
         
         const tagsArray = newTags.split(',').map(t => t.trim()).filter(t => t.length > 0)
         
-        const { error } = await supabase.from('research').insert({
-            title: newTitle,
-            type: '유튜브',
-            url: newUrl,
-            memo: newMemo,
-            tags: tagsArray,
-            thumbnail_url: ytData?.thumbnailUrl ?? null,
-            channel_name: ytData?.channelName ?? null,
-            channel_id: ytData?.channelId ?? null,
-            view_count: ytData?.viewCount ?? null,
-            like_count: ytData?.likeCount ?? null,
-            published_at: ytData?.publishedAt ?? null,
-            duration: ytData?.duration ?? null
-        })
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                alert('로그인 세션이 만료되었습니다. 다시 로그인해주세요.');
+                window.location.href = '/login';
+                return;
+            }
 
-        if (!error) {
-            fetchItems()
-            setIsModalOpen(false)
-            // 폼 초기화
-            setNewUrl('')
-            setNewTitle('')
-            setNewMemo('')
-            setNewTags('')
-            setYtData(null)
-        } else {
-            alert(`저장 실패: ${error.message}`)
+            const { error } = await supabase.from('research').insert({
+                title: newTitle,
+                type: '유튜브',
+                url: newUrl,
+                memo: newMemo,
+                tags: tagsArray,
+                thumbnail_url: ytData?.thumbnailUrl ?? null,
+                channel_name: ytData?.channelName ?? null,
+                channel_id: ytData?.channelId ?? null,
+                view_count: ytData?.viewCount ?? null,
+                like_count: ytData?.likeCount ?? null,
+                published_at: ytData?.publishedAt ?? null,
+                duration: ytData?.duration ?? null,
+                user_id: user.id
+            })
+
+            if (!error) {
+                fetchItems()
+                setIsModalOpen(false)
+                // 폼 초기화
+                setNewUrl('')
+                setNewTitle('')
+                setNewMemo('')
+                setNewTags('')
+                setYtData(null)
+            } else {
+                alert(`저장 실패: ${error.message}`)
+            }
+        } catch (err) {
+            console.error("Error in handleSaveYouTube:", err);
         }
     }
 

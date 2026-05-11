@@ -339,8 +339,6 @@ function VideoAnalysis() {
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [copiedSystem, setCopiedSystem] = useState(false);
   
-  console.log('Current videoData state:', videoData);
-
   /* ─── 유틸리티 ─── */
   const formatNumber = (num: number | null | undefined) => {
     if (!num) return "0";
@@ -380,9 +378,7 @@ function VideoAnalysis() {
           `/api/youtube/transcript?url=${encodeURIComponent(url)}`
         );
         const json = await res.json();
-        console.log('API response:', json);
         if (json.success) {
-          console.log('Setting videoData:', json.data);
           setVideoData(json.data);
         } else {
         alert(json.error || "정보를 가져오는데 실패했습니다.");

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, Edit2, Trash2, ExternalLink, PlayCircle, Users, TrendingUp, Loader2 } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase/client'
 
 type Channel = {
     id: number
@@ -17,6 +17,7 @@ type Channel = {
 const emptyForm = { name: '', handle: '', subscribers: '', url: '', category: '', memo: '' }
 
 export default function ChannelsPage() {
+    const supabase = createClient()
     const [channels, setChannels] = useState<Channel[]>([])
     const [loading, setLoading] = useState(true)
     const [showForm, setShowForm] = useState(false)
@@ -35,24 +36,36 @@ export default function ChannelsPage() {
 
     const handleSubmit = async () => {
         if (!form.name) return
-        if (editId !== null) {
-            const { error } = await supabase.from('channels').update(form).eq('id', editId)
-            if (error) {
-                console.error("update error details:", error.message, error.details);
+        
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                alert('로그인 세션이 만료되었습니다. 다시 로그인해주세요.');
+                window.location.href = '/login';
                 return;
             }
-            setEditId(null);
-            fetchChannels();
-        } else {
-            const { error } = await supabase.from('channels').insert(form)
-            if (error) {
-                console.error("insert error details:", error.message, error.details);
-                return;
+
+            if (editId !== null) {
+                const { error } = await supabase.from('channels').update({ ...form, user_id: user.id }).eq('id', editId)
+                if (error) {
+                    console.error("update error details:", error.message, error.details);
+                    return;
+                }
+                setEditId(null);
+                fetchChannels();
+            } else {
+                const { error } = await supabase.from('channels').insert({ ...form, user_id: user.id })
+                if (error) {
+                    console.error("insert error details:", error.message, error.details);
+                    return;
+                }
+                fetchChannels()
             }
-            fetchChannels()
+            setForm(emptyForm)
+            setShowForm(false)
+        } catch (err) {
+            console.error("Error in handleSubmit:", err);
         }
-        setForm(emptyForm)
-        setShowForm(false)
     }
 
     const handleEdit = (channel: Channel) => {

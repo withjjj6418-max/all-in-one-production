@@ -13,7 +13,7 @@ import {
   Trash2,
   Loader2,
 } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/client";
 
 /* ─── 타입 ─── */
 type SortKey = "modified" | "name" | "progress";
@@ -60,6 +60,7 @@ const bgColors = ["bg-amber-100", "bg-sky-100", "bg-rose-100", "bg-violet-100", 
    메인 페이지
    ================================================================ */
 export default function ProjectsPage() {
+  const supabase = createClient();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [sort, setSort] = useState<SortKey>("modified");
@@ -87,19 +88,31 @@ export default function ProjectsPage() {
   useEffect(() => { fetchProjects(); }, [fetchProjects]);
 
   const handleCreate = async () => {
-    const { error } = await supabase
-      .from("projects")
-      .insert({ 
-        title: "새 프로젝트", 
-        status: "시작 전", 
-        progress: 0,
-        updated_at: new Date().toISOString() 
-      });
-    if (error) {
-      console.error("insert error details:", error.message, error.details, error.hint);
-      return;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        alert('로그인 세션이 만료되었습니다. 다시 로그인해주세요.');
+        window.location.href = '/login';
+        return;
+      }
+
+      const { error } = await supabase
+        .from("projects")
+        .insert({ 
+          title: "새 프로젝트", 
+          status: "시작 전", 
+          progress: 0,
+          updated_at: new Date().toISOString(),
+          user_id: user.id
+        });
+      if (error) {
+        console.error("insert error details:", error.message, error.details, error.hint);
+        return;
+      }
+      fetchProjects();
+    } catch (err) {
+      console.error("Error in handleCreate:", err);
     }
-    fetchProjects();
   };
 
   const handleDelete = async (id: number) => {
