@@ -67,12 +67,56 @@ type Research = {
     duration?: string | null
 }
 
+type SearchVideo = {
+    videoId: string
+    title: string
+    description: string
+    channelName: string
+    channelId: string
+    channelSubscribers: number
+    thumbnailUrl: string
+    publishedAt: string
+    viewCount: number
+    likeCount: number
+    commentCount: number
+    duration: string
+}
+
+const SUBSCRIBER_OPTIONS = [
+    { label: "1만 이하", value: "10000" },
+    { label: "10만 이하", value: "100000" },
+    { label: "100만 이하", value: "1000000" },
+    { label: "제한 없음", value: "" },
+]
+
+const VIEW_OPTIONS = [
+    { label: "1만 이상", value: "10000" },
+    { label: "10만 이상", value: "100000" },
+    { label: "100만 이상", value: "1000000" },
+    { label: "1000만 이상", value: "10000000" },
+    { label: "제한 없음", value: "" },
+]
+
+const PERIOD_OPTIONS = [
+    { label: "1주 이내", value: "7" },
+    { label: "1개월 이내", value: "30" },
+    { label: "3개월 이내", value: "90" },
+    { label: "1년 이내", value: "365" },
+    { label: "전체", value: "" },
+]
+
 export default function ResearchPage() {
     const [activeTab, setActiveTab] = useState('youtube')
-    const [subscribers, setSubscribers] = useState('10000')
-    const [views, setViews] = useState('1000000')
+    const [subscribers, setSubscribers] = useState('')
+    const [views, setViews] = useState('')
     const [period, setPeriod] = useState('90')
+    const [regionCode, setRegionCode] = useState('KR')
     const [keyword, setKeyword] = useState('')
+
+    /* 검색 결과 상태 */
+    const [searchResults, setSearchResults] = useState<SearchVideo[]>([])
+    const [isSearching, setIsSearching] = useState(false)
+    const [hasSearched, setHasSearched] = useState(false)
 
     /* DB 데이터 */
     const [items, setItems] = useState<Research[]>([])
@@ -124,6 +168,68 @@ export default function ResearchPage() {
     const handleDelete = async (id: number) => {
         const { error } = await supabase.from('research').delete().eq('id', id)
         if (!error) fetchItems()
+    }
+
+    /* 유튜브 검색 실행 */
+    const handleSearch = async () => {
+        if (!keyword.trim()) {
+            alert("키워드를 입력해주세요")
+            return
+        }
+        setIsSearching(true)
+        setHasSearched(true)
+        try {
+            const params = new URLSearchParams()
+            params.set('q', keyword)
+            if (subscribers) params.set('maxSubscribers', subscribers)
+            if (views) params.set('minViews', views)
+            if (period) params.set('periodDays', period)
+            if (regionCode && regionCode !== 'WORLD') params.set('regionCode', regionCode)
+
+            const res = await fetch(`/api/youtube/search?${params}`)
+            const data = await res.json()
+            if (data.success) {
+                setSearchResults(data.data)
+            } else {
+                alert(`검색 실패: ${data.error}`)
+            }
+        } catch (err) {
+            console.error(err)
+            alert("검색 중 오류가 발생했습니다")
+        } finally {
+            setIsSearching(false)
+        }
+    }
+
+    /* 검색 결과 저장 */
+    const handleSaveSearchResult = async (video: SearchVideo) => {
+        const videoUrl = `https://www.youtube.com/watch?v=${video.videoId}`
+        
+        // 중복 체크
+        const isAlreadySaved = items.some(item => item.url === videoUrl)
+        if (isAlreadySaved) return;
+
+        const { error } = await supabase.from('research').insert({
+            title: video.title,
+            type: '유튜브',
+            url: videoUrl,
+            memo: '',
+            tags: [],
+            thumbnail_url: video.thumbnailUrl,
+            channel_name: video.channelName,
+            channel_id: video.channelId,
+            view_count: video.viewCount,
+            like_count: video.likeCount,
+            published_at: video.publishedAt,
+            duration: video.duration
+        })
+
+        if (!error) {
+            alert("리서치에 저장됐어요")
+            fetchItems()
+        } else {
+            alert(`저장 실패: ${error.message}`)
+        }
     }
 
     /* NotebookLM 상태 */
@@ -254,23 +360,52 @@ export default function ResearchPage() {
                             검색 필터
                         </h2>
                         <div className="space-y-4">
-                            <div>
-                                <label className="text-sm font-medium text-gray-600 mb-2 block">키워드</label>
-                                <div className="flex gap-2">
-                                    <input
-                                        type="text"
-                                        value={keyword}
-                                        onChange={e => setKeyword(e.target.value)}
-                                        placeholder="검색할 키워드 입력..."
-                                        className="flex-1 px-4 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-pink-200"
-                                    />
-                                    <button className="px-4 py-2 bg-[#F2A8B8] text-white rounded-xl text-sm font-medium hover:opacity-90 transition">
-                                        검색
-                                    </button>
+                            <div className="flex flex-col sm:flex-row gap-4">
+                                <div className="flex-1">
+                                    <label className="text-sm font-medium text-gray-600 mb-2 block">키워드</label>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            value={keyword}
+                                            onChange={e => setKeyword(e.target.value)}
+                                            onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                                            placeholder="검색할 키워드 입력..."
+                                            className="flex-1 px-4 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-pink-200"
+                                        />
+                                        <button 
+                                            onClick={handleSearch}
+                                            disabled={isSearching}
+                                            className="px-6 py-2 bg-[#F2A8B8] text-white rounded-xl text-sm font-bold hover:opacity-90 transition disabled:opacity-50 flex items-center gap-2"
+                                        >
+                                            {isSearching ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+                                            {isSearching ? "검색 중..." : "검색"}
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="sm:w-48">
+                                    <label className="text-sm font-medium text-gray-600 mb-2 block">언어/지역</label>
+                                    <div className="flex p-1 bg-gray-100 rounded-xl">
+                                        {[
+                                            { id: 'KR', label: '한국' },
+                                            { id: 'WORLD', label: '전세계' }
+                                        ].map(opt => (
+                                            <button 
+                                                key={opt.id}
+                                                onClick={() => setRegionCode(opt.id)}
+                                                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition ${
+                                                    regionCode === opt.id 
+                                                    ? 'bg-white text-gray-800 shadow-sm' 
+                                                    : 'text-gray-400 hover:text-gray-600'
+                                                }`}
+                                            >
+                                                {opt.label}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-3 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                 <div>
                                     <label className="text-sm font-medium text-gray-600 mb-2 block">
                                         최대 구독자 수
@@ -279,10 +414,9 @@ export default function ResearchPage() {
                                         value={subscribers}
                                         onChange={e => setSubscribers(e.target.value)}
                                         className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-pink-200">
-                                        <option value="1000">1천 이하</option>
-                                        <option value="10000">1만 이하</option>
-                                        <option value="50000">5만 이하</option>
-                                        <option value="100000">10만 이하</option>
+                                        {SUBSCRIBER_OPTIONS.map(opt => (
+                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                        ))}
                                     </select>
                                 </div>
                                 <div>
@@ -293,10 +427,9 @@ export default function ResearchPage() {
                                         value={views}
                                         onChange={e => setViews(e.target.value)}
                                         className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-pink-200">
-                                        <option value="100000">10만 이상</option>
-                                        <option value="500000">50만 이상</option>
-                                        <option value="1000000">100만 이상</option>
-                                        <option value="5000000">500만 이상</option>
+                                        {VIEW_OPTIONS.map(opt => (
+                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                        ))}
                                     </select>
                                 </div>
                                 <div>
@@ -307,15 +440,86 @@ export default function ResearchPage() {
                                         value={period}
                                         onChange={e => setPeriod(e.target.value)}
                                         className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-pink-200">
-                                        <option value="30">1개월 이내</option>
-                                        <option value="90">3개월 이내</option>
-                                        <option value="180">6개월 이내</option>
-                                        <option value="365">1년 이내</option>
+                                        {PERIOD_OPTIONS.map(opt => (
+                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                        ))}
                                     </select>
                                 </div>
                             </div>
                         </div>
                     </div>
+
+                    {/* 유튜브 검색 결과 */}
+                    {hasSearched && (
+                        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                            <h2 className="font-semibold text-gray-700 mb-4 flex items-center gap-2">
+                                <Search size={16} />
+                                🔍 검색 결과 ({searchResults.length}개)
+                            </h2>
+                            
+                            {isSearching ? (
+                                <div className="flex flex-col items-center justify-center py-12 gap-3">
+                                    <Loader2 size={32} className="animate-spin text-pink-400" />
+                                    <p className="text-sm text-gray-500 font-medium">유튜브에서 영상을 찾고 있어요...</p>
+                                </div>
+                            ) : searchResults.length === 0 ? (
+                                <div className="text-center py-12">
+                                    <p className="text-sm text-gray-400">조건에 맞는 영상이 없어요. 필터를 완화해보세요.</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                                    {searchResults.map(video => {
+                                        const videoUrl = `https://www.youtube.com/watch?v=${video.videoId}`
+                                        const isAlreadySaved = items.some(item => item.url === videoUrl)
+                                        
+                                        return (
+                                            <div key={video.videoId} className="group flex flex-col bg-white rounded-2xl overflow-hidden border border-gray-100 hover:shadow-md transition-all duration-200">
+                                                <div className="relative aspect-video bg-gray-200 overflow-hidden cursor-pointer"
+                                                    onClick={() => window.open(videoUrl, '_blank')}>
+                                                    <img 
+                                                        src={video.thumbnailUrl} 
+                                                        alt={video.title} 
+                                                        className="w-full h-full object-cover transition duration-300 group-hover:brightness-75"
+                                                    />
+                                                    <div className="absolute bottom-2 right-2 bg-black/80 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
+                                                        {formatDuration(video.duration)}
+                                                    </div>
+                                                </div>
+                                                <div className="p-4 flex flex-col flex-1">
+                                                    <h3 className="text-sm font-bold text-gray-800 line-clamp-2 leading-snug cursor-pointer hover:text-[#7C8C4E]"
+                                                        onClick={() => window.open(videoUrl, '_blank')}>
+                                                        {video.title}
+                                                    </h3>
+                                                    <div className="mt-2 flex flex-col gap-1">
+                                                        <p className="text-xs text-gray-500 flex items-center gap-1">
+                                                            <Tv size={12} className="text-gray-400" />
+                                                            {video.channelName} (구독자 {formatViewCount(video.channelSubscribers)})
+                                                        </p>
+                                                        <p className="text-[11px] text-gray-400 flex items-center gap-1">
+                                                            {formatViewCount(video.viewCount)} · {formatRelativeTime(video.publishedAt)}
+                                                        </p>
+                                                    </div>
+                                                    <div className="mt-4 pt-3 border-t border-gray-50 flex justify-end">
+                                                        <button 
+                                                            onClick={() => handleSaveSearchResult(video)}
+                                                            disabled={isAlreadySaved}
+                                                            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold transition ${
+                                                                isAlreadySaved 
+                                                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                                                                : 'bg-[#7C8C4E] text-white hover:opacity-90'
+                                                            }`}
+                                                        >
+                                                            {isAlreadySaved ? '저장됨' : <><Plus size={14} /> 저장</>}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* 저장된 유튜브 자료 */}
                     <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
