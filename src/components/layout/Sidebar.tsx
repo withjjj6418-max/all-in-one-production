@@ -35,10 +35,12 @@ const postProductionItems = [
   { label: "업로드", href: "/post/upload", icon: Upload },
 ];
 
+// 클라이언트 싱글톤 인스턴스 생성
+const supabase = createClient();
+
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const supabase = createClient();
   
   const isPostProductionActive = pathname.startsWith("/post");
   const [isPostOpen, setIsPostOpen] = useState(isPostProductionActive);
@@ -46,13 +48,32 @@ export function Sidebar() {
 
   useEffect(() => {
     const fetchUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setUserEmail(user.email ?? null);
+      console.log('Sidebar: 1. fetchUser started');
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        console.log('Sidebar: 2. getUser result:', { user, error });
+        
+        if (error) {
+          console.error('Sidebar: Error fetching user:', error);
+          setUserEmail('로그인 필요');
+          return;
+        }
+
+        if (user) {
+          console.log('Sidebar: 3. User found:', user.email);
+          setUserEmail(user.email ?? '이메일 없음');
+        } else {
+          console.log('Sidebar: 3. No user found');
+          setUserEmail('미인증 사용자');
+          // 필요한 경우 여기서 로그아웃 처리를 하거나 로그인 페이지로 보낼 수 있음
+        }
+      } catch (err) {
+        console.error('Sidebar: Unexpected error:', err);
+        setUserEmail('오류 발생');
       }
     };
     fetchUser();
-  }, []);
+  }, [supabase.auth]);
 
   const handleSignOut = async () => {
     try {
