@@ -16,10 +16,12 @@ import {
   Download,
   Save,
   Layers,
-  Music,
   Image,
+  Music,
   MonitorPlay,
+  ArrowLeft,
 } from "lucide-react";
+import EditLibrary from "./EditLibrary";
 
 /* ─── 더미 타임라인 클립 ─── */
 const videoClips = [
@@ -39,17 +41,29 @@ const tools = [
 ];
 
 export default function EditPage() {
+  const [selectedEdit, setSelectedEdit] = useState<any>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [zoom, setZoom] = useState(100);
   const [activeTool, setActiveTool] = useState("자르기");
   const [activeTrack, setActiveTrack] = useState<"video" | "audio" | "subtitle">("video");
 
+  if (!selectedEdit) {
+    return <EditLibrary onSelect={setSelectedEdit} />;
+  }
+
   return (
-    <div className="flex h-[calc(100vh-60px)] -m-8 flex-col">
+    <div className="flex h-[calc(100vh-60px)] -m-8 flex-col bg-white">
       {/* ── 상단 툴바 ── */}
       <div className="flex items-center justify-between border-b border-border bg-white px-4 py-2">
         <div className="flex items-center gap-1">
-          <h2 className="mr-3 text-sm font-bold text-foreground">🎬 편집실</h2>
+          <button 
+            onClick={() => setSelectedEdit(null)}
+            className="mr-2 rounded-md p-1.5 text-muted-foreground hover:bg-brand-cream hover:text-foreground transition-colors"
+          >
+            <ArrowLeft size={18} />
+          </button>
+          <h2 className="mr-3 text-sm font-bold text-foreground">🎬 {selectedEdit.title}</h2>
+          <div className="mx-2 h-5 w-px bg-border" />
           <button className="rounded-md p-1.5 text-muted-foreground hover:bg-brand-cream hover:text-foreground">
             <Undo2 size={16} />
           </button>
@@ -158,7 +172,7 @@ export default function EditPage() {
                 min={0}
                 max={100}
                 defaultValue={80}
-                className="mt-1 h-1.5 w-full cursor-pointer appearance-none rounded-full bg-brand-cream accent-brand-olive"
+                className="mt-1 h-1.5 w-full cursor-pointer appearance-none rounded-full bg-gray-100 accent-brand-olive"
               />
             </div>
           </div>

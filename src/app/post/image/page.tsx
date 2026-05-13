@@ -4,13 +4,15 @@ import { useState } from "react";
 import StyleTab from "./StyleTab";
 import StoryboardTab from "./StoryboardTab";
 import RemakeTab from "./RemakeTab";
+import ImageLibraryTab from "./ImageLibraryTab";
 
-type Tab = "style" | "storyboard" | "remake";
+type Tab = "style" | "storyboard" | "remake" | "library";
 
 const tabs: { key: Tab; label: string; emoji: string }[] = [
   { key: "style", label: "스타일 선택", emoji: "🎨" },
   { key: "storyboard", label: "스토리보드", emoji: "🎬" },
   { key: "remake", label: "영상 리메이크", emoji: "🔄" },
+  { key: "library", label: "이미지 보관함", emoji: "📂" },
 ];
 
 export default function ImagePage() {
@@ -47,6 +49,8 @@ export default function ImagePage() {
       {activeTab === "style" && <StyleTab />}
       {activeTab === "storyboard" && <StoryboardTab />}
       {activeTab === "remake" && <RemakeTab />}
+      {activeTab === "library" && <ImageLibraryTab />}
     </div>
   );
 }
+

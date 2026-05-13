@@ -3,14 +3,15 @@
 import { useState } from "react";
 import NarrationTab from "./NarrationTab";
 import MusicTab from "./MusicTab";
+import SoundLibraryTab from "./SoundLibraryTab";
 
-type MainTab = "narration" | "music" | "sfx" | "reference";
+type MainTab = "narration" | "music" | "sfx" | "library";
 
 const tabs: { key: MainTab; label: string; emoji: string }[] = [
   { key: "narration", label: "나레이션", emoji: "🎤" },
   { key: "music", label: "음악 생성", emoji: "🎵" },
   { key: "sfx", label: "효과음", emoji: "🔊" },
-  { key: "reference", label: "뮤직 레퍼런스", emoji: "🎼" },
+  { key: "library", label: "사운드 보관함", emoji: "📂" },
 ];
 
 export default function SoundStudioPage() {
@@ -49,7 +50,8 @@ export default function SoundStudioPage() {
       {/* 콘텐츠 */}
       {activeTab === "narration" && <NarrationTab />}
       {activeTab === "music" && <MusicTab />}
-      {(activeTab === "sfx" || activeTab === "reference") && (
+      {activeTab === "library" && <SoundLibraryTab />}
+      {activeTab === "sfx" && (
         <div className="flex h-64 items-center justify-center rounded-xl border border-border bg-white shadow-sm">
           <p className="text-sm text-muted-foreground">준비 중입니다</p>
         </div>
@@ -57,3 +59,4 @@ export default function SoundStudioPage() {
     </div>
   );
 }
+
