@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Copy, FileUp, ChevronDown, Check, Folder, Save, Scissors, Plus, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { getEditPointsPromptGemini, getEditPointsPromptClaude } from '@/constants/prompts';
 
 export default function ScriptsPage() {
   const supabase = createClient();
@@ -175,29 +176,6 @@ export default function ScriptsPage() {
     reader.readAsText(file);
   };
 
-  const getEditPointPrompt = () => {
-    const promptLines = [
-      '[대본]',
-      generatedScript,
-      '',
-      '[편집점 작성 요청]',
-      '위 대본을 기반으로 영상 편집할 때 참고할 편집점을 작성해주세요.',
-      '[편집점 작성 가이드]',
-      '',
-      '대본의 각 구간(훅, 발단, 전개, 위기, 절정, 결말)별로 편집 지시사항 작성',
-      '각 구간에서 화면 전환, 컷, 자막, 효과, BGM, 효과음 등 구체적인 편집 지시',
-      '감정의 흐름에 맞춰 영상이 흘러가도록',
-      '영상 편집자가 보고 바로 따라 할 수 있을 정도로 구체적으로',
-      '',
-      '[출력 형식]',
-      '',
-      '각 구간을 명확히 구분해서 작성',
-      '시간 단위 또는 구간 단위로 정리',
-      '번호나 구분선 사용 가능 (대본과 달리 가독성 우선)'
-    ];
-    return promptLines.join('\n');
-  };
-
   const validateScript = () => {
     if (!generatedScript.trim()) {
       showToast("먼저 대본을 입력해주세요");
@@ -208,7 +186,7 @@ export default function ScriptsPage() {
 
   const handleSendToGemini = async () => {
     if (!validateScript()) return;
-    const prompt = getEditPointPrompt();
+    const prompt = getEditPointsPromptGemini(generatedScript);
     await navigator.clipboard.writeText(prompt);
     showToast("프롬프트가 복사됐어요! Gemini에 붙여넣기(Ctrl+V) 하세요");
     window.open('https://gemini.google.com/', '_blank');
@@ -216,7 +194,7 @@ export default function ScriptsPage() {
 
   const handleSendToClaude = async () => {
     if (!validateScript()) return;
-    const prompt = getEditPointPrompt();
+    const prompt = getEditPointsPromptClaude(generatedScript);
     await navigator.clipboard.writeText(prompt);
     showToast("프롬프트가 복사됐어요! Claude에 붙여넣기(Ctrl+V) 하세요");
     window.open('https://claude.ai/new', '_blank');
