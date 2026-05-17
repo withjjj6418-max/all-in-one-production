@@ -21,8 +21,8 @@ import {
 import { createClient } from "@/lib/supabase/client";
 
 const mainMenuItems = [
-  { label: "리서치", href: "/research", icon: Search },
   { label: "프로젝트", href: "/projects", icon: FolderKanban },
+  { label: "리서치", href: "/research", icon: Search },
   { label: "채널/영상 분석", href: "/analytics", icon: BarChart3 },
   { label: "대본작성", href: "/scripts", icon: PenLine },
 ];
@@ -103,129 +103,164 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* New Project Button */}
-      <div className="px-3 pt-4 pb-2">
-        <button className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-pink py-2.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-brand-pink-dark">
-          <Plus size={16} strokeWidth={2.5} />
-          <span>새 프로젝트</span>
-        </button>
-      </div>
 
-      {/* Divider */}
-      <div className="mx-4 border-t border-sidebar-border" />
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 px-3 py-3">
-        {mainMenuItems.map((item) => {
-          const isActive = pathname === item.href;
-          const Icon = item.icon;
+      <nav className="flex-1 space-y-5 px-3 py-4 overflow-y-auto scrollbar-hide">
+        {/* 🎬 쇼츠 그룹 */}
+        <div className="space-y-1">
+          <h3 className="px-3 mb-2 text-[11px] font-bold tracking-wider text-muted-foreground/70">🎬 쇼츠</h3>
+          
+          {mainMenuItems.map((item) => {
+            const isActive = pathname === item.href;
+            const Icon = item.icon;
 
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${isActive
-                  ? "bg-brand-pink/20 text-brand-olive-dark"
-                  : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"
-                }`}
-            >
-              <Icon
-                size={18}
-                className={`transition-colors duration-200 ${isActive
-                    ? "text-brand-olive"
-                    : "text-muted-foreground group-hover:text-brand-olive-light"
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${isActive
+                    ? "bg-brand-pink/20 text-brand-olive-dark"
+                    : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"
                   }`}
-              />
-              <span>{item.label}</span>
-              {isActive && (
-                <div className="ml-auto h-1.5 w-1.5 rounded-full bg-brand-pink" />
-              )}
-            </Link>
-          );
-        })}
-
-        {/* Post-Production Toggle */}
-        <button
-          onClick={() => setIsPostOpen((prev) => !prev)}
-          className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${isPostProductionActive
-              ? "bg-brand-pink/20 text-brand-olive-dark"
-              : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"
-            }`}
-        >
-          <Clapperboard
-            size={18}
-            className={`transition-colors duration-200 ${isPostProductionActive
-                ? "text-brand-olive"
-                : "text-muted-foreground group-hover:text-brand-olive-light"
-              }`}
-          />
-          <span>후반작업</span>
-          <ChevronDown
-            size={16}
-            className={`ml-auto transition-transform duration-200 ${isPostOpen ? "rotate-180" : ""
-              } ${isPostProductionActive
-                ? "text-brand-olive"
-                : "text-muted-foreground"
-              }`}
-          />
-        </button>
-
-        {/* Sub-menu */}
-        <div
-          className={`overflow-hidden transition-all duration-200 ${isPostOpen ? "max-h-48 opacity-100" : "max-h-0 opacity-0"
-            }`}
-        >
-          <div className="ml-4 space-y-0.5 border-l border-sidebar-border pl-3 py-1">
-            {postProductionItems.map((item) => {
-              const isActive = pathname === item.href;
-              const Icon = item.icon;
-
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-all duration-200 ${isActive
-                      ? "bg-brand-pink/15 text-brand-olive-dark"
-                      : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"
+              >
+                <Icon
+                  size={18}
+                  className={`transition-colors duration-200 ${isActive
+                      ? "text-brand-olive"
+                      : "text-muted-foreground group-hover:text-brand-olive-light"
                     }`}
-                >
-                  <Icon
-                    size={15}
-                    className={`transition-colors duration-200 ${isActive
-                        ? "text-brand-olive"
-                        : "text-muted-foreground group-hover:text-brand-olive-light"
+                />
+                <span>{item.label}</span>
+                {isActive && (
+                  <div className="ml-auto h-1.5 w-1.5 rounded-full bg-brand-pink" />
+                )}
+              </Link>
+            );
+          })}
+
+          {/* Post-Production Toggle */}
+          <button
+            onClick={() => setIsPostOpen((prev) => !prev)}
+            className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${isPostProductionActive
+                ? "bg-brand-pink/20 text-brand-olive-dark"
+                : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"
+              }`}
+          >
+            <Clapperboard
+              size={18}
+              className={`transition-colors duration-200 ${isPostProductionActive
+                  ? "text-brand-olive"
+                  : "text-muted-foreground group-hover:text-brand-olive-light"
+                }`}
+            />
+            <span>후반작업</span>
+            <ChevronDown
+              size={16}
+              className={`ml-auto transition-transform duration-200 ${isPostOpen ? "rotate-180" : ""
+                } ${isPostProductionActive
+                  ? "text-brand-olive"
+                  : "text-muted-foreground"
+                }`}
+            />
+          </button>
+
+          {/* Sub-menu */}
+          <div
+            className={`overflow-hidden transition-all duration-200 ${isPostOpen ? "max-h-48 opacity-100" : "max-h-0 opacity-0"
+              }`}
+          >
+            <div className="ml-4 space-y-0.5 border-l border-sidebar-border pl-3 py-1">
+              {postProductionItems.map((item) => {
+                const isActive = pathname === item.href;
+                const Icon = item.icon;
+
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-all duration-200 ${isActive
+                        ? "bg-brand-pink/15 text-brand-olive-dark"
+                        : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"
                       }`}
-                  />
-                  <span>{item.label}</span>
-                  {isActive && (
-                    <div className="ml-auto h-1.5 w-1.5 rounded-full bg-brand-pink" />
-                  )}
-                </Link>
-              );
-            })}
+                  >
+                    <Icon
+                      size={15}
+                      className={`transition-colors duration-200 ${isActive
+                          ? "text-brand-olive"
+                          : "text-muted-foreground group-hover:text-brand-olive-light"
+                        }`}
+                    />
+                    <span>{item.label}</span>
+                    {isActive && (
+                      <div className="ml-auto h-1.5 w-1.5 rounded-full bg-brand-pink" />
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
           </div>
+
+          {/* Channel Management */}
+          <Link
+            href="/channels"
+            className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${pathname === "/channels"
+                ? "bg-brand-pink/20 text-brand-olive-dark"
+                : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"
+              }`}
+          >
+            <Settings
+              size={18}
+              className={`transition-colors duration-200 ${pathname === "/channels"
+                  ? "text-brand-olive"
+                  : "text-muted-foreground group-hover:text-brand-olive-light"
+                }`}
+            />
+            <span>채널 관리</span>
+            {pathname === "/channels" && (
+              <div className="ml-auto h-1.5 w-1.5 rounded-full bg-brand-pink" />
+            )}
+          </Link>
         </div>
 
-        {/* Channel Management */}
-        <Link
-          href="/channels"
-          className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${pathname === "/channels"
-              ? "bg-brand-pink/20 text-brand-olive-dark"
-              : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"
-            }`}
-        >
-          <Settings
-            size={18}
-            className={`transition-colors duration-200 ${pathname === "/channels"
-                ? "text-brand-olive"
-                : "text-muted-foreground group-hover:text-brand-olive-light"
-              }`}
-          />
-          <span>채널 관리</span>
-          {pathname === "/channels" && (
-            <div className="ml-auto h-1.5 w-1.5 rounded-full bg-brand-pink" />
-          )}
-        </Link>
+        {/* 구분선 */}
+        <div className="mx-2 border-t border-sidebar-border" />
+
+        {/* 🎥 롱폼 그룹 */}
+        <div className="space-y-1 opacity-40 grayscale-[50%]">
+          <h3 className="px-3 mb-2 text-[11px] font-bold tracking-wider text-muted-foreground/70">🎥 롱폼</h3>
+          
+          {mainMenuItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={`longform-${item.href}`}
+                onClick={() => alert("🚧 롱폼 기능은 추후 제작 예정입니다.")}
+                className="group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-all duration-200 hover:bg-brand-cream"
+              >
+                <Icon size={18} className="text-muted-foreground" />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+
+          <button
+            onClick={() => alert("🚧 롱폼 기능은 추후 제작 예정입니다.")}
+            className="group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-all duration-200 hover:bg-brand-cream"
+          >
+            <Clapperboard size={18} className="text-muted-foreground" />
+            <span>후반작업</span>
+            <ChevronDown size={16} className="ml-auto text-muted-foreground opacity-50" />
+          </button>
+
+          <button
+            onClick={() => alert("🚧 롱폼 기능은 추후 제작 예정입니다.")}
+            className="group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-all duration-200 hover:bg-brand-cream"
+          >
+            <Settings size={18} className="text-muted-foreground" />
+            <span>채널 관리</span>
+          </button>
+        </div>
       </nav>
 
       {/* Bottom area */}
