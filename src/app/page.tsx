@@ -17,7 +17,6 @@ const workflows = [
   { step: 4, label: '사운드', desc: 'TTS + 음악', href: '/post/sound', icon: Music, color: 'bg-green-100 text-green-600' },
   { step: 5, label: '이미지/영상', desc: '스토리보드 생성', href: '/post/image', icon: Image, color: 'bg-blue-100 text-blue-500' },
   { step: 6, label: '편집', desc: '브루 연동', href: '/post/edit', icon: Film, color: 'bg-purple-100 text-purple-500' },
-  { step: 7, label: '업로드', desc: 'YouTube 업로드', href: '/post/upload', icon: Upload, color: 'bg-red-100 text-red-500' },
 ]
 
 const quickLinks = [

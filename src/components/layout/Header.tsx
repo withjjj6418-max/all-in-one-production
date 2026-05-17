@@ -11,7 +11,6 @@ const pageTitles: Record<string, string> = {
   "/post/sound": "사운드 스튜디오",
   "/post/image": "이미지/영상",
   "/post/edit": "편집실",
-  "/post/upload": "업로드",
   "/channels": "채널 관리",
 };
 

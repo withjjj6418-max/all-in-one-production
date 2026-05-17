@@ -13,7 +13,6 @@ import {
   Music,
   Image,
   Film,
-  Upload,
   Search,
   Settings,
   LogOut,
@@ -32,7 +31,6 @@ const postProductionItems = [
   { label: "사운드", href: "/post/sound", icon: Music },
   { label: "이미지/영상", href: "/post/image", icon: Image },
   { label: "편집", href: "/post/edit", icon: Film },
-  { label: "업로드", href: "/post/upload", icon: Upload },
 ];
 
 // 클라이언트 싱글톤 인스턴스 생성

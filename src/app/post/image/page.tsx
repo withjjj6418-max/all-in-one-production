@@ -1,55 +1,24 @@
 "use client";
 
-import { useState } from "react";
-import StyleTab from "./StyleTab";
-import StoryboardTab from "./StoryboardTab";
-import RemakeTab from "./RemakeTab";
-import ImageLibraryTab from "./ImageLibraryTab";
-
-type Tab = "style" | "storyboard" | "remake" | "library";
-
-const tabs: { key: Tab; label: string; emoji: string }[] = [
-  { key: "style", label: "스타일 선택", emoji: "🎨" },
-  { key: "storyboard", label: "스토리보드", emoji: "🎬" },
-  { key: "remake", label: "영상 리메이크", emoji: "🔄" },
-  { key: "library", label: "이미지 보관함", emoji: "📂" },
-];
-
 export default function ImagePage() {
-  const [activeTab, setActiveTab] = useState<Tab>("style");
-
   return (
     <div className="space-y-5">
+      {/* 헤더 */}
       <div>
         <h2 className="text-xl font-bold tracking-tight text-foreground">
-          🖼️ 이미지/영상
+          🖼️ 이미지·영상
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          대본 기반 장면 분석, 이미지 및 영상 생성을 관리합니다
+          이미지 생성 및 관리
         </p>
       </div>
 
-      <div className="flex gap-1 rounded-xl border border-border bg-white p-1.5 shadow-sm">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setActiveTab(t.key)}
-            className={`rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 ${
-              activeTab === t.key
-                ? "bg-brand-olive text-white shadow-sm"
-                : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"
-            }`}
-          >
-            <span className="mr-1.5">{t.emoji}</span>
-            {t.label}
-          </button>
-        ))}
+      {/* Placeholder */}
+      <div className="flex flex-col items-center justify-center py-32 text-center rounded-xl border border-border bg-white shadow-sm mt-8">
+        <div className="text-4xl mb-4">🚧</div>
+        <h3 className="text-lg font-bold text-foreground mb-2">외부 도구 허브로 다시 만들 예정입니다</h3>
+        <p className="text-sm text-muted-foreground">이곳에 다양한 이미지 및 영상 생성 도구 연동 기능을 준비 중입니다.</p>
       </div>
-
-      {activeTab === "style" && <StyleTab />}
-      {activeTab === "storyboard" && <StoryboardTab />}
-      {activeTab === "remake" && <RemakeTab />}
-      {activeTab === "library" && <ImageLibraryTab />}
     </div>
   );
 }
