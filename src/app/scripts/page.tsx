@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { Copy, FileUp, ChevronDown, Flame, Loader2, Check } from "lucide-react";
+import { Copy, FileUp, ChevronDown, Flame, Loader2, Check, Folder, Save, Scissors, Plus } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
 /* ─── 타입 ─── */
 type MaterialMode = "ai" | "manual" | null;
@@ -24,6 +25,153 @@ const durations = ["1분", "3분", "5분", "8분", "10분", "15분"];
    메인 페이지
    ================================================================ */
 export default function ScriptsPage() {
+  const supabase = createClient();
+  
+  /* ============================================================
+     프로젝트 연동 관련 상태 및 이펙트
+     ============================================================ */
+  const [projects, setProjects] = useState<{id: number, title: string, status: string | null, progress: number}[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [scriptId, setScriptId] = useState<string | null>(null);
+  const [editPoints, setEditPoints] = useState("");
+  
+  // 모달
+  const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
+  const [newProjectTitle, setNewProjectTitle] = useState("");
+
+  const fetchProjects = async () => {
+    const { data, error } = await supabase.from("projects").select("id, title, status, progress").order("updated_at", { ascending: false });
+    if (!error && data) {
+      setProjects(data);
+    }
+  };
+
+  useEffect(() => {
+    fetchProjects();
+    const params = new URLSearchParams(window.location.search);
+    const pid = params.get("project_id");
+    if (pid) {
+      setSelectedProjectId(Number(pid));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!selectedProjectId) {
+      setScriptId(null);
+      setGeneratedScript("");
+      setEditPoints("");
+      return;
+    }
+    const fetchScript = async () => {
+      const { data, error } = await supabase.from("scripts").select("*").eq("project_id", selectedProjectId).single();
+      if (data && !error) {
+        setScriptId(data.id);
+        setGeneratedScript(data.content || "");
+        setEditPoints(data.edit_points || "");
+        if (data.title) setTitle(data.title);
+        if (data.format) setFormat(data.format as FormatKey);
+        if (data.style) setSelectedStyle(data.style as StyleKey);
+      } else {
+        setScriptId(null);
+        setGeneratedScript("");
+        setEditPoints("");
+      }
+    };
+    fetchScript();
+  }, [selectedProjectId]);
+
+  const handleSaveScript = async () => {
+    if (!selectedProjectId) {
+      alert("프로젝트를 먼저 선택해주세요");
+      return;
+    }
+    if (!generatedScript) {
+      alert("대본 내용을 입력해주세요");
+      return;
+    }
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      alert("로그인이 필요합니다.");
+      return;
+    }
+
+    const durationSec = parseInt(duration) * 60 || 0;
+    const charCount = parseInt(wordCount) || 0;
+
+    const payload = {
+      user_id: user.id,
+      project_id: selectedProjectId,
+      title: title || (projects.find(p => p.id === selectedProjectId)?.title || "제목 없음"),
+      content: generatedScript,
+      format: format === "longform" ? "long" : "shorts",
+      style: selectedStyle,
+      target_duration_seconds: durationSec || null,
+      target_char_count: charCount,
+    };
+
+    if (scriptId) {
+      const { error } = await supabase.from("scripts").update(payload).eq("id", scriptId);
+      if (error) {
+        alert("대본 저장 실패");
+        console.error(error);
+      } else {
+        alert("대본이 저장됐어요");
+      }
+    } else {
+      const { data, error } = await supabase.from("scripts").insert(payload).select().single();
+      if (error) {
+        alert("대본 저장 실패");
+        console.error(error);
+      } else {
+        setScriptId(data.id);
+        alert("대본이 저장됐어요");
+      }
+    }
+  };
+
+  const handleSaveEditPoints = async () => {
+    if (!selectedProjectId || !scriptId) {
+      alert("대본을 먼저 저장해주세요");
+      return;
+    }
+
+    const { error } = await supabase.from("scripts").update({ edit_points: editPoints }).eq("id", scriptId);
+    if (error) {
+      alert("편집점 저장 실패");
+      console.error(error);
+    } else {
+      alert("편집점이 저장됐어요");
+    }
+  };
+
+  const handleCreateNewProject = async () => {
+    if (!newProjectTitle.trim()) {
+      alert("프로젝트 제목을 입력해주세요.");
+      return;
+    }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data, error } = await supabase.from("projects").insert({
+      title: newProjectTitle,
+      status: "idea",
+      progress: 0,
+      user_id: user.id,
+      updated_at: new Date().toISOString()
+    }).select().single();
+
+    if (error) {
+      alert("프로젝트 생성 실패");
+      console.error(error);
+    } else {
+      setProjects([data, ...projects]);
+      setSelectedProjectId(data.id);
+      setIsNewProjectModalOpen(false);
+      setNewProjectTitle("");
+    }
+  };
+
   /* STEP 1 */
   const [title, setTitle] = useState("");
   const [synopsis, setSynopsis] = useState("");
@@ -129,6 +277,54 @@ export default function ScriptsPage() {
           ✍️ 대본 작성
         </h2>
       </div>
+
+      {/* ── 작업할 프로젝트 ── */}
+      <section>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Folder size={18} className="text-brand-olive" />
+            작업할 프로젝트
+          </h3>
+          <button
+            onClick={() => setIsNewProjectModalOpen(true)}
+            className="text-xs font-semibold text-brand-olive hover:text-brand-olive-dark flex items-center gap-1"
+          >
+            <Plus size={14} /> 새 프로젝트
+          </button>
+        </div>
+        
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4 p-4 rounded-xl border border-border bg-white shadow-sm">
+          <div className="w-full sm:w-1/2 relative">
+             <select
+               value={selectedProjectId || ""}
+               onChange={(e) => setSelectedProjectId(Number(e.target.value) || null)}
+               className="w-full h-10 appearance-none rounded-lg border border-border bg-brand-cream/50 px-3 text-sm outline-none transition-colors focus:border-brand-olive focus:ring-2 focus:ring-brand-olive/20"
+             >
+               <option value="">프로젝트를 선택하세요...</option>
+               {projects.map(p => (
+                 <option key={p.id} value={p.id}>{p.title}</option>
+               ))}
+             </select>
+             <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          </div>
+
+          {selectedProjectId && (
+            <div className="flex items-center gap-3">
+              {(() => {
+                const sp = projects.find(p => p.id === selectedProjectId);
+                if (!sp) return null;
+                return (
+                  <>
+                    <span className="text-sm font-semibold text-foreground">{sp.title}</span>
+                    <span className="rounded-md bg-brand-olive/10 px-2 py-0.5 text-xs font-medium text-brand-olive-dark">{sp.status === "idea" ? "아이디어" : sp.status || '상태 없음'}</span>
+                    <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">{sp.progress}%</span>
+                  </>
+                );
+              })()}
+            </div>
+          )}
+        </div>
+      </section>
 
       {/* ============================================================
           STEP 1: 소재 정하기
@@ -382,15 +578,87 @@ export default function ScriptsPage() {
             value={generatedScript}
             onChange={(e) => setGeneratedScript(e.target.value)}
             placeholder="Gemini Gems에서 생성한 대본을 여기에 붙여넣으세요..."
-            className="min-h-[400px] w-full resize-none rounded-xl bg-transparent p-6 text-sm leading-relaxed text-foreground outline-none"
+            className="min-h-[400px] w-full resize-none rounded-xl bg-transparent p-6 text-sm leading-relaxed text-foreground outline-none pb-20"
           />
           
-          <div className="absolute bottom-4 right-6 flex items-center gap-2 rounded-full bg-brand-cream/80 px-3 py-1 backdrop-blur-sm border border-border/50 shadow-sm">
-            <span className="text-[10px] font-bold text-brand-olive uppercase tracking-wider">Words</span>
-            <span className="text-xs font-bold text-foreground">{generatedScript.length.toLocaleString()}</span>
+          <div className="absolute bottom-4 inset-x-6 flex items-center justify-between pointer-events-none">
+            <button
+              onClick={handleSaveScript}
+              className="pointer-events-auto flex items-center gap-1.5 rounded-lg bg-brand-olive px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-brand-olive-dark hover:shadow-md"
+            >
+              <Save size={16} /> 대본 저장
+            </button>
+            <div className="pointer-events-auto flex items-center gap-2 rounded-full bg-brand-cream/80 px-3 py-1 backdrop-blur-sm border border-border/50 shadow-sm">
+              <span className="text-[10px] font-bold text-brand-olive uppercase tracking-wider">Words</span>
+              <span className="text-xs font-bold text-foreground">{generatedScript.length.toLocaleString()}</span>
+            </div>
           </div>
         </div>
       </section>
+
+      {/* ============================================================
+          편집점 출력 영역
+          ============================================================ */}
+      <section className="mt-8">
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground mb-3">
+          <Scissors size={18} className="text-brand-pink" />
+          편집점 (Gems에서 받은 편집 지시사항)
+        </h3>
+        <div className="group relative flex min-h-[200px] flex-col rounded-xl border border-border bg-white shadow-sm focus-within:border-brand-olive-light focus-within:ring-2 focus-within:ring-brand-olive/5 transition-all">
+          <textarea
+            value={editPoints}
+            onChange={(e) => setEditPoints(e.target.value)}
+            placeholder="Gemini Gems에서 받은 편집점을 여기에 붙여넣으세요..."
+            className="min-h-[200px] w-full resize-none rounded-xl bg-transparent p-6 text-sm leading-relaxed text-foreground outline-none pb-20"
+          />
+          <div className="absolute bottom-4 left-6 pointer-events-auto">
+            <button
+              onClick={handleSaveEditPoints}
+              className="flex items-center gap-1.5 rounded-lg bg-brand-pink px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-brand-pink-dark hover:shadow-md"
+            >
+              <Save size={16} /> 편집점 저장
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* ── 새 프로젝트 모달 ── */}
+      {isNewProjectModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md animate-in fade-in zoom-in duration-200 rounded-2xl bg-white p-6 shadow-2xl">
+            <h2 className="mb-5 text-xl font-bold text-gray-800">새 프로젝트 만들기</h2>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-600">프로젝트 제목</label>
+              <input
+                type="text"
+                value={newProjectTitle}
+                onChange={(e) => setNewProjectTitle(e.target.value)}
+                placeholder="예: AI 부업 영상"
+                className="w-full rounded-lg border border-gray-200 px-4 py-2.5 outline-none focus:border-brand-pink focus:ring-1 focus:ring-brand-pink"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleCreateNewProject();
+                  }
+                }}
+              />
+            </div>
+            <div className="mt-8 flex gap-3">
+              <button
+                onClick={() => setIsNewProjectModalOpen(false)}
+                className="flex-1 rounded-xl bg-gray-100 py-3 text-sm font-semibold text-gray-600 transition hover:bg-gray-200"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleCreateNewProject}
+                className="flex-1 rounded-xl bg-brand-pink py-3 text-sm font-semibold text-white transition hover:bg-brand-pink-dark shadow-md"
+              >
+                만들기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
