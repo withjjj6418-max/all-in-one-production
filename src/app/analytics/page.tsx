@@ -493,8 +493,8 @@ function CreationTab() {
   const [selectedProjectId, setSelectedProjectId] = useState<string>("none");
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
-  const [selectedStyle, setSelectedStyle] = useState<string>("공감");
-  const [copiedPrompt, setCopiedPrompt] = useState(false);
+  const [selectedStyle, setSelectedStyle] = useState<string>("");
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const styleOptions: any[] = [
     { label: "공감", color: "bg-orange-500" },
@@ -521,7 +521,12 @@ function CreationTab() {
     fetchProjects();
   }, [supabase]);
 
-  const copyPrompt = () => {
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const getPromptString = () => {
     const promptLines = [
       '[소재]',
       '제목: ' + title,
@@ -560,11 +565,39 @@ function CreationTab() {
       '한 문장이 끝나면 반드시 줄바꿈할 것',
       '번호, 기호, 구분선, BGM 지문 없이 대본만 출력할 것'
     ];
+    return promptLines.join('\n');
+  };
 
-    const prompt = promptLines.join('\n');
-    navigator.clipboard.writeText(prompt);
-    setCopiedPrompt(true);
-    setTimeout(() => setCopiedPrompt(false), 2000);
+  const validateInputs = () => {
+    if (!title.trim()) {
+      showToast("제목을 입력해주세요");
+      return false;
+    }
+    if (!summary.trim()) {
+      showToast("줄거리를 입력해주세요");
+      return false;
+    }
+    if (!selectedStyle) {
+      showToast("스타일을 선택해주세요");
+      return false;
+    }
+    return true;
+  };
+
+  const handleSendToGemini = async () => {
+    if (!validateInputs()) return;
+    const prompt = getPromptString();
+    await navigator.clipboard.writeText(prompt);
+    showToast("프롬프트가 복사됐어요! Gemini에 붙여넣기(Ctrl+V) 하세요");
+    window.open('https://gemini.google.com/', '_blank');
+  };
+
+  const handleSendToClaude = async () => {
+    if (!validateInputs()) return;
+    const prompt = getPromptString();
+    await navigator.clipboard.writeText(prompt);
+    showToast("프롬프트가 복사됐어요! Claude에 붙여넣기(Ctrl+V) 하세요");
+    window.open('https://claude.ai/new', '_blank');
   };
 
   return (
@@ -646,25 +679,21 @@ function CreationTab() {
           </div>
         </Card>
 
-        {/* 4. 프롬프트 복사 영역 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <a
-            href="https://gemini.google.com/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-center gap-2 h-14 rounded-xl bg-blue-50 text-blue-700 font-bold border border-blue-200 transition-all hover:bg-blue-100"
-          >
-            <ExternalLink size={18} />
-            Gemini Gems 열기
-          </a>
+        {/* 4. AI 서비스로 보내기 */}
+        <div className="flex flex-col sm:flex-row gap-4">
           <button
-            onClick={copyPrompt}
-            className={`flex items-center justify-center gap-2 h-14 rounded-xl font-bold transition-all shadow-sm text-white ${
-              copiedPrompt ? "bg-green-600" : "bg-gradient-to-r from-brand-olive to-brand-olive-dark hover:shadow-md"
-            }`}
+            onClick={handleSendToGemini}
+            className="flex-1 flex items-center justify-center gap-2 h-14 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold transition-all shadow-sm"
           >
-            {copiedPrompt ? <Check size={18} /> : <Copy size={18} />}
-            {copiedPrompt ? "프롬프트 복사됨!" : "프롬프트 복사"}
+            <span className="text-lg">✨</span>
+            Gemini로 보내기
+          </button>
+          <button
+            onClick={handleSendToClaude}
+            className="flex-1 flex items-center justify-center gap-2 h-14 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold transition-all shadow-sm"
+          >
+            <span className="text-lg">✨</span>
+            Claude로 보내기
           </button>
         </div>
 
@@ -682,6 +711,20 @@ function CreationTab() {
           </Link>
         </div>
       </div>
+
+      {/* 토스트 메시지 UI */}
+      {toastMessage && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4 fade-in">
+          <div className="bg-gray-800 text-white px-6 py-3 rounded-full shadow-lg font-medium text-sm flex items-center gap-2">
+            {toastMessage.includes("입력") || toastMessage.includes("선택") ? (
+              <span className="text-xl">⚠️</span>
+            ) : (
+              <Check size={16} className="text-green-400" />
+            )}
+            {toastMessage}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

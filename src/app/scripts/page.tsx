@@ -17,6 +17,12 @@ export default function ScriptsPage() {
   const [editPoints, setEditPoints] = useState("");
   const [generatedScript, setGeneratedScript] = useState("");
   const [copied, setCopied] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
   
   // 모달
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
@@ -169,6 +175,53 @@ export default function ScriptsPage() {
     reader.readAsText(file);
   };
 
+  const getEditPointPrompt = () => {
+    const promptLines = [
+      '[대본]',
+      generatedScript,
+      '',
+      '[편집점 작성 요청]',
+      '위 대본을 기반으로 영상 편집할 때 참고할 편집점을 작성해주세요.',
+      '[편집점 작성 가이드]',
+      '',
+      '대본의 각 구간(훅, 발단, 전개, 위기, 절정, 결말)별로 편집 지시사항 작성',
+      '각 구간에서 화면 전환, 컷, 자막, 효과, BGM, 효과음 등 구체적인 편집 지시',
+      '감정의 흐름에 맞춰 영상이 흘러가도록',
+      '영상 편집자가 보고 바로 따라 할 수 있을 정도로 구체적으로',
+      '',
+      '[출력 형식]',
+      '',
+      '각 구간을 명확히 구분해서 작성',
+      '시간 단위 또는 구간 단위로 정리',
+      '번호나 구분선 사용 가능 (대본과 달리 가독성 우선)'
+    ];
+    return promptLines.join('\n');
+  };
+
+  const validateScript = () => {
+    if (!generatedScript.trim()) {
+      showToast("먼저 대본을 입력해주세요");
+      return false;
+    }
+    return true;
+  };
+
+  const handleSendToGemini = async () => {
+    if (!validateScript()) return;
+    const prompt = getEditPointPrompt();
+    await navigator.clipboard.writeText(prompt);
+    showToast("프롬프트가 복사됐어요! Gemini에 붙여넣기(Ctrl+V) 하세요");
+    window.open('https://gemini.google.com/', '_blank');
+  };
+
+  const handleSendToClaude = async () => {
+    if (!validateScript()) return;
+    const prompt = getEditPointPrompt();
+    await navigator.clipboard.writeText(prompt);
+    showToast("프롬프트가 복사됐어요! Claude에 붙여넣기(Ctrl+V) 하세요");
+    window.open('https://claude.ai/new', '_blank');
+  };
+
   return (
     <div className="mx-auto max-w-4xl space-y-8 pb-16">
       {/* ── 페이지 제목 ── */}
@@ -273,12 +326,26 @@ export default function ScriptsPage() {
           />
           
           <div className="absolute bottom-4 inset-x-6 flex items-center justify-between pointer-events-none">
-            <button
-              onClick={handleSaveScript}
-              className="pointer-events-auto flex items-center gap-1.5 rounded-lg bg-brand-olive px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-brand-olive-dark hover:shadow-md"
-            >
-              <Save size={16} /> 대본 저장
-            </button>
+            <div className="flex flex-col sm:flex-row gap-2 pointer-events-auto">
+              <button
+                onClick={handleSaveScript}
+                className="flex items-center justify-center gap-1.5 rounded-lg bg-brand-olive px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-brand-olive-dark hover:shadow-md"
+              >
+                <Save size={16} /> 대본 저장
+              </button>
+              <button
+                onClick={handleSendToGemini}
+                className="flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-700 hover:shadow-md"
+              >
+                <span className="text-sm">✨</span> Gemini로 편집점 만들기
+              </button>
+              <button
+                onClick={handleSendToClaude}
+                className="flex items-center justify-center gap-1.5 rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-orange-700 hover:shadow-md"
+              >
+                <span className="text-sm">✨</span> Claude로 편집점 만들기
+              </button>
+            </div>
             <div className="pointer-events-auto flex items-center gap-2 rounded-full bg-brand-cream/80 px-3 py-1 backdrop-blur-sm border border-border/50 shadow-sm">
               <span className="text-[10px] font-bold text-brand-olive uppercase tracking-wider">Words</span>
               <span className="text-xs font-bold text-foreground">{generatedScript.length.toLocaleString()}</span>
@@ -347,6 +414,20 @@ export default function ScriptsPage() {
                 만들기
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 토스트 메시지 UI */}
+      {toastMessage && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4 fade-in">
+          <div className="bg-gray-800 text-white px-6 py-3 rounded-full shadow-lg font-medium text-sm flex items-center gap-2">
+            {toastMessage.includes("먼저 대본을 입력해주세요") ? (
+              <span className="text-xl">⚠️</span>
+            ) : (
+              <Check size={16} className="text-green-400" />
+            )}
+            {toastMessage}
           </div>
         </div>
       )}
