@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import {
   LayoutGrid,
   List,
@@ -12,6 +13,7 @@ import {
   Scissors,
   Trash2,
   Loader2,
+  Edit2,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -61,6 +63,7 @@ const bgColors = ["bg-amber-100", "bg-sky-100", "bg-rose-100", "bg-violet-100", 
    ================================================================ */
 export default function ProjectsPage() {
   const supabase = createClient();
+  const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [sort, setSort] = useState<SortKey>("modified");
@@ -269,7 +272,8 @@ export default function ProjectsPage() {
                 color={bgColors[idx % bgColors.length]}
                 timeAgo={timeAgo}
                 onDelete={handleDelete}
-                onClick={() => openEditModal(project)}
+                onEdit={() => openEditModal(project)}
+                onClick={() => router.push(`/projects/${project.id}`)}
               />
             ) : (
               <ListCard
@@ -278,7 +282,8 @@ export default function ProjectsPage() {
                 color={bgColors[idx % bgColors.length]}
                 timeAgo={timeAgo}
                 onDelete={handleDelete}
-                onClick={() => openEditModal(project)}
+                onEdit={() => openEditModal(project)}
+                onClick={() => router.push(`/projects/${project.id}`)}
               />
             ),
           )}
@@ -398,6 +403,7 @@ function GridCard({
   color,
   timeAgo,
   onDelete,
+  onEdit,
   onClick,
 }: {
   project: Project;
@@ -405,12 +411,13 @@ function GridCard({
   color: string;
   timeAgo: (d: string | null) => string;
   onDelete: (id: number) => void;
+  onEdit: () => void;
   onClick: () => void;
 }) {
   return (
     <div 
       onClick={onClick}
-      className="group cursor-pointer overflow-hidden rounded-xl border border-border bg-white shadow-sm transition-all duration-200 hover:shadow-md"
+      className="group cursor-pointer overflow-hidden rounded-xl border border-border bg-white shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg"
     >
       {/* 썸네일 */}
       <div
@@ -438,20 +445,33 @@ function GridCard({
           </Tag>
         </div>
 
-        {/* 이름 + 삭제 */}
+        {/* 이름 + 버튼 */}
         <div className="flex items-start justify-between">
           <h3 className="line-clamp-1 flex-1 text-base font-bold text-foreground group-hover:text-brand-olive-dark">
             {project.title}
           </h3>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(project.id);
-            }}
-            className="ml-2 rounded-md p-1.5 text-muted-foreground transition hover:bg-rose-50 hover:text-rose-500"
-          >
-            <Trash2 size={16} />
-          </button>
+          <div className="ml-2 flex items-center">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                onEdit();
+              }}
+              className="rounded-md p-1.5 text-muted-foreground transition hover:bg-brand-olive/10 hover:text-brand-olive"
+            >
+              <Edit2 size={16} />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                onDelete(project.id);
+              }}
+              className="rounded-md p-1.5 text-muted-foreground transition hover:bg-rose-50 hover:text-rose-500"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
         </div>
 
         {/* 수정 시간 */}
@@ -467,11 +487,11 @@ function GridCard({
 /* ================================================================
    리스트 카드
    ================================================================ */
-function ListCard({ project, color, timeAgo, onDelete, onClick }: { project: Project; color: string; timeAgo: (d: string | null) => string; onDelete: (id: number) => void; onClick: () => void }) {
+function ListCard({ project, color, timeAgo, onDelete, onEdit, onClick }: { project: Project; color: string; timeAgo: (d: string | null) => string; onDelete: (id: number) => void; onEdit: () => void; onClick: () => void }) {
   return (
     <div 
       onClick={onClick}
-      className="group flex cursor-pointer items-center gap-4 rounded-xl border border-border bg-white p-4 shadow-sm transition-all duration-200 hover:shadow-md"
+      className="group flex cursor-pointer items-center gap-4 rounded-xl border border-border bg-white p-4 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg"
     >
       {/* 썸네일 */}
       <div
@@ -497,16 +517,29 @@ function ListCard({ project, color, timeAgo, onDelete, onClick }: { project: Pro
         <Tag color="muted">{project.progress}%</Tag>
       </div>
 
-      {/* 삭제 버튼 */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete(project.id);
-        }}
-        className="rounded-md p-2 text-muted-foreground transition hover:bg-rose-50 hover:text-rose-500"
-      >
-        <Trash2 size={18} />
-      </button>
+      {/* 액션 버튼 */}
+      <div className="flex shrink-0 items-center gap-1">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            onEdit();
+          }}
+          className="rounded-md p-2 text-muted-foreground transition hover:bg-brand-olive/10 hover:text-brand-olive"
+        >
+          <Edit2 size={18} />
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            onDelete(project.id);
+          }}
+          className="rounded-md p-2 text-muted-foreground transition hover:bg-rose-50 hover:text-rose-500"
+        >
+          <Trash2 size={18} />
+        </button>
+      </div>
     </div>
   );
 }
