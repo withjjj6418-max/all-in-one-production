@@ -274,7 +274,10 @@ export default function SoundStudioPage() {
                 <label className="mb-1 block text-sm font-medium text-gray-700">프로젝트 (선택)</label>
                 <select
                   value={projectId}
-                  onChange={(e) => setProjectId(e.target.value)}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setProjectId(value === "" ? "" : Number(value));
+                  }}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-brand-olive focus:ring-1 focus:ring-brand-olive"
                 >
                   <option value="">독립 라이브러리</option>
