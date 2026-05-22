@@ -29,6 +29,47 @@ export default function ScriptsPage() {
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const [newProjectTitle, setNewProjectTitle] = useState("");
 
+  // 탭 및 전체 대본 모아보기
+  const [activeTab, setActiveTab] = useState<'write' | 'list'>('write');
+  const [allScripts, setAllScripts] = useState<any[]>([]);
+
+  const getRelativeTime = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInMs = now.getTime() - date.getTime();
+    const diffInSec = Math.floor(diffInMs / 1000);
+    const diffInMin = Math.floor(diffInSec / 60);
+    const diffInHour = Math.floor(diffInMin / 60);
+    const diffInDay = Math.floor(diffInHour / 24);
+
+    if (diffInSec < 60) return "방금 전";
+    if (diffInMin < 60) return `${diffInMin}분 전`;
+    if (diffInHour < 24) return `${diffInHour}시간 전`;
+    if (diffInDay === 1) return "어제";
+    if (diffInDay < 7) return `${diffInDay}일 전`;
+    return date.toLocaleDateString();
+  };
+
+  const fetchAllScripts = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    
+    const { data, error } = await supabase.from("scripts")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("updated_at", { ascending: false });
+
+    if (!error && data) {
+      setAllScripts(data);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'list') {
+      fetchAllScripts();
+    }
+  }, [activeTab]);
+
   const fetchProjects = async () => {
     const { data, error } = await supabase.from("projects").select("id, title, status, progress").order("updated_at", { ascending: false });
     if (!error && data) {
@@ -202,11 +243,35 @@ export default function ScriptsPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-8 pb-16">
-      {/* ── 페이지 제목 ── */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold tracking-tight text-foreground">
-          ✍️ 대본 작성
-        </h2>
+      {/* ── 페이지 제목 및 탭 ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <h2 className="text-xl font-bold tracking-tight text-foreground">
+            ✍️ 대본
+          </h2>
+          <div className="flex bg-muted/50 p-1 rounded-lg border border-border">
+            <button
+              onClick={() => setActiveTab('write')}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
+                activeTab === 'write' 
+                  ? 'bg-white text-foreground shadow-sm' 
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              ✏️ 작성
+            </button>
+            <button
+              onClick={() => setActiveTab('list')}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
+                activeTab === 'list' 
+                  ? 'bg-white text-foreground shadow-sm' 
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              📚 모아보기
+            </button>
+          </div>
+        </div>
         
         {/* 리서치/분석 도우미 안내 */}
         <Link 
@@ -216,6 +281,9 @@ export default function ScriptsPage() {
           소재 작성 및 기획은 채널/영상 분석에서 <ArrowRight size={14} />
         </Link>
       </div>
+
+      {activeTab === 'write' ? (
+        <>
 
       {/* ── 작업할 프로젝트 ── */}
       <section>
@@ -357,6 +425,61 @@ export default function ScriptsPage() {
           </div>
         </div>
       </section>
+        </>
+      ) : (
+        <section className="space-y-6 mt-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-foreground">
+              총 {allScripts.length}개의 대본
+            </h3>
+          </div>
+          
+          {allScripts.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center border rounded-xl border-dashed bg-white">
+              <p className="text-muted-foreground text-sm mb-4">아직 저장된 대본이 없어요. 작성 탭에서 첫 대본을 만들어보세요!</p>
+              <button 
+                onClick={() => setActiveTab('write')}
+                className="rounded-lg bg-brand-olive px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-brand-olive-dark"
+              >
+                대본 작성하기
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {allScripts.map(script => {
+                const projectTitle = script.title || projects.find(p => p.id === Number(script.project_id))?.title || "제목 없음";
+                const contentPreview = script.content 
+                  ? (script.content.length > 100 ? script.content.slice(0, 100) + "..." : script.content) 
+                  : "내용 없음";
+
+                return (
+                  <div 
+                    key={script.id}
+                    onClick={() => {
+                      setSelectedProjectId(Number(script.project_id));
+                      setActiveTab('write');
+                    }}
+                    className="group relative flex flex-col rounded-xl border border-border bg-white p-5 shadow-sm transition-all hover:border-brand-olive-light hover:shadow-md cursor-pointer"
+                  >
+                    <h4 className="font-bold text-foreground mb-2 line-clamp-1">{projectTitle}</h4>
+                    <p className="text-xs text-muted-foreground line-clamp-3 mb-4 flex-1 leading-relaxed whitespace-pre-wrap">
+                      {contentPreview}
+                    </p>
+                    <div className="flex items-center justify-between mt-auto pt-4 border-t border-border/50">
+                      <span className="text-[11px] font-medium text-brand-olive bg-brand-olive/10 px-2 py-0.5 rounded-md">
+                        {script.content?.length || 0}자
+                      </span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {getRelativeTime(script.updated_at)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* ── 새 프로젝트 모달 ── */}
       {isNewProjectModalOpen && (
