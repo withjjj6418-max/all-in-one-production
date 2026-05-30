@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Copy, FileUp, ChevronDown, Check, Folder, Save, Scissors, Plus, ArrowRight } from "lucide-react";
+import { Copy, FileUp, ChevronDown, Check, Folder, Save, Scissors, Plus, ArrowRight, Edit2, X } from "lucide-react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { getEditPointsPromptGemini, getEditPointsPromptClaude } from '@/constants/prompts';
@@ -32,6 +32,10 @@ export default function ScriptsPage() {
   // 탭 및 전체 대본 모아보기
   const [activeTab, setActiveTab] = useState<'write' | 'list'>('write');
   const [allScripts, setAllScripts] = useState<any[]>([]);
+
+  // 제목 편집용 state
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editingTitle, setEditingTitle] = useState("");
 
   const getRelativeTime = (dateString: string) => {
     const date = new Date(dateString);
@@ -87,6 +91,7 @@ export default function ScriptsPage() {
   }, []);
 
   useEffect(() => {
+    setIsEditingTitle(false);
     if (!selectedProjectId) {
       setScriptId(null);
       setGeneratedScript("");
@@ -107,6 +112,30 @@ export default function ScriptsPage() {
     };
     fetchScript();
   }, [selectedProjectId]);
+
+  const handleUpdateProjectTitle = async () => {
+    if (!editingTitle.trim()) {
+      alert("프로젝트 이름을 입력해주세요.");
+      return;
+    }
+    if (!selectedProjectId) return;
+
+    const { error } = await supabase
+      .from("projects")
+      .update({ title: editingTitle.trim() })
+      .eq("id", selectedProjectId);
+
+    if (error) {
+      alert("프로젝트 이름 변경 실패");
+      console.error(error);
+    } else {
+      setProjects(prev =>
+        prev.map(p => (p.id === selectedProjectId ? { ...p, title: editingTitle.trim() } : p))
+      );
+      setIsEditingTitle(false);
+      showToast("프로젝트 이름이 변경됐어요");
+    }
+  };
 
   const handleSaveScript = async () => {
     if (!selectedProjectId) {
@@ -324,13 +353,58 @@ export default function ScriptsPage() {
           </div>
 
           {selectedProjectId && (
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               {(() => {
                 const sp = projects.find(p => p.id === selectedProjectId);
                 if (!sp) return null;
                 return (
                   <>
-                    <span className="text-sm font-semibold text-foreground">{sp.title}</span>
+                    {isEditingTitle ? (
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={editingTitle}
+                          onChange={(e) => setEditingTitle(e.target.value)}
+                          className="h-8 rounded-lg border border-border bg-white px-2.5 text-sm font-medium outline-none focus:border-brand-olive focus:ring-1 focus:ring-brand-olive/20"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              handleUpdateProjectTitle();
+                            } else if (e.key === "Escape") {
+                              setIsEditingTitle(false);
+                            }
+                          }}
+                          autoFocus
+                        />
+                        <button
+                          onClick={handleUpdateProjectTitle}
+                          className="p-1.5 rounded-lg border border-brand-olive bg-brand-olive text-white hover:bg-brand-olive-dark transition-colors shadow-sm flex items-center justify-center"
+                          title="저장"
+                        >
+                          <Check size={14} />
+                        </button>
+                        <button
+                          onClick={() => setIsEditingTitle(false)}
+                          className="p-1.5 rounded-lg border border-border bg-white text-muted-foreground hover:bg-muted transition-colors shadow-sm flex items-center justify-center"
+                          title="취소"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm font-semibold text-foreground">{sp.title}</span>
+                        <button
+                          onClick={() => {
+                            setEditingTitle(sp.title);
+                            setIsEditingTitle(true);
+                          }}
+                          className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-all flex items-center justify-center"
+                          title="프로젝트 이름 수정"
+                        >
+                          <Edit2 size={13} />
+                        </button>
+                      </div>
+                    )}
                     <span className="rounded-md bg-brand-olive/10 px-2 py-0.5 text-xs font-medium text-brand-olive-dark">{sp.status === "idea" ? "아이디어" : sp.status || '상태 없음'}</span>
                     <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">{sp.progress}%</span>
                   </>
