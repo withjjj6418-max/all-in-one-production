@@ -25,6 +25,10 @@ export default function SoundStudioPage() {
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // 새 프로젝트 생성용 state
+  const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
+  const [newProjectTitle, setNewProjectTitle] = useState("");
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
@@ -145,6 +149,33 @@ useEffect(() => {
     } else {
       showToast("삭제됐어요");
       fetchData();
+    }
+  };
+
+  const handleCreateNewProject = async () => {
+    if (!newProjectTitle.trim()) {
+      alert("프로젝트 제목을 입력해주세요.");
+      return;
+    }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data, error } = await supabase.from("projects").insert({
+      title: newProjectTitle.trim(),
+      status: "idea",
+      progress: 0,
+      user_id: user.id,
+      updated_at: new Date().toISOString()
+    }).select().single();
+
+    if (error) {
+      alert("프로젝트 생성 실패");
+      console.error(error);
+    } else {
+      setProjects([data, ...projects]);
+      setProjectId(data.id);
+      setIsNewProjectModalOpen(false);
+      setNewProjectTitle("");
     }
   };
 
@@ -294,7 +325,11 @@ useEffect(() => {
                   value={projectId}
                   onChange={(e) => {
                     const value = e.target.value;
-                    setProjectId(value === "" ? "" : Number(value));
+                    if (value === "__new__") {
+                      setIsNewProjectModalOpen(true);
+                    } else {
+                      setProjectId(value === "" ? "" : Number(value));
+                    }
                   }}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-brand-olive focus:ring-1 focus:ring-brand-olive"
                 >
@@ -302,6 +337,7 @@ useEffect(() => {
                   {projects.map((p) => (
                     <option key={p.id} value={p.id}>{p.title}</option>
                   ))}
+                  <option value="__new__">+ 새 프로젝트 만들기</option>
                 </select>
               </div>
 
@@ -350,6 +386,44 @@ useEffect(() => {
                 className="flex-1 rounded-xl bg-brand-olive py-2.5 text-sm font-semibold text-white transition hover:bg-brand-olive-dark shadow-sm"
               >
                 저장
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 새 프로젝트 모달 ── */}
+      {isNewProjectModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-md animate-in fade-in zoom-in duration-200 rounded-2xl bg-white p-6 shadow-2xl">
+            <h2 className="mb-5 text-xl font-bold text-gray-800">새 프로젝트 만들기</h2>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-600">프로젝트 제목</label>
+              <input
+                type="text"
+                value={newProjectTitle}
+                onChange={(e) => setNewProjectTitle(e.target.value)}
+                placeholder="예: AI 부업 영상"
+                className="w-full rounded-lg border border-gray-200 px-4 py-2.5 outline-none focus:border-brand-olive focus:ring-1 focus:ring-brand-olive text-sm"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleCreateNewProject();
+                  }
+                }}
+              />
+            </div>
+            <div className="mt-8 flex gap-3">
+              <button
+                onClick={() => setIsNewProjectModalOpen(false)}
+                className="flex-1 rounded-xl bg-gray-100 py-3 text-sm font-semibold text-gray-600 transition hover:bg-gray-200"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleCreateNewProject}
+                className="flex-1 rounded-xl bg-brand-olive py-3 text-sm font-semibold text-white transition hover:bg-brand-olive-dark shadow-md"
+              >
+                만들기
               </button>
             </div>
           </div>
