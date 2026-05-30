@@ -274,7 +274,7 @@ export default function ProjectDetailPage({
             {!script?.content ? (
               <div className="flex h-32 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-gray-50/50">
                 <p className="mb-2 text-sm font-medium text-muted-foreground">아직 대본이 없어요</p>
-                <Link href="/scripts" className="text-xs font-semibold text-brand-olive hover:text-brand-olive-dark">
+                <Link href={`/scripts?project_id=${projectId}`} className="text-xs font-semibold text-brand-olive hover:text-brand-olive-dark">
                   ✏️ 대본 작성하러 가기
                 </Link>
               </div>
@@ -288,7 +288,7 @@ export default function ProjectDetailPage({
                   <p className="mt-2 text-xs font-medium text-gray-400">총 {script.content.length}자</p>
                 </div>
                 <div className="mt-4 flex justify-end">
-                  <Link href="/scripts" className="text-xs font-semibold text-brand-olive hover:text-brand-olive-dark">
+                  <Link href={`/scripts?project_id=${projectId}`} className="text-xs font-semibold text-brand-olive hover:text-brand-olive-dark">
                     ✏️ 편집하러 가기
                   </Link>
                 </div>
@@ -316,7 +316,7 @@ export default function ProjectDetailPage({
               <div className="flex h-32 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-gray-50/50">
                 <p className="mb-1 text-sm font-medium text-muted-foreground">아직 편집점이 없어요</p>
                 <p className="mb-2 text-[10px] text-gray-400">대본이 먼저 필요합니다</p>
-                <Link href="/scripts" className="text-xs font-semibold text-brand-olive hover:text-brand-olive-dark">
+                <Link href={`/scripts?project_id=${projectId}`} className="text-xs font-semibold text-brand-olive hover:text-brand-olive-dark">
                   ✏️ 대본 작성하러 가기
                 </Link>
               </div>
@@ -329,7 +329,7 @@ export default function ProjectDetailPage({
                   </p>
                 </div>
                 <div className="mt-4 flex justify-end">
-                  <Link href="/scripts" className="text-xs font-semibold text-brand-olive hover:text-brand-olive-dark">
+                  <Link href={`/scripts?project_id=${projectId}`} className="text-xs font-semibold text-brand-olive hover:text-brand-olive-dark">
                     ✏️ 편집하러 가기
                   </Link>
                 </div>
@@ -356,7 +356,7 @@ export default function ProjectDetailPage({
             {sounds.length === 0 ? (
               <div className="flex h-32 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-gray-50/50">
                 <p className="mb-2 text-sm font-medium text-muted-foreground">아직 사운드가 없어요</p>
-                <Link href="/post/sound" className="text-xs font-semibold text-brand-olive hover:text-brand-olive-dark">
+                <Link href={`/post/sound?project_id=${projectId}`} className="text-xs font-semibold text-brand-olive hover:text-brand-olive-dark">
                   + 추가하러 가기
                 </Link>
               </div>
@@ -376,7 +376,7 @@ export default function ProjectDetailPage({
                   )}
                 </ul>
                 <div className="mt-4 flex justify-end">
-                  <Link href="/post/sound" className="text-xs font-semibold text-brand-olive hover:text-brand-olive-dark">
+                  <Link href={`/post/sound?project_id=${projectId}`} className="text-xs font-semibold text-brand-olive hover:text-brand-olive-dark">
                     + 추가하러 가기
                   </Link>
                 </div>
@@ -440,7 +440,7 @@ export default function ProjectDetailPage({
             {edits.length === 0 ? (
               <div className="flex h-32 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-gray-50/50">
                 <p className="mb-2 text-sm font-medium text-muted-foreground">아직 완성 영상이 없어요</p>
-                <Link href="/post/edit" className="text-xs font-semibold text-brand-olive hover:text-brand-olive-dark">
+                <Link href={`/post/edit?project_id=${projectId}`} className="text-xs font-semibold text-brand-olive hover:text-brand-olive-dark">
                   + 추가하러 가기
                 </Link>
               </div>
@@ -467,7 +467,7 @@ export default function ProjectDetailPage({
                   <div className="mt-3 text-center text-xs font-medium text-gray-400">+{edits.length - 3}개의 영상이 더 있습니다</div>
                 )}
                 <div className="mt-4 flex justify-end">
-                  <Link href="/post/edit" className="text-xs font-semibold text-brand-olive hover:text-brand-olive-dark">
+                  <Link href={`/post/edit?project_id=${projectId}`} className="text-xs font-semibold text-brand-olive hover:text-brand-olive-dark">
                     + 추가하러 가기
                   </Link>
                 </div>
