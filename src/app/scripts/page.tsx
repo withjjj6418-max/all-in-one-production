@@ -304,13 +304,21 @@ export default function ScriptsPage() {
           <div className="w-full sm:w-1/2 relative">
              <select
                value={selectedProjectId || ""}
-               onChange={(e) => setSelectedProjectId(Number(e.target.value) || null)}
+               onChange={(e) => {
+                 const val = e.target.value;
+                 if (val === "__new__") {
+                   setIsNewProjectModalOpen(true);
+                 } else {
+                   setSelectedProjectId(Number(val) || null);
+                 }
+               }}
                className="w-full h-10 appearance-none rounded-lg border border-border bg-brand-cream/50 px-3 text-sm outline-none transition-colors focus:border-brand-olive focus:ring-2 focus:ring-brand-olive/20"
              >
                <option value="">프로젝트를 선택하세요...</option>
                {projects.map(p => (
                  <option key={p.id} value={p.id}>{p.title}</option>
                ))}
+               <option value="__new__">+ 새 프로젝트 만들기</option>
              </select>
              <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           </div>
