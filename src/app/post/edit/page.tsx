@@ -52,6 +52,24 @@ export default function EditStudioPage() {
     fetchData();
   }, []);
 
+  // URL에 project_id가 있으면, 그 프로젝트로 새 영상 추가 모달을 자동으로 연다
+  // 예: /post/edit?project_id=5 로 들어오면 5번 프로젝트가 선택된 채로 추가창이 열림
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const pid = params.get("project_id");
+    if (pid) {
+      setIsEditMode(false);
+      setEditingId(null);
+      setTitle("");
+      setProjectId(Number(pid));  // ← URL로 받은 프로젝트를 미리 선택
+      setUrl("");
+      setStatus("done");
+      setDuration("");
+      setMemo("");
+      setIsModalOpen(true);
+    }
+  }, []);
+
   const openAddModal = () => {
     setIsEditMode(false);
     setEditingId(null);
@@ -141,7 +159,7 @@ export default function EditStudioPage() {
   };
 
   const renderStatusBadge = (statusValue: string) => {
-    switch(statusValue) {
+    switch (statusValue) {
       case 'planning': return <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full text-[10px] font-semibold border border-gray-200 uppercase tracking-wider">기획 중</span>;
       case 'in_progress': return <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-[10px] font-semibold border border-blue-200 uppercase tracking-wider">편집 중</span>;
       case 'review': return <span className="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full text-[10px] font-semibold border border-yellow-200 uppercase tracking-wider">검토 중</span>;
@@ -166,7 +184,7 @@ export default function EditStudioPage() {
       <section>
         <h3 className="text-sm font-semibold text-foreground mb-4">외부 도구 허브</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-          <div 
+          <div
             onClick={() => window.open('https://www.capcut.com/', '_blank')}
             className="flex flex-col justify-between p-5 rounded-xl border border-border bg-white shadow-sm hover:shadow-md hover:border-brand-olive-light transition-all cursor-pointer group"
           >
@@ -233,7 +251,7 @@ export default function EditStudioPage() {
                     )}
                   </div>
                 </div>
-                
+
                 <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
                   <button
                     onClick={() => window.open(edit.url, '_blank')}
@@ -267,7 +285,7 @@ export default function EditStudioPage() {
             <h2 className="mb-5 text-xl font-bold text-gray-900">
               {isEditMode ? "영상 편집" : "새 영상 추가"}
             </h2>
-            
+
             <div className="space-y-4">
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">제목 *</label>
@@ -308,7 +326,7 @@ export default function EditStudioPage() {
                     ))}
                   </select>
                 </div>
-                
+
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-700">상태 (선택)</label>
                   <select
