@@ -4,6 +4,13 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Check, ExternalLink } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 function Card({
   children,
@@ -14,9 +21,8 @@ function Card({
 }) {
   return (
     <div
-      className={`rounded-xl border border-border bg-white shadow-sm ${
-        noPadding ? "" : "p-5"
-      }`}
+      className={`rounded-xl border border-border bg-white shadow-sm ${noPadding ? "" : "p-5"
+        }`}
     >
       {children}
     </div>
@@ -31,6 +37,19 @@ function CreationTab() {
   const [summary, setSummary] = useState("");
   const [selectedStyle, setSelectedStyle] = useState<string>("");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // 새 프로젝트 생성을 위한 상태
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [newProjectTitle, setNewProjectTitle] = useState("");
+  const [newProjectMemo, setNewProjectMemo] = useState("");
+  const [prevSelectedProjectId, setPrevSelectedProjectId] = useState<string>("none");
+
+  // 모달이 닫힐 때 만약 드롭다운이 '__create_new__'에 있다면 이전 선택값으로 복원
+  useEffect(() => {
+    if (!isCreateModalOpen && selectedProjectId === "__create_new__") {
+      setSelectedProjectId(prevSelectedProjectId);
+    }
+  }, [isCreateModalOpen, selectedProjectId, prevSelectedProjectId]);
 
   const styleOptions: any[] = [
     { label: "공감", color: "bg-orange-500" },
@@ -87,11 +106,7 @@ function CreationTab() {
       '갑자기 새로운 인물·사건·정보가 절정에서 등장하면 안 됨',
       '',
       '[문장 스타일]',
-      '',
-      '감정을 설명하지 말고 장면으로 보여줄 것',
-      '(예: "슬펐다" 대신 "밥이 잘 안 넘어갔다")',
-      '(예: "걱정됐다" 대신 "손이 떨렸다")',
-      '문장은 짧고 끊어서, 한 문장에 한 감정만',
+
       '구어체 사용 (예: ~했어요, ~더라고요, ~잖아요)',
       '',
       '[출력 형식]',
@@ -102,6 +117,66 @@ function CreationTab() {
       '번호, 기호, 구분선, BGM 지문 없이 대본만 출력할 것'
     ];
     return promptLines.join('\n');
+  };
+
+  const handleCancelCreate = () => {
+    setIsCreateModalOpen(false);
+    setSelectedProjectId(prevSelectedProjectId);
+    setNewProjectTitle("");
+    setNewProjectMemo("");
+  };
+
+  const handleConfirmCreate = async () => {
+    if (!newProjectTitle.trim()) return;
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        showToast("로그인 세션이 만료되었습니다. 다시 로그인해주세요.");
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("projects")
+        .insert({
+          title: newProjectTitle.trim(),
+          memo: newProjectMemo.trim(),
+          status: "idea",
+          progress: 0,
+          updated_at: new Date().toISOString(),
+          user_id: user.id
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error("프로젝트 생성 오류:", error);
+        showToast("프로젝트 생성에 실패했습니다.");
+        return;
+      }
+
+      if (data) {
+        // 프로젝트 리스트 다시 가져오기
+        const { data: fetchedData, error: fetchError } = await supabase
+          .from("projects")
+          .select("id, title")
+          .order("updated_at", { ascending: false });
+
+        if (!fetchError && fetchedData) {
+          setProjects(fetchedData);
+        }
+
+        // 새로 만들어진 프로젝트 자동 선택 및 초기화
+        setSelectedProjectId(String(data.id));
+        setIsCreateModalOpen(false);
+        setNewProjectTitle("");
+        setNewProjectMemo("");
+        showToast("프로젝트가 만들어졌어요!");
+      }
+    } catch (err) {
+      console.error("Error in handleConfirmCreate:", err);
+      showToast("프로젝트 생성 중 오류가 발생했습니다.");
+    }
   };
 
   const validateInputs = () => {
@@ -153,7 +228,15 @@ function CreationTab() {
           <h3 className="text-lg font-bold text-gray-800 mb-4">1. 작업할 프로젝트 선택</h3>
           <select
             value={selectedProjectId}
-            onChange={(e) => setSelectedProjectId(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (val === "__create_new__") {
+                setPrevSelectedProjectId(selectedProjectId);
+                setIsCreateModalOpen(true);
+              } else {
+                setSelectedProjectId(val);
+              }
+            }}
             className="w-full h-11 rounded-lg border border-border bg-white px-4 text-sm outline-none transition-colors focus:border-brand-olive focus:ring-2 focus:ring-brand-olive/20"
           >
             <option value="none">프로젝트 없이 진행</option>
@@ -162,6 +245,8 @@ function CreationTab() {
                 {p.title}
               </option>
             ))}
+            <option disabled>───────────────────────────</option>
+            <option value="__create_new__">➕ 새 프로젝트 만들기</option>
           </select>
         </Card>
 
@@ -200,11 +285,10 @@ function CreationTab() {
               <button
                 key={style.label}
                 onClick={() => setSelectedStyle(style.label)}
-                className={`flex items-center gap-2 p-3 rounded-xl border-2 text-left transition-all ${
-                  selectedStyle === style.label
+                className={`flex items-center gap-2 p-3 rounded-xl border-2 text-left transition-all ${selectedStyle === style.label
                     ? "border-brand-olive bg-brand-olive/5 shadow-sm"
                     : "border-border bg-white hover:border-gray-300 hover:bg-gray-50"
-                }`}
+                  }`}
               >
                 <div className={`w-2.5 h-2.5 shrink-0 rounded-full ${style.color}`} />
                 <span className={`font-bold text-sm truncate ${selectedStyle === style.label ? "text-brand-olive-dark" : "text-gray-800"}`}>
@@ -247,6 +331,54 @@ function CreationTab() {
           </Link>
         </div>
       </div>
+
+      {/* 새 프로젝트 생성 모달 */}
+      <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-gray-800">새 프로젝트 만들기</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                제목 <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={newProjectTitle}
+                onChange={(e) => setNewProjectTitle(e.target.value)}
+                placeholder="제목을 입력하세요"
+                className="w-full h-11 rounded-lg border border-border bg-white px-4 text-sm outline-none transition-colors focus:border-brand-olive focus:ring-2 focus:ring-brand-olive/20"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">메모 (선택)</label>
+              <textarea
+                value={newProjectMemo}
+                onChange={(e) => setNewProjectMemo(e.target.value)}
+                placeholder="메모를 입력하세요"
+                rows={4}
+                className="w-full rounded-lg border border-border bg-white p-4 text-sm outline-none transition-colors focus:border-brand-olive focus:ring-2 focus:ring-brand-olive/20 resize-none"
+              />
+            </div>
+          </div>
+          <DialogFooter className="flex gap-3">
+            <button
+              onClick={handleCancelCreate}
+              className="flex-1 rounded-xl bg-gray-100 py-3 text-sm font-semibold text-gray-600 transition hover:bg-gray-200"
+            >
+              취소
+            </button>
+            <button
+              onClick={handleConfirmCreate}
+              disabled={!newProjectTitle.trim()}
+              className="flex-1 rounded-xl bg-brand-olive py-3 text-sm font-semibold text-white transition hover:bg-brand-olive-dark shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              만들기
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 토스트 메시지 UI */}
       {toastMessage && (
