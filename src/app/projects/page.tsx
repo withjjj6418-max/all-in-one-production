@@ -3,24 +3,19 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
-  LayoutGrid,
-  List,
   Plus,
   FileText,
   Clock,
-  RectangleHorizontal,
-  Smartphone,
-  Scissors,
   Trash2,
   Loader2,
   Edit2,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 /* ─── 타입 ─── */
-type SortKey = "modified" | "name" | "progress";
-type ViewMode = "grid" | "list";
-type CardSize = "sm" | "md" | "lg";
+type SortKey = "updated" | "name" | "progress";
 
 type Project = {
   id: number;
@@ -33,28 +28,10 @@ type Project = {
 
 /* ─── 설정 ─── */
 const sortOptions: { key: SortKey; label: string }[] = [
-  { key: "modified", label: "수정일" },
+  { key: "updated", label: "수정일" },
   { key: "name", label: "이름" },
   { key: "progress", label: "진행도" },
 ];
-
-const cardSizeOptions: { key: CardSize; label: string }[] = [
-  { key: "sm", label: "소" },
-  { key: "md", label: "중" },
-  { key: "lg", label: "대" },
-];
-
-const gridColsMap: Record<CardSize, string> = {
-  sm: "grid-cols-4",
-  md: "grid-cols-3",
-  lg: "grid-cols-2",
-};
-
-const thumbHeightMap: Record<CardSize, string> = {
-  sm: "h-32",
-  md: "h-40",
-  lg: "h-52",
-};
 
 const bgColors = ["bg-amber-100", "bg-sky-100", "bg-rose-100", "bg-violet-100", "bg-emerald-100", "bg-orange-100"];
 
@@ -66,9 +43,8 @@ export default function ProjectsPage() {
   const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sort, setSort] = useState<SortKey>("modified");
-  const [view, setView] = useState<ViewMode>("grid");
-  const [cardSize, setCardSize] = useState<CardSize>("md");
+  const [sortKey, setSortKey] = useState<SortKey>("updated");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   
   // 편집 모달 관련 상태
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -77,18 +53,61 @@ export default function ProjectsPage() {
 
   const fetchProjects = useCallback(async () => {
     setLoading(true);
-    const orderCol = sort === "modified" ? "updated_at" : sort === "name" ? "title" : "progress";
-    const asc = sort === "name";
     const { data, error } = await supabase
       .from("projects")
       .select("id, title, status, progress, memo, updated_at")
-      .order(orderCol, { ascending: asc });
+      .order("updated_at", { ascending: false });
     if (error) console.error("fetch error:", error);
     setProjects(data ?? []);
     setLoading(false);
-  }, [sort]);
+  }, []);
 
   useEffect(() => { fetchProjects(); }, [fetchProjects]);
+
+  const handleSortClick = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(sortDir === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      if (key === "name") {
+        setSortDir("asc");
+      } else {
+        setSortDir("desc");
+      }
+    }
+  };
+
+  const getSortedProjects = () => {
+    const list = [...projects];
+    list.sort((a, b) => {
+      if (sortKey === "progress") {
+        const aIs100 = a.progress === 100;
+        const bIs100 = b.progress === 100;
+        
+        if (aIs100 && !bIs100) return 1;
+        if (!aIs100 && bIs100) return -1;
+        if (aIs100 && bIs100) return 0;
+        
+        const diff = a.progress - b.progress;
+        return sortDir === "asc" ? diff : -diff;
+      }
+      
+      if (sortKey === "name") {
+        const compare = a.title.localeCompare(b.title, "ko");
+        return sortDir === "asc" ? compare : -compare;
+      }
+      
+      if (sortKey === "updated") {
+        const aTime = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+        const bTime = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+        const diff = aTime - bTime;
+        return sortDir === "asc" ? diff : -diff;
+      }
+      
+      return 0;
+    });
+    return list;
+  };
 
   const handleCreate = async () => {
     try {
@@ -190,63 +209,25 @@ export default function ProjectsPage() {
       <div className="mb-5 flex items-center justify-between rounded-xl border border-border bg-white p-3 shadow-sm">
         {/* 왼쪽: 정렬 */}
         <div className="flex items-center gap-1">
-          {sortOptions.map((opt) => (
-            <button
-              key={opt.key}
-              onClick={() => setSort(opt.key)}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-150 ${
-                sort === opt.key
-                  ? "bg-brand-olive text-white"
-                  : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-
-        {/* 오른쪽: 뷰 + 크기 */}
-        <div className="flex items-center gap-3">
-          {/* 카드 크기 */}
-          <div className="flex items-center gap-1 border-r border-border pr-3">
-            {cardSizeOptions.map((opt) => (
+          {sortOptions.map((opt) => {
+            const isActive = sortKey === opt.key;
+            return (
               <button
                 key={opt.key}
-                onClick={() => setCardSize(opt.key)}
-                className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-150 ${
-                  cardSize === opt.key
-                    ? "bg-brand-pink/20 text-brand-olive-dark"
-                    : "text-muted-foreground hover:text-foreground"
+                onClick={() => handleSortClick(opt.key)}
+                className={`flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-150 ${
+                  isActive
+                    ? "bg-brand-olive text-white"
+                    : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"
                 }`}
               >
-                {opt.label}
+                <span>{opt.label}</span>
+                {isActive && (
+                  sortDir === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />
+                )}
               </button>
-            ))}
-          </div>
-
-          {/* 뷰 모드 */}
-          <div className="flex gap-1">
-            <button
-              onClick={() => setView("grid")}
-              className={`rounded-md p-1.5 transition-all duration-150 ${
-                view === "grid"
-                  ? "bg-brand-olive/10 text-brand-olive"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <LayoutGrid size={16} />
-            </button>
-            <button
-              onClick={() => setView("list")}
-              className={`rounded-md p-1.5 transition-all duration-150 ${
-                view === "list"
-                  ? "bg-brand-olive/10 text-brand-olive"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <List size={16} />
-            </button>
-          </div>
+            );
+          })}
         </div>
       </div>
 
@@ -262,31 +243,18 @@ export default function ProjectsPage() {
           <p className="text-xs text-muted-foreground">아래 버튼으로 첫 프로젝트를 만들어보세요!</p>
         </div>
       ) : (
-        <div className={view === "grid" ? `grid gap-6 ${gridColsMap[cardSize]}` : "space-y-4"}>
-          {projects.map((project, idx) =>
-            view === "grid" ? (
-              <GridCard
-                key={project.id}
-                project={project}
-                thumbHeight={thumbHeightMap[cardSize]}
-                color={bgColors[idx % bgColors.length]}
-                timeAgo={timeAgo}
-                onDelete={handleDelete}
-                onEdit={() => openEditModal(project)}
-                onClick={() => router.push(`/projects/${project.id}`)}
-              />
-            ) : (
-              <ListCard
-                key={project.id}
-                project={project}
-                color={bgColors[idx % bgColors.length]}
-                timeAgo={timeAgo}
-                onDelete={handleDelete}
-                onEdit={() => openEditModal(project)}
-                onClick={() => router.push(`/projects/${project.id}`)}
-              />
-            ),
-          )}
+        <div className="space-y-4">
+          {getSortedProjects().map((project, idx) => (
+            <ListCard
+              key={project.id}
+              project={project}
+              color={bgColors[idx % bgColors.length]}
+              timeAgo={timeAgo}
+              onDelete={handleDelete}
+              onEdit={() => openEditModal(project)}
+              onClick={() => router.push(`/projects/${project.id}`)}
+            />
+          ))}
         </div>
       )}
 
@@ -394,95 +362,7 @@ export default function ProjectsPage() {
   );
 }
 
-/* ================================================================
-   그리드 카드
-   ================================================================ */
-function GridCard({
-  project,
-  thumbHeight,
-  color,
-  timeAgo,
-  onDelete,
-  onEdit,
-  onClick,
-}: {
-  project: Project;
-  thumbHeight: string;
-  color: string;
-  timeAgo: (d: string | null) => string;
-  onDelete: (id: number) => void;
-  onEdit: () => void;
-  onClick: () => void;
-}) {
-  return (
-    <div 
-      onClick={onClick}
-      className="group cursor-pointer overflow-hidden rounded-xl border border-border bg-white shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg"
-    >
-      {/* 썸네일 */}
-      <div
-        className={`${thumbHeight} ${color} flex items-center justify-center transition-all duration-200 group-hover:brightness-95`}
-      >
-        <FileText size={32} className="text-muted-foreground/40" />
-      </div>
 
-      {/* 정보 */}
-      <div className="p-4">
-        {/* 태그 */}
-        <div className="mb-2 flex flex-wrap gap-1.5">
-          <Tag color="olive">{project.status ?? "대본"}</Tag>
-          <Tag color="pink">
-            <span className="flex items-center gap-1">
-              <RectangleHorizontal size={11} />
-              정방형
-            </span>
-          </Tag>
-          <Tag color="muted">
-            <span className="flex items-center gap-1">
-              <Scissors size={11} />
-              {project.progress}%
-            </span>
-          </Tag>
-        </div>
-
-        {/* 이름 + 버튼 */}
-        <div className="flex items-start justify-between">
-          <h3 className="line-clamp-1 flex-1 text-base font-bold text-foreground group-hover:text-brand-olive-dark">
-            {project.title}
-          </h3>
-          <div className="ml-2 flex items-center">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                onEdit();
-              }}
-              className="rounded-md p-1.5 text-muted-foreground transition hover:bg-brand-olive/10 hover:text-brand-olive"
-            >
-              <Edit2 size={16} />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                onDelete(project.id);
-              }}
-              className="rounded-md p-1.5 text-muted-foreground transition hover:bg-rose-50 hover:text-rose-500"
-            >
-              <Trash2 size={16} />
-            </button>
-          </div>
-        </div>
-
-        {/* 수정 시간 */}
-        <div className="mt-1.5 flex items-center gap-1 text-xs text-muted-foreground">
-          <Clock size={12} />
-          {timeAgo(project.updated_at)}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /* ================================================================
    리스트 카드
