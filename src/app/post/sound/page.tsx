@@ -47,8 +47,26 @@ export default function SoundStudioPage() {
     if (soundsRes.data) setSounds(soundsRes.data);
   };
 
-  useEffect(() => {
+useEffect(() => {
     fetchData();
+  }, []);
+
+  // URL에 project_id가 있으면, 그 프로젝트로 새 내레이션 추가 모달을 자동으로 연다
+  // 예: /post/sound?project_id=5 로 들어오면 5번 프로젝트가 선택된 채로 추가창이 열림
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const pid = params.get("project_id");
+    if (pid) {
+      // 기존 추가 모달 로직을 그대로 사용하되, 프로젝트만 미리 선택
+      setIsEditMode(false);
+      setEditingId(null);
+      setTitle("");
+      setProjectId(Number(pid));  // ← URL로 받은 프로젝트를 미리 선택
+      setUrl("");
+      setDuration("");
+      setMemo("");
+      setIsModalOpen(true);
+    }
   }, []);
 
   const openAddModal = () => {
