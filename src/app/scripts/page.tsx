@@ -376,11 +376,11 @@ export default function ScriptsPage() {
             value={generatedScript}
             onChange={(e) => setGeneratedScript(e.target.value)}
             placeholder="Gemini Gems 등에서 생성한 대본을 여기에 붙여넣으세요..."
-            className="min-h-[400px] w-full resize-none rounded-xl bg-transparent p-6 text-sm leading-relaxed text-foreground outline-none pb-20"
+            className="w-full flex-1 min-h-[300px] resize-none rounded-t-xl bg-transparent p-6 text-sm leading-relaxed text-foreground outline-none"
           />
           
-          <div className="absolute bottom-4 inset-x-6 flex items-center justify-between pointer-events-none">
-            <div className="flex flex-col sm:flex-row gap-2 pointer-events-auto">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 border-t border-border bg-muted/5 rounded-b-xl">
+            <div className="flex flex-wrap gap-2">
               <button
                 onClick={handleSaveScript}
                 className="flex items-center justify-center gap-1.5 rounded-lg bg-brand-olive px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-brand-olive-dark hover:shadow-md"
@@ -391,16 +391,16 @@ export default function ScriptsPage() {
                 onClick={handleSendToGemini}
                 className="flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-700 hover:shadow-md"
               >
-                <span className="text-sm">✨</span> Gemini로 편집점 만들기
+                <span className="text-sm">⭐</span> 편집점
               </button>
               <button
                 onClick={handleSendToClaude}
                 className="flex items-center justify-center gap-1.5 rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-orange-700 hover:shadow-md"
               >
-                <span className="text-sm">✨</span> Claude로 편집점 만들기
+                <span className="text-sm">☀️</span> 편집점
               </button>
             </div>
-            <div className="pointer-events-auto flex items-center gap-2 rounded-full bg-brand-cream/80 px-3 py-1 backdrop-blur-sm border border-border/50 shadow-sm">
+            <div className="flex items-center gap-2 rounded-full bg-brand-cream/80 px-3 py-1 border border-border/50 shadow-sm self-end sm:self-auto">
               <span className="text-[10px] font-bold text-brand-olive uppercase tracking-wider">Words</span>
               <span className="text-xs font-bold text-foreground">{generatedScript.length.toLocaleString()}</span>
             </div>
@@ -421,12 +421,12 @@ export default function ScriptsPage() {
             value={editPoints}
             onChange={(e) => setEditPoints(e.target.value)}
             placeholder="AI 프롬프트에서 도출된 편집점을 여기에 붙여넣으세요..."
-            className="min-h-[200px] w-full resize-none rounded-xl bg-transparent p-6 text-sm leading-relaxed text-foreground outline-none pb-20"
+            className="w-full flex-1 min-h-[150px] resize-none rounded-t-xl bg-transparent p-6 text-sm leading-relaxed text-foreground outline-none"
           />
-          <div className="absolute bottom-4 left-6 pointer-events-auto">
+          <div className="p-4 border-t border-border bg-muted/5 rounded-b-xl">
             <button
               onClick={handleSaveEditPoints}
-              className="flex items-center gap-1.5 rounded-lg bg-brand-pink px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-brand-pink-dark hover:shadow-md"
+              className="flex items-center justify-center gap-1.5 rounded-lg bg-brand-pink px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-brand-pink-dark hover:shadow-md"
             >
               <Save size={16} /> 편집점 저장
             </button>
