@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Search, Plus, ExternalLink, Trash2, Folder, AlertCircle, Check, X, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Search, Plus, ExternalLink, Trash2, Folder, AlertCircle, Check, X, Loader2, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 interface Source {
@@ -38,6 +38,20 @@ export default function ResearchPage() {
 
   // 카테고리별 페이지 상태
   const [categoryPages, setCategoryPages] = useState<Record<string, number>>({})
+
+  // 카테고리 접힘 상태
+  const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({})
+
+  // 카테고리 접기/펼치기 토글 핸들러
+  const toggleCategoryCollapse = (category: string) => {
+    setCollapsedCategories((prev) => {
+      const currentVal = prev[category] ?? true
+      return {
+        ...prev,
+        [category]: !currentVal,
+      }
+    })
+  }
 
   // 페이지 전환 핸들러
   const handlePageChange = (category: string, page: number) => {
@@ -346,6 +360,14 @@ export default function ResearchPage() {
             // 10개씩 페이징 처리된 리스트 슬라이싱
             const paginatedList = list.slice((activePage - 1) * itemsPerPage, activePage * itemsPerPage)
 
+            // 접힘 여부 상태 (기본값 true로 설정하여 모두 접힘으로 시작)
+            const isSearching = searchQuery.trim() !== ''
+            const isFiltering = selectedCategory !== '전체'
+            const isSearchingOrFiltering = isSearching || isFiltering
+            
+            const isCollapsed = collapsedCategories[categoryName] ?? true
+            const activeCollapsed = isSearchingOrFiltering ? false : isCollapsed
+
             return (
               <div
                 key={categoryName}
@@ -364,10 +386,10 @@ export default function ResearchPage() {
                     </h2>
                   </div>
 
-                  {/* 오른쪽 영역: 페이지네이션 UI 및 +버튼 */}
-                  <div className="flex items-center gap-2 shrink-0 min-w-0">
-                    {/* 페이지네이션 UI (10개 초과 시에만 노출) */}
-                    {totalPages > 1 && (
+                  {/* 오른쪽 영역: 페이지네이션 UI 및 +버튼, V버튼 */}
+                  <div className="flex items-center gap-1.5 shrink-0 min-w-0">
+                    {/* 페이지네이션 UI (10개 초과 시 및 펼쳐진 상태일 때만 노출) */}
+                    {totalPages > 1 && !activeCollapsed && (
                       <div className="flex items-center gap-0.5 flex-wrap shrink-0">
                         <button
                           onClick={() => handlePageChange(categoryName, Math.max(1, activePage - 1))}
@@ -420,71 +442,85 @@ export default function ResearchPage() {
                     >
                       <Plus size={13} className="stroke-[2.5]" />
                     </button>
+
+                    {/* "V" 토글 버튼 (ChevronDown) */}
+                    <button
+                      onClick={() => toggleCategoryCollapse(categoryName)}
+                      className="p-1 rounded text-gray-400 hover:text-[#7C8C4E] hover:bg-gray-200/40 transition shrink-0"
+                      title={activeCollapsed ? `${categoryName} 카테고리 펼치기` : `${categoryName} 카테고리 접기`}
+                    >
+                      <ChevronDown
+                        size={13}
+                        className={`transition-transform duration-200 ${activeCollapsed ? 'rotate-180' : ''}`}
+                      />
+                    </button>
                   </div>
                 </div>
 
-                {/* 소스 리스트 나열 */}
-                <div className="divide-y divide-gray-50">
-                  {paginatedList.map((source) => (
-                    <div
-                      key={source.id}
-                      className="flex items-center justify-between px-4 py-1.5 hover:bg-gray-50/40 transition-colors group gap-3 min-w-0"
-                    >
-                      {/* 제목, 작성자 닉네임 및 메모 정보 영역 (가로 병렬 정렬 구조) */}
-                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                          {/* 닉네임 뱃지 */}
-                          {source.nickname && (
-                            <span 
-                              className="shrink-0 px-1.5 py-0.2 text-[9px] font-bold text-[#7C8C4E] bg-[#7C8C4E]/10 rounded border border-[#7C8C4E]/10 truncate max-w-[70px] sm:max-w-[100px]" 
-                              title={`작성자: ${source.nickname}`}
-                            >
-                              {source.nickname}
-                            </span>
-                          )}
+                {/* 소스 리스트 나열 (펼쳐진 상태에서만 노출) */}
+                {!activeCollapsed && (
+                  <div className="divide-y divide-gray-50 animate-in fade-in slide-in-from-top-1 duration-150">
+                    {paginatedList.map((source) => (
+                      <div
+                        key={source.id}
+                        className="flex items-center justify-between px-4 py-1.5 hover:bg-gray-50/40 transition-colors group gap-3 min-w-0"
+                      >
+                        {/* 제목, 작성자 닉네임 및 메모 정보 영역 (가로 병렬 정렬 구조) */}
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            {/* 닉네임 뱃지 */}
+                            {source.nickname && (
+                              <span 
+                                className="shrink-0 px-1.5 py-0.2 text-[9px] font-bold text-[#7C8C4E] bg-[#7C8C4E]/10 rounded border border-[#7C8C4E]/10 truncate max-w-[70px] sm:max-w-[100px]" 
+                                title={`작성자: ${source.nickname}`}
+                              >
+                                {source.nickname}
+                              </span>
+                            )}
 
-                          {/* 제목 */}
-                          <h3
-                            onClick={() => openEditModal(source)}
-                            className="text-xs sm:text-sm font-semibold text-gray-700 hover:text-[#7C8C4E] hover:underline cursor-pointer truncate shrink-0 max-w-[45%] transition-colors"
-                            title="클릭하여 소스 수정하기"
+                            {/* 제목 */}
+                            <h3
+                              onClick={() => openEditModal(source)}
+                              className="text-xs sm:text-sm font-semibold text-gray-700 hover:text-[#7C8C4E] hover:underline cursor-pointer truncate shrink-0 max-w-[45%] transition-colors"
+                              title="클릭하여 소스 수정하기"
+                            >
+                              {source.title || source.url}
+                            </h3>
+
+                            {/* 메모 */}
+                            {source.memo && (
+                              <span 
+                                className="text-[10px] sm:text-[11px] text-gray-400 truncate font-medium flex-1 min-w-0" 
+                                title={source.memo}
+                              >
+                                {source.memo}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* 액션 버튼 영역 */}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            onClick={() => window.open(source.url, '_blank')}
+                            className="flex items-center gap-0.5 px-2 py-0.5 sm:py-1 rounded-lg border border-gray-200 text-[10px] sm:text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition font-semibold"
+                            title="새 창에서 링크 열기"
                           >
-                            {source.title || source.url}
-                          </h3>
-
-                          {/* 메모 */}
-                          {source.memo && (
-                            <span 
-                              className="text-[10px] sm:text-[11px] text-gray-400 truncate font-medium flex-1 min-w-0" 
-                              title={source.memo}
-                            >
-                              {source.memo}
-                            </span>
-                          )}
+                            <ExternalLink size={10} />
+                            <span className="hidden sm:inline">열기</span>
+                          </button>
+                          <button
+                            onClick={() => handleDeleteSource(source.id)}
+                            className="p-1 rounded-lg border border-transparent text-gray-300 hover:text-red-500 hover:bg-red-50 hover:border-red-100 transition-all md:opacity-0 md:group-hover:opacity-100"
+                            title="소스 삭제"
+                          >
+                            <Trash2 size={12} />
+                          </button>
                         </div>
                       </div>
-
-                      {/* 액션 버튼 영역 */}
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                          onClick={() => window.open(source.url, '_blank')}
-                          className="flex items-center gap-0.5 px-2 py-0.5 sm:py-1 rounded-lg border border-gray-200 text-[10px] sm:text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition font-semibold"
-                          title="새 창에서 링크 열기"
-                        >
-                          <ExternalLink size={10} />
-                          <span className="hidden sm:inline">열기</span>
-                        </button>
-                        <button
-                          onClick={() => handleDeleteSource(source.id)}
-                          className="p-1 rounded-lg border border-transparent text-gray-300 hover:text-red-500 hover:bg-red-50 hover:border-red-100 transition-all md:opacity-0 md:group-hover:opacity-100"
-                          title="소스 삭제"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )
           })}
