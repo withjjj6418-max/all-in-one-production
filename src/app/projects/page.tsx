@@ -371,54 +371,56 @@ function ListCard({ project, color, timeAgo, onDelete, onEdit, onClick }: { proj
   return (
     <div 
       onClick={onClick}
-      className="group flex cursor-pointer items-center gap-4 rounded-xl border border-border bg-white p-4 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg"
+      className="group flex cursor-pointer flex-col gap-3 rounded-xl border border-border bg-white p-4 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg lg:flex-row lg:items-center lg:justify-between lg:gap-4"
     >
-      {/* 썸네일 */}
-      <div
-        className={`${color} flex h-14 w-14 shrink-0 items-center justify-center rounded-lg`}
-      >
-        <FileText size={22} className="text-muted-foreground/40" />
-      </div>
-
-      {/* 이름 + 시간 */}
+      {/* 이름 + PC용 시간 */}
       <div className="min-w-0 flex-1">
         <h3 className="truncate text-sm font-semibold text-foreground group-hover:text-brand-olive-dark">
           {project.title}
         </h3>
-        <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+        <div className="mt-0.5 hidden items-center gap-1 text-xs text-muted-foreground lg:flex">
           <Clock size={12} />
-          {timeAgo(project.updated_at)}
+          <span>{timeAgo(project.updated_at)}</span>
         </div>
       </div>
 
-      {/* 태그 */}
-      <div className="flex shrink-0 gap-1.5">
-        <Tag color="olive">{project.status ?? "대본"}</Tag>
-        <Tag color="muted">{project.progress}%</Tag>
-      </div>
+      {/* 아랫줄 (모바일용 구분선 및 레이아웃 처리, PC는 기존 가로 유지) */}
+      <div className="flex flex-wrap items-center gap-3 border-t border-gray-50 pt-2.5 lg:flex-nowrap lg:border-none lg:pt-0 lg:gap-6 shrink-0">
+        {/* 모바일용 시간 */}
+        <div className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap shrink-0 lg:hidden">
+          <Clock size={12} />
+          <span className="whitespace-nowrap">{timeAgo(project.updated_at)}</span>
+        </div>
 
-      {/* 액션 버튼 */}
-      <div className="flex shrink-0 items-center gap-1">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            onEdit();
-          }}
-          className="rounded-md p-2 text-muted-foreground transition hover:bg-brand-olive/10 hover:text-brand-olive"
-        >
-          <Edit2 size={18} />
-        </button>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            onDelete(project.id);
-          }}
-          className="rounded-md p-2 text-muted-foreground transition hover:bg-rose-50 hover:text-rose-500"
-        >
-          <Trash2 size={18} />
-        </button>
+        {/* 태그 */}
+        <div className="flex shrink-0 gap-1.5">
+          <Tag color="olive">{project.status ?? "대본"}</Tag>
+          <Tag color="muted">{project.progress}%</Tag>
+        </div>
+
+        {/* 액션 버튼 */}
+        <div className="flex shrink-0 items-center gap-1 ml-auto lg:ml-0">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              onEdit();
+            }}
+            className="rounded-md p-2 text-muted-foreground transition hover:bg-brand-olive/10 hover:text-brand-olive"
+          >
+            <Edit2 size={18} />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              onDelete(project.id);
+            }}
+            className="rounded-md p-2 text-muted-foreground transition hover:bg-rose-50 hover:text-rose-500"
+          >
+            <Trash2 size={18} />
+          </button>
+        </div>
       </div>
     </div>
   );
