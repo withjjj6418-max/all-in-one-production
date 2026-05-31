@@ -46,7 +46,7 @@ function ScriptsPageContent() {
   // 카테고리 접기/펼치기 토글 핸들러
   const toggleCategoryCollapse = (category: string) => {
     setCollapsedCategories((prev) => {
-      const currentVal = prev[category] ?? false; // 기본값은 펼쳐진 상태(false)
+      const currentVal = prev[category] ?? true; // 기본값은 접힌 상태(true)
       return {
         ...prev,
         [category]: !currentVal,
@@ -628,7 +628,7 @@ function ScriptsPageContent() {
 
                 return sortedCategories.map(categoryName => {
                   const list = grouped[categoryName];
-                  const activeCollapsed = collapsedCategories[categoryName] ?? false;
+                  const activeCollapsed = collapsedCategories[categoryName] ?? true;
                   
                   // 카테고리별 페이지네이션 계산
                   const activePage = categoryPages[categoryName] ?? 1;

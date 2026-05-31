@@ -56,7 +56,7 @@ export function Sidebar() {
   const [isPostOpen, setIsPostOpen] = useState(isPostProductionActive);
 
   const isScriptsActive = pathname.startsWith("/scripts") || pathname === "/create";
-  const [isScriptsOpen, setIsScriptsOpen] = useState(isScriptsActive);
+  const [isScriptsOpen, setIsScriptsOpen] = useState(true);
 
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
