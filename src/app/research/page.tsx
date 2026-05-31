@@ -400,14 +400,14 @@ export default function ResearchPage() {
                             <div className="flex flex-col sm:flex-row gap-4">
                                 <div className="flex-1">
                                     <label className="text-sm font-medium text-gray-600 mb-2 block">키워드</label>
-                                    <div className="flex gap-2">
+                                    <div className="flex gap-2 w-full">
                                         <input
                                             type="text"
                                             value={keyword}
                                             onChange={e => setKeyword(e.target.value)}
                                             onKeyDown={e => e.key === 'Enter' && handleSearch()}
                                             placeholder="검색할 키워드 입력..."
-                                            className="flex-1 px-4 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-pink-200"
+                                            className="flex-1 min-w-0 px-4 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-pink-200"
                                         />
                                         <button 
                                             onClick={handleSearch}
