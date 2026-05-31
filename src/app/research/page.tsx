@@ -45,6 +45,52 @@ export default function ResearchPage() {
   // 새 카테고리 기입 이름
   const [newCategoryName, setNewCategoryName] = useState('')
 
+  // 카테고리 실시간 수정 상태
+  const [editingCategory, setEditingCategory] = useState<string | null>(null)
+  const [editingCategoryName, setEditingCategoryName] = useState('')
+
+  // 카테고리 수정 핸들러들
+  const startEditCategory = (category: string) => {
+    setEditingCategory(category)
+    setEditingCategoryName(category)
+  }
+
+  const cancelEditCategory = () => {
+    setEditingCategory(null)
+    setEditingCategoryName('')
+  }
+
+  const handleSaveCategoryName = async (originalName: string) => {
+    const newName = editingCategoryName.trim()
+    if (!newName) {
+      alert('카테고리 이름을 입력해 주세요.')
+      return
+    }
+    if (newName === originalName) {
+      cancelEditCategory()
+      return
+    }
+
+    try {
+      const { error } = await supabase
+        .from('research_sources')
+        .update({ category: newName })
+        .eq('category', originalName)
+
+      if (error) {
+        console.error('카테고리 이름 일괄 변경 실패:', error.message)
+        alert(`변경 실패: ${error.message}`)
+      } else {
+        showToast('🏷️ 카테고리 이름이 일괄 변경되었습니다!')
+        fetchSources()
+        cancelEditCategory()
+      }
+    } catch (err) {
+      console.error(err)
+      alert('처리 중 예기치 못한 오류가 발생했습니다.')
+    }
+  }
+
   // 카테고리 접기/펼치기 토글 핸들러
   const toggleCategoryCollapse = (category: string) => {
     setCollapsedCategories((prev) => {
@@ -382,14 +428,52 @@ export default function ResearchPage() {
                 {/* 카테고리 타이틀 바 */}
                 <div className="flex items-center justify-between px-4 py-1.5 bg-gray-50/50 border-b border-gray-100 gap-2 min-w-0">
                   {/* 왼쪽 영역: 아이콘, 카테고리명, 개수 뱃지 */}
-                  <div className="flex items-center gap-1.5 min-w-0 max-w-[40%] sm:max-w-[50%]">
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
                     <Folder size={14} className="text-[#7C8C4E] shrink-0" />
-                    <h2 className="text-xs font-bold text-gray-800 tracking-tight truncate flex items-center gap-1.5 min-w-0">
-                      <span className="truncate">{categoryName}</span>
-                      <span className="shrink-0 px-1.5 py-0.5 text-[9px] font-semibold text-gray-400 bg-gray-200/50 rounded-full">
-                        {list.length}
-                      </span>
-                    </h2>
+                    
+                    {editingCategory === categoryName ? (
+                      /* 수정 모드 */
+                      <div className="flex items-center gap-1 min-w-0 flex-1 max-w-[80%] sm:max-w-[70%]">
+                        <input
+                          type="text"
+                          value={editingCategoryName}
+                          onChange={(e) => setEditingCategoryName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveCategoryName(categoryName)
+                            else if (e.key === 'Escape') cancelEditCategory()
+                          }}
+                          className="px-1.5 py-0.5 rounded border border-gray-300 text-xs focus:outline-none focus:ring-1 focus:ring-[#7C8C4E] focus:border-[#7C8C4E] bg-white font-semibold text-gray-700 min-w-0 flex-1 max-w-[120px] sm:max-w-[200px]"
+                          maxLength={30}
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => handleSaveCategoryName(categoryName)}
+                          className="p-0.5 rounded hover:bg-gray-200 text-green-600 transition shrink-0 cursor-pointer"
+                          title="저장"
+                        >
+                          <Check size={12} className="stroke-[2.5]" />
+                        </button>
+                        <button
+                          onClick={cancelEditCategory}
+                          className="p-0.5 rounded hover:bg-gray-200 text-red-500 transition shrink-0 cursor-pointer"
+                          title="취소"
+                        >
+                          <X size={12} className="stroke-[2.5]" />
+                        </button>
+                      </div>
+                    ) : (
+                      /* 일반 모드 */
+                      <h2 
+                        onClick={() => startEditCategory(categoryName)}
+                        className="text-xs font-bold text-gray-800 tracking-tight truncate flex items-center gap-1.5 min-w-0 hover:text-[#7C8C4E] hover:underline cursor-pointer group/title"
+                        title="클릭하여 카테고리 이름 변경하기"
+                      >
+                        <span className="truncate">{categoryName}</span>
+                        <span className="shrink-0 px-1.5 py-0.5 text-[9px] font-semibold text-gray-400 bg-gray-200/50 rounded-full group-hover/title:bg-[#7C8C4E]/10 group-hover/title:text-[#7C8C4E] transition-colors">
+                          {list.length}
+                        </span>
+                      </h2>
+                    )}
                   </div>
 
                   {/* 오른쪽 영역: 페이지네이션 UI 및 +버튼, V버튼 */}
