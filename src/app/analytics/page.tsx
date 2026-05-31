@@ -29,40 +29,18 @@ import {
 type MainTab = "channel" | "video";
 
 const mainTabs: { key: MainTab; label: string; emoji: string }[] = [
-  { key: "channel", label: "채널 분석", emoji: "📊" },
   { key: "video", label: "영상 분석", emoji: "🎬" },
+  { key: "channel", label: "채널 분석", emoji: "📊" },
 ];
 
 /* ================================================================
    메인 페이지
    ================================================================ */
 export default function AnalyticsPage() {
-  const [activeTab, setActiveTab] = useState<MainTab>("video"); // 영상 분석을 기본으로 설정
-
   return (
-    <div className="-m-8 flex flex-col">
-      {/* ── 다크 탭 바 ── */}
-      <div className="flex items-center gap-1 bg-[#1a1a2e] px-6 py-2">
-        {mainTabs.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={`rounded-lg px-5 py-2.5 text-sm font-medium transition-all duration-200 ${
-              activeTab === tab.key
-                ? "bg-white/15 text-white shadow-sm"
-                : "text-white/50 hover:bg-white/8 hover:text-white/80"
-            }`}
-          >
-            <span className="mr-1.5">{tab.emoji}</span>
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* ── 콘텐츠 영역 ── */}
-      <div className="flex-1 p-6">
-        {activeTab === "channel" && <ChannelAnalysis />}
-        {activeTab === "video" && <VideoAnalysis />}
+    <div className="flex flex-col">
+      <div className="flex-1">
+        <VideoAnalysis />
       </div>
     </div>
   );

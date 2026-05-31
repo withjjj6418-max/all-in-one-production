@@ -24,8 +24,8 @@ import { createClient } from "@/lib/supabase/client";
 
 const mainMenuItems = [
   { label: "프로젝트", href: "/projects", icon: FolderKanban },
-  { label: "리서치", href: "/research", icon: Search },
-  { label: "채널/영상 분석", href: "/analytics", icon: BarChart3 },
+  { label: "소스리서치", href: "/research", icon: Search },
+  { label: "영상 분석", href: "/analytics", icon: BarChart3 },
   { label: "창작", href: "/create", icon: Sparkles },
   { label: "대본작성", href: "/scripts", icon: PenLine },
 ];
