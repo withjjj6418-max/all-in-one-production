@@ -84,6 +84,16 @@ export default function ResearchPage() {
     setIsModalOpen(true)
   }
 
+  // 특정 카테고리를 지정하여 추가 모드 모달 열기
+  const openAddModalWithCategory = (categoryName: string) => {
+    setEditingSourceId(null)
+    setFormCategory(categoryName)
+    setFormTitle('')
+    setFormUrl('')
+    setFormMemo('')
+    setIsModalOpen(true)
+  }
+
   // 수정 모드 모달 열기
   const openEditModal = (source: Source) => {
     setEditingSourceId(source.id)
@@ -286,7 +296,7 @@ export default function ResearchPage() {
           <p className="text-[11px] text-gray-400">검색어나 카테고리 필터를 다시 확인해 보세요.</p>
         </div>
       ) : (
-        /* 그룹핑된 리스트형 게시판 (세로 간격 대폭 조임) */
+        /* 그룹핑된 리스트형 게시판 */
         <div className="space-y-3">
           {sortedCategoryKeys.map((categoryName) => {
             const list = groupedSources[categoryName]
@@ -295,25 +305,34 @@ export default function ResearchPage() {
                 key={categoryName}
                 className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden transition-all hover:shadow-md"
               >
-                {/* 카테고리 타이틀 바 (세로 축소) */}
-                <div className="flex items-center gap-1.5 px-4 py-2 bg-gray-50/50 border-b border-gray-100">
-                  <Folder size={14} className="text-[#7C8C4E]" />
-                  <h2 className="text-xs font-bold text-gray-800 tracking-tight">
-                    {categoryName}
-                    <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-semibold text-gray-400 bg-gray-200/50 rounded-full">
-                      {list.length}
-                    </span>
-                  </h2>
+                {/* 카테고리 타이틀 바 (우측 콤팩트한 플러스 추가 버튼 배치) */}
+                <div className="flex items-center justify-between px-4 py-2 bg-gray-50/50 border-b border-gray-100">
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    <Folder size={14} className="text-[#7C8C4E] shrink-0" />
+                    <h2 className="text-xs font-bold text-gray-800 tracking-tight truncate flex items-center gap-1.5 min-w-0">
+                      <span className="truncate">{categoryName}</span>
+                      <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-semibold text-gray-400 bg-gray-200/50 rounded-full">
+                        {list.length}
+                      </span>
+                    </h2>
+                  </div>
+                  <button
+                    onClick={() => openAddModalWithCategory(categoryName)}
+                    className="p-1 rounded text-gray-400 hover:text-[#7C8C4E] hover:bg-gray-200/40 transition shrink-0 ml-2"
+                    title={`${categoryName} 카테고리에 소스 추가`}
+                  >
+                    <Plus size={13} className="stroke-[2.5]" />
+                  </button>
                 </div>
 
-                {/* 소스 리스트 나열 (세로 패딩 py-1.5로 촘촘하게 축소) */}
+                {/* 소스 리스트 나열 */}
                 <div className="divide-y divide-gray-50">
                   {list.map((source) => (
                     <div
                       key={source.id}
                       className="flex items-center justify-between px-4 py-1.5 hover:bg-gray-50/40 transition-colors group gap-3 min-w-0"
                     >
-                      {/* 제목 및 메모 정보 영역 (한 줄 가로 나열 구조) */}
+                      {/* 제목 및 메모 정보 영역 */}
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
                         <div className="flex items-center gap-2.5 min-w-0 flex-1">
                           <h3
@@ -334,7 +353,7 @@ export default function ResearchPage() {
                         </div>
                       </div>
 
-                      {/* 액션 버튼 영역 (세로 크기 컴팩트화) */}
+                      {/* 액션 버튼 영역 */}
                       <div className="flex items-center gap-1.5 shrink-0">
                         <button
                           onClick={() => window.open(source.url, '_blank')}
