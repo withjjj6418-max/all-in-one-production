@@ -33,8 +33,7 @@ function CreationTab() {
   const supabase = createClient();
   const [projects, setProjects] = useState<any[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("none");
-  const [title, setTitle] = useState("");
-  const [summary, setSummary] = useState("");
+  const [topicContent, setTopicContent] = useState("");
   const [selectedStyle, setSelectedStyle] = useState<string>("");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -84,8 +83,7 @@ function CreationTab() {
   const getPromptString = () => {
     const promptLines = [
       '[소재]',
-      '제목: ' + title,
-      '줄거리: ' + summary,
+      topicContent,
       '[스타일]',
       selectedStyle,
       '[대본 조건] - 전체 낭독 시간 55초 이내',
@@ -180,12 +178,8 @@ function CreationTab() {
   };
 
   const validateInputs = () => {
-    if (!title.trim()) {
-      showToast("제목을 입력해주세요");
-      return false;
-    }
-    if (!summary.trim()) {
-      showToast("줄거리를 입력해주세요");
+    if (!topicContent.trim()) {
+      showToast("소재 내용을 입력해주세요");
       return false;
     }
     if (!selectedStyle) {
@@ -257,49 +251,33 @@ function CreationTab() {
         </Card>
 
         {/* 2. 소재 정하기 */}
-        <Card>
-          <h3 className="text-lg font-bold text-gray-800 mb-4">2. 소재 정하기</h3>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">제목 (가제)</label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="예: 초보자를 위한 주식 투자 가이드"
-                className="w-full h-11 rounded-lg border border-border bg-white px-4 text-sm outline-none transition-colors focus:border-brand-olive focus:ring-2 focus:ring-brand-olive/20"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">줄거리 및 핵심 내용</label>
-              <textarea
-                value={summary}
-                onChange={(e) => setSummary(e.target.value)}
-                placeholder="어떤 내용을 다룰 것인지 간략하게 적어주세요."
-                rows={4}
-                className="w-full rounded-lg border border-border bg-white p-4 text-sm outline-none transition-colors focus:border-brand-olive focus:ring-2 focus:ring-brand-olive/20 resize-none"
-              />
-            </div>
+        <section>
+          <h3 className="text-lg font-bold text-gray-800 mb-3">2. 소재 정하기</h3>
+          <div className="group relative flex min-h-[200px] flex-col rounded-xl border border-border bg-white shadow-sm focus-within:border-brand-olive-light focus-within:ring-2 focus-within:ring-brand-olive/5 transition-all">
+            <textarea
+              value={topicContent}
+              onChange={(e) => setTopicContent(e.target.value)}
+              placeholder="만들고 싶은 콘텐츠의 소재와 내용을 자유롭게 적어주세요.&#10;예) 초보자를 위한 주식 투자 가이드. 쉽고 재밌는 자산 배분 비법을 설명해줘."
+              className="w-full flex-1 min-h-[180px] resize-none bg-transparent p-5 text-sm leading-relaxed text-foreground outline-none border-0"
+            />
           </div>
-        </Card>
+        </section>
 
         {/* 3. 스타일 선택 */}
         <Card>
           <h3 className="text-lg font-bold text-gray-800 mb-4">3. 스타일 선택</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+          <div className="flex flex-wrap gap-2">
             {styleOptions.map((style) => (
               <button
                 key={style.label}
                 onClick={() => setSelectedStyle(style.label)}
-                className={`flex items-center gap-2 p-3 rounded-xl border-2 text-left transition-all ${selectedStyle === style.label
-                    ? "border-brand-olive bg-brand-olive/5 shadow-sm"
-                    : "border-border bg-white hover:border-gray-300 hover:bg-gray-50"
-                  }`}
+                className={`inline-flex items-center justify-center rounded-full px-3.5 py-1.5 text-xs sm:text-sm font-bold border transition-all cursor-pointer select-none ${
+                  selectedStyle === style.label
+                    ? "bg-brand-olive text-white border-brand-olive shadow-sm"
+                    : "bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50/80"
+                }`}
               >
-                <div className={`w-2.5 h-2.5 shrink-0 rounded-full ${style.color}`} />
-                <span className={`font-bold text-sm truncate ${selectedStyle === style.label ? "text-brand-olive-dark" : "text-gray-800"}`}>
-                  {style.label}
-                </span>
+                {style.label}
               </button>
             ))}
           </div>
