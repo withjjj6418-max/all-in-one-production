@@ -362,7 +362,7 @@ export default function ResearchPage() {
     const youtubeItems = items.filter(i => i.type === '유튜브')
 
     return (
-        <div className="p-6 space-y-6">
+        <div className="px-3 py-4 sm:p-6 space-y-6">
             <div className="flex items-center gap-3">
                 <span className="text-2xl">🔍</span>
                 <div>

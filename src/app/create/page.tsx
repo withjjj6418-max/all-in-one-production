@@ -399,7 +399,7 @@ function CreationTab() {
 
 export default function CreatePage() {
   return (
-    <div className="flex-1 p-6">
+    <div className="flex-1 px-3 py-4 sm:p-6">
       <CreationTab />
     </div>
   );
