@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Search, Plus, ExternalLink, Trash2, Folder, AlertCircle, Check, X, Loader2 } from 'lucide-react'
+import { Search, Plus, ExternalLink, Trash2, Folder, AlertCircle, Check, X, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 interface Source {
@@ -35,6 +35,40 @@ export default function ResearchPage() {
   // 유저 정보 및 토스트
   const [userId, setUserId] = useState<string | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
+
+  // 카테고리별 페이지 상태
+  const [categoryPages, setCategoryPages] = useState<Record<string, number>>({})
+
+  // 페이지 전환 핸들러
+  const handlePageChange = (category: string, page: number) => {
+    setCategoryPages((prev) => ({
+      ...prev,
+      [category]: page,
+    }))
+  }
+
+  // 페이지 번호 생성 헬퍼 함수
+  const getPageNumbers = (current: number, total: number) => {
+    const pages: (number | string)[] = []
+    if (total <= 7) {
+      for (let i = 1; i <= total; i++) pages.push(i)
+    } else {
+      pages.push(1)
+      if (current > 3) {
+        pages.push('...')
+      }
+      const start = Math.max(2, current - 1)
+      const end = Math.min(total - 1, current + 1)
+      for (let i = start; i <= end; i++) {
+        pages.push(i)
+      }
+      if (current < total - 2) {
+        pages.push('...')
+      }
+      pages.push(total)
+    }
+    return pages
+  }
 
   const showToast = (msg: string) => {
     setToastMessage(msg)
@@ -299,34 +333,99 @@ export default function ResearchPage() {
         <div className="space-y-3">
           {sortedCategoryKeys.map((categoryName) => {
             const list = groupedSources[categoryName]
+            
+            // 페이지네이션 관련 연산
+            const itemsPerPage = 10
+            const totalItems = list.length
+            const totalPages = Math.ceil(totalItems / itemsPerPage)
+            
+            // 검색 필터 등으로 아이템 개수 급감 시 현재 페이지 보정
+            const currentPage = categoryPages[categoryName] || 1
+            const activePage = Math.min(currentPage, Math.max(1, totalPages))
+            
+            // 10개씩 페이징 처리된 리스트 슬라이싱
+            const paginatedList = list.slice((activePage - 1) * itemsPerPage, activePage * itemsPerPage)
+
             return (
               <div
                 key={categoryName}
                 className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden transition-all hover:shadow-md"
               >
                 {/* 카테고리 타이틀 바 */}
-                <div className="flex items-center justify-between px-4 py-2 bg-gray-50/50 border-b border-gray-100">
-                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                <div className="flex items-center justify-between px-4 py-1.5 bg-gray-50/50 border-b border-gray-100 gap-2 min-w-0">
+                  {/* 왼쪽 영역: 아이콘, 카테고리명, 개수 뱃지 */}
+                  <div className="flex items-center gap-1.5 min-w-0 max-w-[40%] sm:max-w-[50%]">
                     <Folder size={14} className="text-[#7C8C4E] shrink-0" />
                     <h2 className="text-xs font-bold text-gray-800 tracking-tight truncate flex items-center gap-1.5 min-w-0">
                       <span className="truncate">{categoryName}</span>
-                      <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-semibold text-gray-400 bg-gray-200/50 rounded-full">
+                      <span className="shrink-0 px-1.5 py-0.5 text-[9px] font-semibold text-gray-400 bg-gray-200/50 rounded-full">
                         {list.length}
                       </span>
                     </h2>
                   </div>
-                  <button
-                    onClick={() => openAddModalWithCategory(categoryName)}
-                    className="p-1 rounded text-gray-400 hover:text-[#7C8C4E] hover:bg-gray-200/40 transition shrink-0 ml-2"
-                    title={`${categoryName} 카테고리에 소스 추가`}
-                  >
-                    <Plus size={13} className="stroke-[2.5]" />
-                  </button>
+
+                  {/* 오른쪽 영역: 페이지네이션 UI 및 +버튼 */}
+                  <div className="flex items-center gap-2 shrink-0 min-w-0">
+                    {/* 페이지네이션 UI (10개 초과 시에만 노출) */}
+                    {totalPages > 1 && (
+                      <div className="flex items-center gap-0.5 flex-wrap shrink-0">
+                        <button
+                          onClick={() => handlePageChange(categoryName, Math.max(1, activePage - 1))}
+                          disabled={activePage === 1}
+                          className="p-0.5 rounded hover:bg-gray-100 text-gray-400 disabled:opacity-30 disabled:hover:bg-transparent transition cursor-pointer"
+                          title="이전 페이지"
+                        >
+                          <ChevronLeft size={12} />
+                        </button>
+                        
+                        {getPageNumbers(activePage, totalPages).map((p, idx) => {
+                          if (p === '...') {
+                            return (
+                              <span key={`ellipsis-${idx}`} className="px-0.5 text-[9px] sm:text-[10px] text-gray-400">
+                                ...
+                              </span>
+                            )
+                          }
+                          return (
+                            <button
+                              key={`page-${p}`}
+                              onClick={() => handlePageChange(categoryName, p as number)}
+                              className={`px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-bold transition cursor-pointer ${
+                                activePage === p
+                                  ? 'bg-[#7C8C4E]/90 text-white shadow-sm'
+                                  : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                              }`}
+                            >
+                              {p}
+                            </button>
+                          )
+                        })}
+
+                        <button
+                          onClick={() => handlePageChange(categoryName, Math.min(totalPages, activePage + 1))}
+                          disabled={activePage === totalPages}
+                          className="p-0.5 rounded hover:bg-gray-100 text-gray-400 disabled:opacity-30 disabled:hover:bg-transparent transition cursor-pointer"
+                          title="다음 페이지"
+                        >
+                          <ChevronRight size={12} />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* "+" 추가 버튼 */}
+                    <button
+                      onClick={() => openAddModalWithCategory(categoryName)}
+                      className="p-1 rounded text-gray-400 hover:text-[#7C8C4E] hover:bg-gray-200/40 transition shrink-0 ml-1"
+                      title={`${categoryName} 카테고리에 소스 추가`}
+                    >
+                      <Plus size={13} className="stroke-[2.5]" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* 소스 리스트 나열 */}
                 <div className="divide-y divide-gray-50">
-                  {list.map((source) => (
+                  {paginatedList.map((source) => (
                     <div
                       key={source.id}
                       className="flex items-center justify-between px-4 py-1.5 hover:bg-gray-50/40 transition-colors group gap-3 min-w-0"
