@@ -405,16 +405,16 @@ export default function ResearchPage() {
           }}
           className="flex items-center gap-0.5 px-2.5 py-1 rounded-lg border transition cursor-pointer font-semibold bg-white border-gray-200 text-gray-500 hover:bg-gray-50/80 active:bg-gray-100/50 shadow-sm"
         >
-          <span>📁 폴더이름</span>
+          <span>폴더이름</span>
           {categorySort.dir === 'asc' ? <ArrowUp size={10} className="stroke-[2.5]" /> : <ArrowDown size={10} className="stroke-[2.5]" />}
         </button>
 
         {/* 2, 3, 4. 소스이름, 수정일, 작성자 (소스 정렬) */}
         {(
           [
-            { key: 'name', label: '📄 소스이름' },
-            { key: 'date', label: '📅 수정일' },
-            { key: 'author', label: '👤 작성자' },
+            { key: 'name', label: '소스이름' },
+            { key: 'date', label: '수정일' },
+            { key: 'author', label: '작성자' },
           ] as const
         ).map((item) => {
           const isActive = sourceSort.key === item.key
