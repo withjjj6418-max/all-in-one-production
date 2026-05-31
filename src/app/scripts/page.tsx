@@ -529,7 +529,7 @@ export default function ScriptsPage() {
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {allScripts.map(script => {
-                const projectTitle = script.title || projects.find(p => p.id === Number(script.project_id))?.title || "제목 없음";
+                const projectTitle = projects.find(p => p.id === Number(script.project_id))?.title || script.title || "제목 없음";
                 const contentPreview = script.content 
                   ? (script.content.length > 100 ? script.content.slice(0, 100) + "..." : script.content) 
                   : "내용 없음";
