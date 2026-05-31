@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Search, Plus, ExternalLink, Trash2, Folder, AlertCircle, Check, X, Loader2, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react'
+import { Search, Plus, ExternalLink, Trash2, Folder, AlertCircle, Check, X, Loader2, ChevronLeft, ChevronRight, ChevronDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 interface Source {
@@ -38,6 +38,16 @@ export default function ResearchPage() {
 
   // 카테고리별 페이지 상태
   const [categoryPages, setCategoryPages] = useState<Record<string, number>>({})
+
+  // 정렬 상태
+  const [sourceSort, setSourceSort] = useState<{
+    key: 'name' | 'date' | 'author'
+    dir: 'asc' | 'desc'
+  }>({ key: 'date', dir: 'desc' })
+
+  const [categorySort, setCategorySort] = useState<{
+    dir: 'asc' | 'desc'
+  }>({ dir: 'asc' })
 
   // 카테고리 접힘 상태
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({})
@@ -308,10 +318,30 @@ export default function ResearchPage() {
     groupedSources[cat].push(source)
   })
 
-  // 가나다 순으로 카테고리 정렬
-  const sortedCategoryKeys = Object.keys(groupedSources).sort((a, b) =>
-    a.localeCompare(b, 'ko')
-  )
+  // 각 카테고리 내 소스들을 소스 정렬 기준(sourceSort)에 맞춰 복사 정렬
+  Object.keys(groupedSources).forEach((cat) => {
+    groupedSources[cat] = [...groupedSources[cat]].sort((a, b) => {
+      let comparison = 0
+      if (sourceSort.key === 'name') {
+        const titleA = a.title || a.url || ''
+        const titleB = b.title || b.url || ''
+        comparison = titleA.localeCompare(titleB, 'ko')
+      } else if (sourceSort.key === 'date') {
+        comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      } else if (sourceSort.key === 'author') {
+        const authorA = a.nickname || ''
+        const authorB = b.nickname || ''
+        comparison = authorA.localeCompare(authorB, 'ko')
+      }
+      return sourceSort.dir === 'asc' ? comparison : -comparison
+    })
+  })
+
+  // 카테고리 폴더 순서를 카테고리 정렬 기준(categorySort)에 맞춰 정렬 (가나다 고정, 방향 토글)
+  const sortedCategoryKeys = Object.keys(groupedSources).sort((a, b) => {
+    const comparison = a.localeCompare(b, 'ko')
+    return categorySort.dir === 'asc' ? comparison : -comparison
+  })
 
   return (
     <div className="px-3 py-3 sm:p-5 space-y-4 max-w-7xl mx-auto min-w-0">
@@ -362,6 +392,54 @@ export default function ResearchPage() {
             ))}
           </select>
         </div>
+      </div>
+
+      {/* ─── 정렬 컨트롤 영역 (단순 한 줄 버튼 4개) ─── */}
+      <div className="flex items-center gap-1.5 flex-wrap p-1 max-w-2xl text-[11px] sm:text-xs">
+        {/* 1. 폴더이름 (카테고리 폴더 순서 정렬) */}
+        <button
+          onClick={() => {
+            setCategorySort((prev) => ({
+              dir: prev.dir === 'asc' ? 'desc' : 'asc',
+            }))
+          }}
+          className="flex items-center gap-0.5 px-2.5 py-1 rounded-lg border transition cursor-pointer font-semibold bg-white border-gray-200 text-gray-500 hover:bg-gray-50/80 active:bg-gray-100/50 shadow-sm"
+        >
+          <span>📁 폴더이름</span>
+          {categorySort.dir === 'asc' ? <ArrowUp size={10} className="stroke-[2.5]" /> : <ArrowDown size={10} className="stroke-[2.5]" />}
+        </button>
+
+        {/* 2, 3, 4. 소스이름, 수정일, 작성자 (소스 정렬) */}
+        {(
+          [
+            { key: 'name', label: '📄 소스이름' },
+            { key: 'date', label: '📅 수정일' },
+            { key: 'author', label: '👤 작성자' },
+          ] as const
+        ).map((item) => {
+          const isActive = sourceSort.key === item.key
+          return (
+            <button
+              key={item.key}
+              onClick={() => {
+                setSourceSort((prev) => ({
+                  key: item.key,
+                  dir: prev.key === item.key ? (prev.dir === 'asc' ? 'desc' : 'asc') : 'asc',
+                }))
+              }}
+              className={`flex items-center gap-0.5 px-2.5 py-1 rounded-lg border transition cursor-pointer font-semibold shadow-sm ${
+                isActive
+                  ? 'bg-[#7C8C4E]/10 border-[#7C8C4E]/30 text-[#7C8C4E]'
+                  : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50/80 active:bg-gray-100/50'
+              }`}
+            >
+              <span>{item.label}</span>
+              {isActive && (
+                sourceSort.dir === 'asc' ? <ArrowUp size={10} className="stroke-[2.5]" /> : <ArrowDown size={10} className="stroke-[2.5]" />
+              )}
+            </button>
+          )
+        })}
       </div>
 
       {/* ─── 3. 메인 게시판 리스트 영역 ─── */}
