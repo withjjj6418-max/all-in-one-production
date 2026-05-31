@@ -379,7 +379,7 @@ export default function ResearchPage() {
                     { id: 'saved', label: '📌 저장된 자료' },
                 ].map(tab => (
                     <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                        className={`flex-1 py-2 px-4 rounded-xl text-sm font-medium transition ${activeTab === tab.id
+                        className={`flex-1 py-2 px-1 sm:px-4 rounded-xl text-xs sm:text-sm font-medium transition ${activeTab === tab.id
                             ? 'bg-[#7C8C4E] text-white'
                             : 'text-gray-500 hover:bg-gray-50'
                             }`}>
