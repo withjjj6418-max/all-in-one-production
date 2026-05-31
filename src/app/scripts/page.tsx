@@ -335,6 +335,13 @@ function ScriptsPageContent() {
     window.open('https://chatgpt.com/g/g-695fcfe6614081918ecb06724cdef59a-marahagi-gpts-tonghabbon', '_blank');
   };
 
+  const handleSendToEdit = async () => {
+    if (!validateScript()) return;
+    await navigator.clipboard.writeText(generatedScript);
+    showToast("대본이 복사됐어요! Claude 프로젝트에 붙여넣기(Ctrl+V) 하세요");
+    window.open('https://claude.ai/project/019e4e9b-501b-73d7-9f6a-9a479acfce6e', '_blank');
+  };
+
   return (
     <div className="space-y-6 pb-16">
       {/* ── 상단 헤더 ── */}
@@ -493,14 +500,22 @@ function ScriptsPageContent() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 border-t border-border bg-muted/5 rounded-b-xl">
             <div className="flex flex-wrap gap-2">
               <button
+                onClick={handleSendToEdit}
+                style={{ backgroundColor: '#ECA8B8' }}
+                className="flex items-center justify-center gap-1.5 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-md transition-all hover:brightness-95 hover:shadow-lg cursor-pointer"
+              >
+                📝 대본 수정
+              </button>
+              <button
                 onClick={handleSendToReview}
-                className="flex items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-violet-700 hover:shadow-md"
+                style={{ backgroundColor: '#ECA8B8' }}
+                className="flex items-center justify-center gap-1.5 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-md transition-all hover:brightness-95 hover:shadow-lg cursor-pointer"
               >
                 🔍 대본 검수
               </button>
               <button
                 onClick={handleSaveScript}
-                className="flex items-center justify-center gap-1.5 rounded-lg bg-brand-olive px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-brand-olive-dark hover:shadow-md"
+                className="flex items-center justify-center gap-1.5 rounded-xl bg-brand-olive px-4 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-brand-olive-dark hover:shadow-lg cursor-pointer"
               >
                 <Save size={16} /> 대본 저장
               </button>
@@ -530,22 +545,26 @@ function ScriptsPageContent() {
           />
           <div className="p-4 border-t border-border bg-muted/5 rounded-b-xl flex flex-wrap gap-2">
             <button
-              onClick={handleSaveEditPoints}
-              className="flex items-center justify-center gap-1.5 rounded-lg bg-brand-pink px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-brand-pink-dark hover:shadow-md"
-            >
-              <Save size={16} /> 편집점 저장
-            </button>
-            <button
               onClick={handleSendToGemini}
-              className="flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-700 hover:shadow-md"
+              style={{ backgroundColor: '#4A90E2' }}
+              className="flex items-center justify-center gap-1.5 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-md transition-all hover:brightness-95 hover:shadow-lg cursor-pointer"
             >
-              <span className="text-sm">⭐</span> 편집점
+              <img src="/gemini_logo.png" alt="Gemini" className="w-[18px] h-[18px] object-contain shrink-0" />
+              Gemini
             </button>
             <button
               onClick={handleSendToClaude}
-              className="flex items-center justify-center gap-1.5 rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-orange-700 hover:shadow-md"
+              style={{ backgroundColor: '#D36B42' }}
+              className="flex items-center justify-center gap-1.5 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-md transition-all hover:brightness-95 hover:shadow-lg cursor-pointer"
             >
-              <span className="text-sm">☀️</span> 편집점
+              <img src="/claude_logo.png" alt="Claude" className="w-[18px] h-[18px] object-contain shrink-0" />
+              Claude
+            </button>
+            <button
+              onClick={handleSaveEditPoints}
+              className="flex items-center justify-center gap-1.5 rounded-xl bg-brand-olive px-4 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-brand-olive-dark hover:shadow-lg cursor-pointer"
+            >
+              <Save size={16} /> 편집점 저장
             </button>
           </div>
         </div>
