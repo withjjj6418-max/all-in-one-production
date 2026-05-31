@@ -42,6 +42,9 @@ export default function ResearchPage() {
   // 카테고리 접힘 상태
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({})
 
+  // 새 카테고리 기입 이름
+  const [newCategoryName, setNewCategoryName] = useState('')
+
   // 카테고리 접기/펼치기 토글 핸들러
   const toggleCategoryCollapse = (category: string) => {
     setCollapsedCategories((prev) => {
@@ -124,6 +127,7 @@ export default function ResearchPage() {
   const openAddModal = () => {
     setEditingSourceId(null)
     setFormCategory('')
+    setNewCategoryName('')
     setFormTitle('')
     setFormUrl('')
     setFormMemo('')
@@ -134,6 +138,7 @@ export default function ResearchPage() {
   const openAddModalWithCategory = (categoryName: string) => {
     setEditingSourceId(null)
     setFormCategory(categoryName)
+    setNewCategoryName('')
     setFormTitle('')
     setFormUrl('')
     setFormMemo('')
@@ -144,6 +149,7 @@ export default function ResearchPage() {
   const openEditModal = (source: Source) => {
     setEditingSourceId(source.id)
     setFormCategory(source.category || '')
+    setNewCategoryName('')
     setFormTitle(source.title || '')
     setFormUrl(source.url || '')
     setFormMemo(source.memo || '')
@@ -159,7 +165,7 @@ export default function ResearchPage() {
       return
     }
 
-    const finalCategory = formCategory.trim() || '미분류'
+    const finalCategory = (formCategory === '__new__' ? newCategoryName.trim() : formCategory.trim()) || '미분류'
     const finalTitle = formTitle.trim() || null
     const finalMemo = formMemo.trim() || null
 
@@ -548,24 +554,35 @@ export default function ResearchPage() {
             {/* 모달 폼 */}
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               {/* 카테고리 입력 */}
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">
                   카테고리
                 </label>
-                <input
-                  type="text"
-                  list="modal-categories"
+                <select
                   value={formCategory}
                   onChange={(e) => setFormCategory(e.target.value)}
-                  placeholder="예: 요리, 경제, 테크 (비워두면 '미분류')"
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-olive/20 focus:border-[#7C8C4E] transition-all bg-gray-50/30"
-                  maxLength={30}
-                />
-                <datalist id="modal-categories">
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-olive/20 focus:border-[#7C8C4E] transition-all bg-white font-semibold text-gray-700 cursor-pointer"
+                >
+                  <option value="">📁 미분류</option>
                   {uniqueCategories.map((cat) => (
-                    <option key={cat} value={cat} />
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
                   ))}
-                </datalist>
+                  <option value="__new__">➕ + 새 카테고리 추가</option>
+                </select>
+
+                {formCategory === '__new__' && (
+                  <input
+                    type="text"
+                    required
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    placeholder="새로운 카테고리 이름을 입력해 주세요"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-olive/20 focus:border-[#7C8C4E] transition-all bg-gray-50/30 font-semibold text-gray-700 animate-in fade-in slide-in-from-top-1 duration-150"
+                    maxLength={30}
+                  />
+                )}
               </div>
 
               {/* 제목 입력 */}
