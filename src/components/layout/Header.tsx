@@ -19,7 +19,7 @@ export function Header() {
   const title = pageTitles[pathname] ?? "대시보드";
 
   return (
-    <header className="sticky top-0 z-20 flex h-[60px] items-center border-b border-border bg-white/80 px-8 backdrop-blur-sm">
+    <header className="hidden lg:flex sticky top-0 z-20 h-[60px] items-center border-b border-border bg-white/80 px-8 backdrop-blur-sm">
       <h1 className="text-lg font-semibold tracking-tight text-foreground">
         {title}
       </h1>
