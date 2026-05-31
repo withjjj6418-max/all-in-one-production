@@ -271,7 +271,7 @@ export default function ScriptsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-8 pb-16">
+    <div className="space-y-8 pb-16">
       {/* ── 페이지 제목 및 탭 ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
