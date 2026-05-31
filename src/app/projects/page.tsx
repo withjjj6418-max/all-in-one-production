@@ -663,7 +663,7 @@ export default function ProjectsPage() {
 
                 {/* 프로젝트 리스트 나열 (펼쳐진 상태) */}
                 {!activeCollapsed && (
-                  <div className="divide-y divide-gray-50 animate-in fade-in slide-in-from-top-1 duration-150 p-3 space-y-2">
+                  <div className="animate-in fade-in slide-in-from-top-1 duration-150 p-2 space-y-1.5">
                     {paginatedList.map((project, idx) => (
                       <ListCard
                         key={project.id}
@@ -836,7 +836,7 @@ export default function ProjectsPage() {
 }
 
 /* ================================================================
-   기존 프로젝트 카드 컴포넌트 (디자인 유지)
+   기존 프로젝트 카드 컴포넌트 (디자인 유지 - 2줄로 촘촘하게 축소)
    ================================================================ */
 function ListCard({
   project,
@@ -855,56 +855,55 @@ function ListCard({
   return (
     <div 
       onClick={onClick}
-      className="group flex cursor-pointer flex-col gap-3 rounded-xl border border-border bg-white p-4 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg lg:flex-row lg:items-center lg:justify-between lg:gap-4 w-full"
+      className="group flex cursor-pointer items-center justify-between rounded-xl border border-gray-100 bg-white px-3 py-2 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md w-full gap-3"
     >
-      {/* 이름 + PC용 시간 */}
-      <div className="min-w-0 flex-1">
-        <h3 className="truncate text-sm font-semibold text-foreground group-hover:text-brand-olive-dark">
+      {/* 왼쪽 정보 영역: 제목(1째줄) + 서브정보(2째줄) */}
+      <div className="min-w-0 flex-1 flex flex-col gap-1">
+        {/* 1째줄: 제목 */}
+        <h3 className="truncate text-xs sm:text-sm font-semibold text-gray-700 group-hover:text-brand-olive-dark">
           {project.title}
         </h3>
-        <div className="mt-0.5 hidden items-center gap-1 text-xs text-muted-foreground lg:flex">
-          <Clock size={12} />
-          <span>{timeAgo(project.updated_at)}</span>
+        
+        {/* 2째줄: 수정일, 상태, 진행률을 모두 한 줄에 나란히 배치 */}
+        <div className="flex flex-wrap items-center gap-2 text-[10px] sm:text-xs text-muted-foreground">
+          {/* 수정일 */}
+          <div className="flex items-center gap-0.5 whitespace-nowrap shrink-0">
+            <Clock size={10} />
+            <span>{timeAgo(project.updated_at)}</span>
+          </div>
+
+          <span className="text-gray-200 shrink-0 select-none">•</span>
+
+          {/* 태그 (상태 및 진행도) */}
+          <div className="flex items-center gap-1 shrink-0">
+            <Tag color="olive">{project.status ?? "대본"}</Tag>
+            <Tag color="muted">{project.progress}%</Tag>
+          </div>
         </div>
       </div>
 
-      {/* 아랫줄 (모바일용 구분선 및 레이아웃 처리, PC는 기존 가로 유지) */}
-      <div className="flex flex-wrap items-center gap-3 border-t border-gray-50 pt-2.5 lg:flex-nowrap lg:border-none lg:pt-0 lg:gap-6 shrink-0">
-        {/* 모바일용 시간 */}
-        <div className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap shrink-0 lg:hidden">
-          <Clock size={12} />
-          <span className="whitespace-nowrap">{timeAgo(project.updated_at)}</span>
-        </div>
-
-        {/* 태그 */}
-        <div className="flex shrink-0 gap-1.5">
-          <Tag color="olive">{project.status ?? "대본"}</Tag>
-          <Tag color="muted">{project.progress}%</Tag>
-        </div>
-
-        {/* 액션 버튼 */}
-        <div className="flex shrink-0 items-center gap-1 ml-auto lg:ml-0">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              onEdit();
-            }}
-            className="rounded-md p-2 text-muted-foreground transition hover:bg-brand-olive/10 hover:text-brand-olive"
-          >
-            <Edit2 size={18} />
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              onDelete(project.id);
-            }}
-            className="rounded-md p-2 text-muted-foreground transition hover:bg-rose-50 hover:text-rose-500"
-          >
-            <Trash2 size={18} />
-          </button>
-        </div>
+      {/* 오른쪽: 액션 버튼 영역 */}
+      <div className="flex shrink-0 items-center gap-0.5">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            onEdit();
+          }}
+          className="rounded-md p-1 text-muted-foreground transition hover:bg-brand-olive/10 hover:text-brand-olive"
+        >
+          <Edit2 size={14} />
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            onDelete(project.id);
+          }}
+          className="rounded-md p-1 text-muted-foreground transition hover:bg-rose-50 hover:text-rose-500"
+        >
+          <Trash2 size={14} />
+        </button>
       </div>
     </div>
   );
