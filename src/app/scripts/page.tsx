@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, Suspense } from "react";
-import { Copy, FileUp, ChevronDown, Check, Folder, Save, Scissors, Plus, ArrowRight, Edit2, X, Loader2 } from "lucide-react";
+import { Copy, FileUp, ChevronDown, Check, Folder, Save, Scissors, Plus, ArrowRight, Edit2, X, Loader2, ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -13,7 +13,7 @@ function ScriptsPageContent() {
   /* ============================================================
      프로젝트 연동 관련 상태 및 이펙트
      ============================================================ */
-  const [projects, setProjects] = useState<{id: number, title: string, status: string | null, progress: number}[]>([]);
+  const [projects, setProjects] = useState<{id: number, title: string, status: string | null, progress: number, category: string | null}[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [scriptId, setScriptId] = useState<string | null>(null);
   const [editPoints, setEditPoints] = useState("");
@@ -37,6 +37,53 @@ function ScriptsPageContent() {
   // 제목 편집용 state
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editingTitle, setEditingTitle] = useState("");
+
+  // 카테고리 접기/펼치기 및 페이징 상태
+  const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
+  const [categoryPages, setCategoryPages] = useState<Record<string, number>>({});
+  const [categorySort, setCategorySort] = useState<{ dir: 'asc' | 'desc' }>({ dir: 'asc' });
+
+  // 카테고리 접기/펼치기 토글 핸들러
+  const toggleCategoryCollapse = (category: string) => {
+    setCollapsedCategories((prev) => {
+      const currentVal = prev[category] ?? false; // 기본값은 펼쳐진 상태(false)
+      return {
+        ...prev,
+        [category]: !currentVal,
+      };
+    });
+  };
+
+  // 페이지 전환 핸들러
+  const handlePageChange = (category: string, page: number) => {
+    setCategoryPages((prev) => ({
+      ...prev,
+      [category]: page,
+    }));
+  };
+
+  // 페이지 번호 생성 헬퍼 함수
+  const getPageNumbers = (current: number, total: number) => {
+    const pages: (number | string)[] = [];
+    if (total <= 7) {
+      for (let i = 1; i <= total; i++) pages.push(i);
+    } else {
+      pages.push(1);
+      if (current > 3) {
+        pages.push('...');
+      }
+      const start = Math.max(2, current - 1);
+      const end = Math.min(total - 1, current + 1);
+      for (let i = start; i <= end; i++) {
+        pages.push(i);
+      }
+      if (current < total - 2) {
+        pages.push('...');
+      }
+      pages.push(total);
+    }
+    return pages;
+  };
 
   const getRelativeTime = (dateString: string) => {
     const date = new Date(dateString);
@@ -76,7 +123,7 @@ function ScriptsPageContent() {
   }, [activeTab]);
 
   const fetchProjects = async () => {
-    const { data, error } = await supabase.from("projects").select("id, title, status, progress").order("updated_at", { ascending: false });
+    const { data, error } = await supabase.from("projects").select("id, title, status, progress, category").order("updated_at", { ascending: false });
     if (!error && data) {
       setProjects(data);
     }
@@ -281,6 +328,13 @@ function ScriptsPageContent() {
     window.open('https://claude.ai/new', '_blank');
   };
 
+  const handleSendToReview = async () => {
+    if (!validateScript()) return;
+    await navigator.clipboard.writeText(generatedScript);
+    showToast("대본이 복사됐어요! 검수 GPT에 붙여넣기(Ctrl+V) 하세요");
+    window.open('https://chatgpt.com/g/g-695fcfe6614081918ecb06724cdef59a-marahagi-gpts-tonghabbon', '_blank');
+  };
+
   return (
     <div className="space-y-6 pb-16">
       {/* ── 상단 헤더 ── */}
@@ -298,14 +352,6 @@ function ScriptsPageContent() {
             </p>
           </div>
         </div>
-
-        {/* 리서치/분석 도우미 안내 */}
-        <Link 
-          href="/analytics" 
-          className="flex items-center justify-center gap-1.5 rounded-lg border border-border bg-white px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-sm transition-colors hover:border-brand-olive-light hover:text-foreground shrink-0 sm:self-auto self-start"
-        >
-          소재 작성 및 기획은 영상 분석에서 <ArrowRight size={14} />
-        </Link>
       </div>
 
       {activeTab === 'write' ? (
@@ -447,22 +493,16 @@ function ScriptsPageContent() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 border-t border-border bg-muted/5 rounded-b-xl">
             <div className="flex flex-wrap gap-2">
               <button
+                onClick={handleSendToReview}
+                className="flex items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-violet-700 hover:shadow-md"
+              >
+                🔍 대본 검수
+              </button>
+              <button
                 onClick={handleSaveScript}
                 className="flex items-center justify-center gap-1.5 rounded-lg bg-brand-olive px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-brand-olive-dark hover:shadow-md"
               >
                 <Save size={16} /> 대본 저장
-              </button>
-              <button
-                onClick={handleSendToGemini}
-                className="flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-700 hover:shadow-md"
-              >
-                <span className="text-sm">⭐</span> 편집점
-              </button>
-              <button
-                onClick={handleSendToClaude}
-                className="flex items-center justify-center gap-1.5 rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-orange-700 hover:shadow-md"
-              >
-                <span className="text-sm">☀️</span> 편집점
               </button>
             </div>
             <div className="flex items-center gap-2 rounded-full bg-brand-cream/80 px-3 py-1 border border-border/50 shadow-sm self-end sm:self-auto">
@@ -488,12 +528,24 @@ function ScriptsPageContent() {
             placeholder="AI 프롬프트에서 도출된 편집점을 여기에 붙여넣으세요..."
             className="w-full flex-1 min-h-[150px] resize-none rounded-t-xl bg-transparent p-6 text-sm leading-relaxed text-foreground outline-none"
           />
-          <div className="p-4 border-t border-border bg-muted/5 rounded-b-xl">
+          <div className="p-4 border-t border-border bg-muted/5 rounded-b-xl flex flex-wrap gap-2">
             <button
               onClick={handleSaveEditPoints}
               className="flex items-center justify-center gap-1.5 rounded-lg bg-brand-pink px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-brand-pink-dark hover:shadow-md"
             >
               <Save size={16} /> 편집점 저장
+            </button>
+            <button
+              onClick={handleSendToGemini}
+              className="flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-700 hover:shadow-md"
+            >
+              <span className="text-sm">⭐</span> 편집점
+            </button>
+            <button
+              onClick={handleSendToClaude}
+              className="flex items-center justify-center gap-1.5 rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-orange-700 hover:shadow-md"
+            >
+              <span className="text-sm">☀️</span> 편집점
             </button>
           </div>
         </div>
@@ -501,10 +553,22 @@ function ScriptsPageContent() {
         </>
       ) : (
         <section className="space-y-6 mt-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-foreground">
-              총 {allScripts.length}개의 대본
+          {/* 상단 통계 및 카테고리 정렬 바 */}
+          <div className="flex items-center justify-between border-b border-border/50 pb-3">
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <span>📚</span>
+              <span>총 {allScripts.length}개의 대본</span>
             </h3>
+            {allScripts.length > 0 && (
+              <button
+                onClick={() => setCategorySort(prev => ({ dir: prev.dir === 'asc' ? 'desc' : 'asc' }))}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border bg-white text-xs text-muted-foreground hover:text-brand-olive-dark hover:border-brand-olive-light transition-all font-semibold shadow-sm"
+                title="카테고리 가나다 정렬"
+              >
+                <span>정렬</span>
+                {categorySort.dir === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
+              </button>
+            )}
           </div>
           
           {allScripts.length === 0 ? (
@@ -518,37 +582,161 @@ function ScriptsPageContent() {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {allScripts.map(script => {
-                const projectTitle = projects.find(p => p.id === Number(script.project_id))?.title || script.title || "제목 없음";
-                const contentPreview = script.content 
-                  ? (script.content.length > 100 ? script.content.slice(0, 100) + "..." : script.content) 
-                  : "내용 없음";
+            <div className="space-y-6">
+              {(() => {
+                // 1. 카테고리 매핑
+                const scriptsWithCategory = allScripts.map(script => {
+                  const project = projects.find(p => p.id === Number(script.project_id));
+                  const category = project?.category ? project.category.trim() : "미분류";
+                  return { ...script, category };
+                });
 
-                return (
-                  <div 
-                    key={script.id}
-                    onClick={() => {
-                      setSelectedProjectId(Number(script.project_id));
-                      setActiveTab('write');
-                    }}
-                    className="group relative flex flex-col rounded-xl border border-border bg-white p-5 shadow-sm transition-all hover:border-brand-olive-light hover:shadow-md cursor-pointer"
-                  >
-                    <h4 className="font-bold text-foreground mb-2 line-clamp-1">{projectTitle}</h4>
-                    <p className="text-xs text-muted-foreground line-clamp-3 mb-4 flex-1 leading-relaxed whitespace-pre-wrap">
-                      {contentPreview}
-                    </p>
-                    <div className="flex items-center justify-between mt-auto pt-4 border-t border-border/50">
-                      <span className="text-[11px] font-medium text-brand-olive bg-brand-olive/10 px-2 py-0.5 rounded-md">
-                        {script.content?.length || 0}자
-                      </span>
-                      <span className="text-[11px] text-muted-foreground">
-                        {getRelativeTime(script.updated_at)}
-                      </span>
+                // 2. 카테고리별 그룹화
+                const grouped: Record<string, typeof scriptsWithCategory> = {};
+                scriptsWithCategory.forEach(script => {
+                  if (!grouped[script.category]) {
+                    grouped[script.category] = [];
+                  }
+                  grouped[script.category].push(script);
+                });
+
+                // 3. 카테고리 키 정렬
+                const sortedCategories = Object.keys(grouped).sort((a, b) => {
+                  if (a === "미분류") return 1;
+                  if (b === "미분류") return -1;
+                  return categorySort.dir === "asc" ? a.localeCompare(b) : b.localeCompare(a);
+                });
+
+                return sortedCategories.map(categoryName => {
+                  const list = grouped[categoryName];
+                  const activeCollapsed = collapsedCategories[categoryName] ?? false;
+                  
+                  // 카테고리별 페이지네이션 계산
+                  const activePage = categoryPages[categoryName] ?? 1;
+                  const totalPages = Math.ceil(list.length / 10);
+                  const paginatedList = list.slice((activePage - 1) * 10, activePage * 10);
+
+                  return (
+                    <div
+                      key={categoryName}
+                      className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden transition-all hover:shadow-md animate-in fade-in duration-200"
+                    >
+                      {/* 카테고리 폴더 헤더 */}
+                      <div className="flex items-center justify-between px-4 py-3 bg-gray-50/50 border-b border-gray-100 gap-2 min-w-0">
+                        {/* 왼쪽: 폴더 아이콘, 폴더 이름, 개수 뱃지 */}
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <Folder size={16} className="text-brand-olive shrink-0" />
+                          <h4 className="text-sm font-bold text-gray-800 tracking-tight truncate flex items-center gap-2 min-w-0">
+                            <span className="truncate">{categoryName}</span>
+                            <span className="shrink-0 px-2 py-0.5 text-[10px] font-bold text-brand-olive bg-brand-olive/10 rounded-full">
+                              {list.length}
+                            </span>
+                          </h4>
+                        </div>
+
+                        {/* 오른쪽: 카테고리별 페이지네이션 & 접기/펼치기 토글 */}
+                        <div className="flex items-center gap-2 shrink-0 min-w-0">
+                          {/* 카테고리 내 페이지네이션 UI (10개 초과 & 펼쳐진 상태일 때만 노출) */}
+                          {totalPages > 1 && !activeCollapsed && (
+                            <div className="flex items-center gap-1 flex-wrap shrink-0 mr-2">
+                              <button
+                                onClick={() => handlePageChange(categoryName, Math.max(1, activePage - 1))}
+                                disabled={activePage === 1}
+                                className="p-1 rounded hover:bg-gray-100 text-gray-400 disabled:opacity-30 disabled:hover:bg-transparent transition cursor-pointer"
+                                title="이전 페이지"
+                              >
+                                <ChevronLeft size={14} />
+                              </button>
+                              
+                              {getPageNumbers(activePage, totalPages).map((p, idx) => {
+                                if (p === '...') {
+                                  return (
+                                    <span key={`ellipsis-${idx}`} className="px-1 text-[11px] text-gray-400">
+                                      ...
+                                    </span>
+                                  )
+                                }
+                                return (
+                                  <button
+                                    key={`page-${p}`}
+                                    onClick={() => handlePageChange(categoryName, p as number)}
+                                    className={`px-2 py-0.5 rounded text-[11px] font-bold transition cursor-pointer ${
+                                      activePage === p
+                                        ? 'bg-brand-olive text-white shadow-sm'
+                                        : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                                    }`}
+                                  >
+                                    {p}
+                                  </button>
+                                )
+                              })}
+
+                              <button
+                                onClick={() => handlePageChange(categoryName, Math.min(totalPages, activePage + 1))}
+                                disabled={activePage === totalPages}
+                                className="p-1 rounded hover:bg-gray-100 text-gray-400 disabled:opacity-30 disabled:hover:bg-transparent transition cursor-pointer"
+                                title="다음 페이지"
+                              >
+                                <ChevronRight size={14} />
+                              </button>
+                            </div>
+                          )}
+
+                          {/* "V" 토글 버튼 */}
+                          <button
+                            onClick={() => toggleCategoryCollapse(categoryName)}
+                            className="p-1 rounded hover:bg-gray-200/50 text-gray-400 hover:text-brand-olive transition shrink-0"
+                            title={activeCollapsed ? `${categoryName} 펼치기` : `${categoryName} 접기`}
+                          >
+                            <ChevronDown
+                              size={16}
+                              className={`transition-transform duration-200 ${activeCollapsed ? 'rotate-180' : ''}`}
+                            />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 대본 카드 리스트 (펼쳐진 상태에서만 노출) */}
+                      {!activeCollapsed && (
+                        <div className="p-5 bg-transparent border-t-0 animate-in fade-in duration-200">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {paginatedList.map(script => {
+                              const projectTitle = projects.find(p => p.id === Number(script.project_id))?.title || script.title || "제목 없음";
+                              const contentPreview = script.content 
+                                ? (script.content.length > 100 ? script.content.slice(0, 100) + "..." : script.content) 
+                                : "내용 없음";
+
+                              return (
+                                <div 
+                                  key={script.id}
+                                  onClick={() => {
+                                    setSelectedProjectId(Number(script.project_id));
+                                    setActiveTab('write');
+                                  }}
+                                  className="group relative flex flex-col rounded-xl border border-border bg-white p-5 shadow-sm transition-all hover:border-brand-olive-light hover:shadow-md cursor-pointer"
+                                >
+                                  <h4 className="font-bold text-foreground mb-2 line-clamp-1">{projectTitle}</h4>
+                                  <p className="text-xs text-muted-foreground line-clamp-3 mb-4 flex-1 leading-relaxed whitespace-pre-wrap">
+                                    {contentPreview}
+                                  </p>
+                                  <div className="flex items-center justify-between mt-auto pt-4 border-t border-border/50">
+                                    <span className="text-[11px] font-medium text-brand-olive bg-brand-olive/10 px-2 py-0.5 rounded-md">
+                                      {script.content?.length || 0}자
+                                    </span>
+                                    <span className="text-[11px] text-muted-foreground">
+                                      {getRelativeTime(script.updated_at)}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                });
+              })()}
             </div>
           )}
         </section>

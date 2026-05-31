@@ -41,6 +41,16 @@ const supabase = createClient();
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+
+  const [mounted, setMounted] = useState(false);
+  const [currentQuery, setCurrentQuery] = useState("");
+
+  useEffect(() => {
+    setMounted(true);
+    if (typeof window !== "undefined") {
+      setCurrentQuery(window.location.search);
+    }
+  }, [pathname]);
   
   const isPostProductionActive = pathname.startsWith("/post");
   const [isPostOpen, setIsPostOpen] = useState(isPostProductionActive);
@@ -206,9 +216,10 @@ export function Sidebar() {
                 { label: "목록", href: "/scripts?tab=list", icon: FileText },
               ].map((item) => {
                 const isItemActive = item.href.includes("?") 
-                  ? (pathname === item.href.split("?")[0] && typeof window !== "undefined" && window.location.search.includes(item.href.split("?")[1]))
+                  ? (pathname === item.href.split("?")[0] && currentQuery.includes(item.href.split("?")[1]))
                   : (pathname === item.href);
 
+                const showActiveDot = mounted && isItemActive;
                 const Icon = item.icon;
 
                 return (
@@ -216,20 +227,20 @@ export function Sidebar() {
                     key={item.href}
                     href={item.href}
                     onClick={() => setIsMobileOpen(false)}
-                    className={`group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-all duration-200 ${isItemActive
+                    className={`group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-all duration-200 ${showActiveDot
                         ? "bg-brand-pink/15 text-brand-olive-dark"
                         : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"
                       }`}
                   >
                     <Icon
                       size={15}
-                      className={`transition-colors duration-200 ${isItemActive
+                      className={`transition-colors duration-200 ${showActiveDot
                           ? "text-brand-olive"
                           : "text-muted-foreground group-hover:text-brand-olive-light"
                         }`}
                     />
                     <span>{item.label}</span>
-                    {isItemActive && (
+                    {showActiveDot && (
                       <div className="ml-auto h-1.5 w-1.5 rounded-full bg-brand-pink" />
                     )}
                   </Link>
