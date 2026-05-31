@@ -1,900 +1,482 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Search, TrendingUp, BookOpen, ExternalLink, Filter, Play, FileText, Trash2, Loader2, Plus, Tv } from 'lucide-react'
+import { Search, Plus, ExternalLink, Trash2, Folder, AlertCircle, Check, X, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
-/* ─── 헬퍼 함수 ─── */
-
-/**
- * ISO 8601 duration (PT4M13S) -> "4:13" 또는 "1:30:05" 형식
- */
-function formatDuration(iso: string | null | undefined): string {
-    if (!iso) return "";
-    const match = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
-    if (!match) return "";
-    const [, h, m, s] = match.map(v => parseInt(v || "0"));
-    if (h > 0) return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-    return `${m}:${s.toString().padStart(2, "0")}`;
+interface Source {
+  id: number
+  user_id: string
+  category: string
+  title: string | null
+  url: string
+  memo: string | null
+  created_at: string
 }
-
-/**
- * 조회수 한국식 축약 (1.7억회, 5만회 등)
- */
-function formatViewCount(count: number | null | undefined): string {
-    if (count === null || count === undefined) return "0회";
-    if (count >= 100000000) return `${(count / 100000000).toFixed(1)}억회`.replace(".0", "");
-    if (count >= 10000) return `${(count / 10000).toFixed(1)}만회`.replace(".0", "");
-    return `${count.toLocaleString()}회`;
-}
-
-/**
- * 상대 시간 (3개월 전, 2주 전 등)
- */
-function formatRelativeTime(isoDate: string | null | undefined): string {
-    if (!isoDate) return "";
-    const now = new Date();
-    const past = new Date(isoDate);
-    const diff = now.getTime() - past.getTime();
-    
-    const sec = Math.floor(diff / 1000);
-    const min = Math.floor(sec / 60);
-    const hr = Math.floor(min / 60);
-    const day = Math.floor(hr / 24);
-    const month = Math.floor(day / 30);
-    const year = Math.floor(day / 365);
-
-    if (day < 1) return "오늘";
-    if (day < 7) return `${day}일 전`;
-    if (day < 30) return `${Math.floor(day / 7)}주 전`;
-    if (month < 12) return `${month}개월 전`;
-    return `${year}년 전`;
-}
-
-type Research = {
-    id: number
-    title: string
-    type: string | null
-    url: string | null
-    memo: string | null
-    tags: string[] | null
-    thumbnail_url?: string | null
-    channel_name?: string | null
-    channel_id?: string | null
-    view_count?: number | null
-    like_count?: number | null
-    published_at?: string | null
-    duration?: string | null
-}
-
-type SearchVideo = {
-    videoId: string
-    title: string
-    description: string
-    channelName: string
-    channelId: string
-    channelSubscribers: number
-    thumbnailUrl: string
-    publishedAt: string
-    viewCount: number
-    likeCount: number
-    commentCount: number
-    duration: string
-}
-
-const SUBSCRIBER_OPTIONS = [
-    { label: "1만 이하", value: "10000" },
-    { label: "10만 이하", value: "100000" },
-    { label: "100만 이하", value: "1000000" },
-    { label: "제한 없음", value: "" },
-]
-
-const VIEW_OPTIONS = [
-    { label: "1만 이상", value: "10000" },
-    { label: "10만 이상", value: "100000" },
-    { label: "100만 이상", value: "1000000" },
-    { label: "1000만 이상", value: "10000000" },
-    { label: "제한 없음", value: "" },
-]
-
-const PERIOD_OPTIONS = [
-    { label: "1주 이내", value: "7" },
-    { label: "1개월 이내", value: "30" },
-    { label: "3개월 이내", value: "90" },
-    { label: "1년 이내", value: "365" },
-    { label: "전체", value: "" },
-]
 
 export default function ResearchPage() {
-    const supabase = createClient()
-    const [activeTab, setActiveTab] = useState('youtube')
-    const [subscribers, setSubscribers] = useState('')
-    const [views, setViews] = useState('')
-    const [period, setPeriod] = useState('90')
-    const [regionCode, setRegionCode] = useState('KR')
-    const [keyword, setKeyword] = useState('')
+  const supabase = createClient()
+  
+  // 상태 관리
+  const [sources, setSources] = useState<Source[]>([])
+  const [loading, setLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState('전체')
+  
+  // 모달 상태 (추가 및 수정 모드 겸용)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [editingSourceId, setEditingSourceId] = useState<number | null>(null)
+  const [formCategory, setFormCategory] = useState('')
+  const [formTitle, setFormTitle] = useState('')
+  const [formUrl, setFormUrl] = useState('')
+  const [formMemo, setFormMemo] = useState('')
+  
+  // 유저 정보 및 토스트
+  const [userId, setUserId] = useState<string | null>(null)
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
 
-    /* 검색 결과 상태 */
-    const [searchResults, setSearchResults] = useState<SearchVideo[]>([])
-    const [isSearching, setIsSearching] = useState(false)
-    const [hasSearched, setHasSearched] = useState(false)
+  const showToast = (msg: string) => {
+    setToastMessage(msg)
+    setTimeout(() => setToastMessage(null), 3000)
+  }
 
-    /* DB 데이터 */
-    const [items, setItems] = useState<Research[]>([])
-    const [loading, setLoading] = useState(true)
-
-    /* 추가 모달 상태 */
-    const [isModalOpen, setIsModalOpen] = useState(false)
-    const [fetchLoading, setFetchLoading] = useState(false)
-    
-    /* 폼 상태 */
-    const [newUrl, setNewUrl] = useState('')
-    const [newTitle, setNewTitle] = useState('')
-    const [newMemo, setNewMemo] = useState('')
-    const [newTags, setNewTags] = useState('')
-    
-    /* YouTube 메타데이터 상태 */
-    const [ytData, setYtData] = useState<{
-        thumbnailUrl: string;
-        channelName: string;
-        channelId: string;
-        viewCount: number;
-        likeCount: number;
-        publishedAt: string;
-        duration: string;
-    } | null>(null)
-
-    const fetchItems = useCallback(async () => {
-        setLoading(true)
-        const { data, error } = await supabase.from('research').select('*').order('id', { ascending: false })
-        if (error) console.error("fetch error:", error.message);
-        setItems(data ?? [])
+  // 데이터 조회
+  const fetchSources = useCallback(async () => {
+    setLoading(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        setSources([])
         setLoading(false)
-    }, [])
+        return
+      }
+      setUserId(user.id)
+      
+      const { data, error } = await supabase
+        .from('research_sources')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
 
-    useEffect(() => { fetchItems() }, [fetchItems])
+      if (error) {
+        console.error('소스 조회 중 오류 발생:', error.message)
+      } else {
+        setSources(data || [])
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
+  }, [supabase])
 
-    /* 저장 (유튜브 리서치 → 저장 버튼, NotebookLM → 저장 버튼) */
-    const handleSave = async (title: string, type: string, opts?: { url?: string; memo?: string; tags?: string[] }) => {
-        try {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) {
-                alert('로그인 세션이 만료되었습니다. 다시 로그인해주세요.');
-                window.location.href = '/login';
-                return;
-            }
+  useEffect(() => {
+    fetchSources()
+  }, [fetchSources])
 
-            const { error } = await supabase.from('research').insert({
-                title,
-                type,
-                url: opts?.url ?? null,
-                memo: opts?.memo ?? null,
-                tags: opts?.tags ?? null,
-                user_id: user.id
-            })
-            if (!error) fetchItems()
-        } catch (err) {
-            console.error("Error in handleSave:", err);
-        }
+  // 추가 모드 모달 열기
+  const openAddModal = () => {
+    setEditingSourceId(null)
+    setFormCategory('')
+    setFormTitle('')
+    setFormUrl('')
+    setFormMemo('')
+    setIsModalOpen(true)
+  }
+
+  // 수정 모드 모달 열기
+  const openEditModal = (source: Source) => {
+    setEditingSourceId(source.id)
+    setFormCategory(source.category || '')
+    setFormTitle(source.title || '')
+    setFormUrl(source.url || '')
+    setFormMemo(source.memo || '')
+    setIsModalOpen(true)
+  }
+
+  // 폼 제출 (추가 또는 수정 처리)
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    if (!formUrl.trim()) {
+      alert('링크 URL은 필수 입력 항목입니다.')
+      return
     }
 
-    const handleDelete = async (id: number) => {
-        const { error } = await supabase.from('research').delete().eq('id', id)
-        if (!error) fetchItems()
-    }
+    const finalCategory = formCategory.trim() || '미분류'
+    const finalTitle = formTitle.trim() || null
+    const finalMemo = formMemo.trim() || null
 
-    /* 유튜브 검색 실행 */
-    const handleSearch = async () => {
-        if (!keyword.trim()) {
-            alert("키워드를 입력해주세요")
-            return
+    try {
+      if (editingSourceId) {
+        // 수정 모드
+        const { error } = await supabase
+          .from('research_sources')
+          .update({
+            category: finalCategory,
+            title: finalTitle,
+            url: formUrl.trim(),
+            memo: finalMemo
+          })
+          .eq('id', editingSourceId)
+
+        if (error) {
+          alert(`소스 수정 실패: ${error.message}`)
+        } else {
+          showToast('✏️ 소스가 정상적으로 수정되었습니다!')
+          setIsModalOpen(false)
+          fetchSources()
         }
-        setIsSearching(true)
-        setHasSearched(true)
-        try {
-            const params = new URLSearchParams()
-            params.set('q', keyword)
-            if (subscribers) params.set('maxSubscribers', subscribers)
-            if (views) params.set('minViews', views)
-            if (period) params.set('periodDays', period)
-            if (regionCode && regionCode !== 'WORLD') params.set('regionCode', regionCode)
-
-            const res = await fetch(`/api/youtube/search?${params}`)
-            const data = await res.json()
-            if (data.success) {
-                setSearchResults(data.data)
-            } else {
-                alert(`검색 실패: ${data.error}`)
-            }
-        } catch (err) {
-            console.error(err)
-            alert("검색 중 오류가 발생했습니다")
-        } finally {
-            setIsSearching(false)
-        }
-    }
-
-    /* 검색 결과 저장 */
-    const handleSaveSearchResult = async (video: SearchVideo) => {
-        const videoUrl = `https://www.youtube.com/watch?v=${video.videoId}`
-        
-        // 중복 체크
-        const isAlreadySaved = items.some(item => item.url === videoUrl)
-        if (isAlreadySaved) return;
-
-        try {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) {
-                alert('로그인 세션이 만료되었습니다. 다시 로그인해주세요.');
-                window.location.href = '/login';
-                return;
-            }
-
-            const { error } = await supabase.from('research').insert({
-                title: video.title,
-                type: '유튜브',
-                url: videoUrl,
-                memo: '',
-                tags: [],
-                thumbnail_url: video.thumbnailUrl,
-                channel_name: video.channelName,
-                channel_id: video.channelId,
-                view_count: video.viewCount,
-                like_count: video.likeCount,
-                published_at: video.publishedAt,
-                duration: video.duration,
-                user_id: user.id
-            })
-
-            if (!error) {
-                alert("리서치에 저장됐어요")
-                fetchItems()
-            } else {
-                alert(`저장 실패: ${error.message}`)
-            }
-        } catch (err) {
-            console.error("Error in handleSaveSearchResult:", err);
-        }
-    }
-
-    /* NotebookLM 상태 */
-    const [noteMemo, setNoteMemo] = useState('')
-    const [noteTitle, setNoteTitle] = useState('')
-    const [noteTags, setNoteTags] = useState('')
-
-    const handleSaveNote = async () => {
-        if (!noteTitle) return
-        const tagsArray = noteTags.split(',').map(t => t.trim()).filter(t => t.length > 0)
-        await handleSave(noteTitle, 'NotebookLM', {
-            memo: noteMemo,
-            tags: tagsArray,
+      } else {
+        // 추가 모드
+        const { error } = await supabase.from('research_sources').insert({
+          user_id: userId,
+          category: finalCategory,
+          title: finalTitle,
+          url: formUrl.trim(),
+          memo: finalMemo
         })
-        setNoteTitle('')
-        setNoteMemo('')
-        setNoteTags('')
-    }
 
-    /* YouTube 정보 가져오기 */
-    const fetchYouTubeData = async () => {
-        if (!newUrl) return
-        setFetchLoading(true)
-        try {
-            const response = await fetch(`/api/youtube?url=${encodeURIComponent(newUrl)}`)
-            const result = await response.json()
-            
-            if (result.success) {
-                const data = result.data
-                setNewTitle(data.title)
-                setYtData({
-                    thumbnailUrl: data.thumbnailUrl,
-                    channelName: data.channelName,
-                    channelId: data.channelId,
-                    viewCount: data.viewCount,
-                    likeCount: data.likeCount,
-                    publishedAt: data.publishedAt,
-                    duration: data.duration
-                })
-            } else {
-                alert(`영상 정보를 가져올 수 없습니다: ${result.error}`)
-            }
-        } catch (error) {
-            console.error("Fetch Error:", error)
-            alert("서버에 연결할 수 없습니다.")
-        } finally {
-            setFetchLoading(false)
+        if (error) {
+          alert(`소스 추가 실패: ${error.message}`)
+        } else {
+          showToast('🎉 새로운 소스가 안전하게 저장되었습니다!')
+          setIsModalOpen(false)
+          fetchSources()
         }
+      }
+    } catch (err) {
+      console.error(err)
+      alert('처리 중 예측하지 못한 오류가 발생했습니다.')
     }
+  }
 
-    const handleSaveYouTube = async () => {
-        if (!newTitle) return
-        
-        const tagsArray = newTags.split(',').map(t => t.trim()).filter(t => t.length > 0)
-        
-        try {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) {
-                alert('로그인 세션이 만료되었습니다. 다시 로그인해주세요.');
-                window.location.href = '/login';
-                return;
-            }
+  // 소스 삭제
+  const handleDeleteSource = async (id: number) => {
+    if (!window.confirm('정말로 이 소스를 삭제하시겠습니까?')) return
 
-            const { error } = await supabase.from('research').insert({
-                title: newTitle,
-                type: '유튜브',
-                url: newUrl,
-                memo: newMemo,
-                tags: tagsArray,
-                thumbnail_url: ytData?.thumbnailUrl ?? null,
-                channel_name: ytData?.channelName ?? null,
-                channel_id: ytData?.channelId ?? null,
-                view_count: ytData?.viewCount ?? null,
-                like_count: ytData?.likeCount ?? null,
-                published_at: ytData?.publishedAt ?? null,
-                duration: ytData?.duration ?? null,
-                user_id: user.id
-            })
+    try {
+      const { error } = await supabase
+        .from('research_sources')
+        .delete()
+        .eq('id', id)
 
-            if (!error) {
-                fetchItems()
-                setIsModalOpen(false)
-                // 폼 초기화
-                setNewUrl('')
-                setNewTitle('')
-                setNewMemo('')
-                setNewTags('')
-                setYtData(null)
-            } else {
-                alert(`저장 실패: ${error.message}`)
-            }
-        } catch (err) {
-            console.error("Error in handleSaveYouTube:", err);
-        }
+      if (error) {
+        alert(`삭제 실패: ${error.message}`)
+      } else {
+        showToast('🗑️ 소스가 삭제되었습니다.')
+        fetchSources()
+      }
+    } catch (err) {
+      console.error(err)
     }
+  }
 
-    const formatDate = (id: number) => {
-        // id가 타임스탬프인 경우를 가정하거나, 현재 날짜 반환
-        return new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\. /g, '.').replace('.', '')
+  // 중복 없는 카테고리 목록 추출
+  const uniqueCategories = Array.from(
+    new Set(sources.map((s) => s.category || '미분류'))
+  ).sort((a, b) => a.localeCompare(b, 'ko'))
+
+  // 클라이언트 측 검색 및 카테고리 필터링
+  const filteredSources = sources.filter((source) => {
+    const titleMatch = source.title?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false
+    const urlMatch = source.url.toLowerCase().includes(searchQuery.toLowerCase())
+    const memoMatch = source.memo?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false
+    const keywordMatch = searchQuery === '' || titleMatch || urlMatch || memoMatch
+
+    const categoryMatch = selectedCategory === '전체' || (source.category || '미분류') === selectedCategory
+
+    return keywordMatch && categoryMatch
+  })
+
+  // 필터링된 결과를 카테고리별로 그룹화
+  const groupedSources: { [key: string]: Source[] } = {}
+  filteredSources.forEach((source) => {
+    const cat = source.category || '미분류'
+    if (!groupedSources[cat]) {
+      groupedSources[cat] = []
     }
+    groupedSources[cat].push(source)
+  })
 
-    /* 필터 */
-    const savedItems = items
-    const notebookItems = items.filter(i => i.type === 'NotebookLM')
-    const youtubeItems = items.filter(i => i.type === '유튜브')
+  // 가나다 순으로 카테고리 정렬
+  const sortedCategoryKeys = Object.keys(groupedSources).sort((a, b) =>
+    a.localeCompare(b, 'ko')
+  )
 
-    return (
-        <div className="px-3 py-4 sm:p-6 space-y-6">
-            <div className="flex items-center gap-3">
-                <span className="text-2xl">🔍</span>
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-800">리서치</h1>
-                    <p className="text-sm text-gray-500">레퍼런스 영상 탐색 및 자료 수집</p>
-                </div>
-            </div>
-
-            {/* 탭 */}
-            <div className="flex gap-2 bg-white rounded-2xl p-2 shadow-sm border border-gray-100">
-                {[
-                    { id: 'youtube', label: '🎬 유튜브 리서치' },
-                    { id: 'notebook', label: '📓 NotebookLM' },
-                    { id: 'saved', label: '📌 저장된 자료' },
-                ].map(tab => (
-                    <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                        className={`flex-1 py-2 px-1 sm:px-4 rounded-xl text-xs sm:text-sm font-medium transition ${activeTab === tab.id
-                            ? 'bg-[#7C8C4E] text-white'
-                            : 'text-gray-500 hover:bg-gray-50'
-                            }`}>
-                        {tab.label}
-                    </button>
-                ))}
-            </div>
-
-            {/* 유튜브 리서치 탭 */}
-            {activeTab === 'youtube' && (
-                <div className="space-y-4">
-                    <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-                        <h2 className="font-semibold text-gray-700 mb-4 flex items-center gap-2">
-                            <Filter size={16} />
-                            검색 필터
-                        </h2>
-                        <div className="space-y-4">
-                            <div className="flex flex-col sm:flex-row gap-4">
-                                <div className="flex-1">
-                                    <label className="text-sm font-medium text-gray-600 mb-2 block">키워드</label>
-                                    <div className="flex gap-2 w-full">
-                                        <input
-                                            type="text"
-                                            value={keyword}
-                                            onChange={e => setKeyword(e.target.value)}
-                                            onKeyDown={e => e.key === 'Enter' && handleSearch()}
-                                            placeholder="검색할 키워드 입력..."
-                                            className="flex-1 min-w-0 px-4 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-pink-200"
-                                        />
-                                        <button 
-                                            onClick={handleSearch}
-                                            disabled={isSearching}
-                                            aria-label="검색"
-                                            className="px-4 py-2 bg-[#F2A8B8] text-white rounded-xl hover:opacity-90 transition disabled:opacity-50 flex items-center justify-center shrink-0"
-                                        >
-                                            {isSearching ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
-                                        </button>
-                                    </div>
-                                </div>
-                                <div className="sm:w-48">
-                                    <label className="text-sm font-medium text-gray-600 mb-2 block">언어/지역</label>
-                                    <div className="flex p-1 bg-gray-100 rounded-xl">
-                                        {[
-                                            { id: 'KR', label: '한국' },
-                                            { id: 'WORLD', label: '전세계' }
-                                        ].map(opt => (
-                                            <button 
-                                                key={opt.id}
-                                                onClick={() => setRegionCode(opt.id)}
-                                                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition ${
-                                                    regionCode === opt.id 
-                                                    ? 'bg-white text-gray-800 shadow-sm' 
-                                                    : 'text-gray-400 hover:text-gray-600'
-                                                }`}
-                                            >
-                                                {opt.label}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                <div>
-                                    <label className="text-sm font-medium text-gray-600 mb-2 block">
-                                        최대 구독자 수
-                                    </label>
-                                    <select
-                                        value={subscribers}
-                                        onChange={e => setSubscribers(e.target.value)}
-                                        className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-pink-200">
-                                        {SUBSCRIBER_OPTIONS.map(opt => (
-                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="text-sm font-medium text-gray-600 mb-2 block">
-                                        최소 조회수
-                                    </label>
-                                    <select
-                                        value={views}
-                                        onChange={e => setViews(e.target.value)}
-                                        className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-pink-200">
-                                        {VIEW_OPTIONS.map(opt => (
-                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="text-sm font-medium text-gray-600 mb-2 block">
-                                        업로드 기간
-                                    </label>
-                                    <select
-                                        value={period}
-                                        onChange={e => setPeriod(e.target.value)}
-                                        className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-pink-200">
-                                        {PERIOD_OPTIONS.map(opt => (
-                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* 유튜브 검색 결과 */}
-                    {hasSearched && (
-                        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-                            <h2 className="font-semibold text-gray-700 mb-4 flex items-center gap-2">
-                                <Search size={16} />
-                                🔍 검색 결과 ({searchResults.length}개)
-                            </h2>
-                            
-                            {isSearching ? (
-                                <div className="flex flex-col items-center justify-center py-12 gap-3">
-                                    <Loader2 size={32} className="animate-spin text-pink-400" />
-                                    <p className="text-sm text-gray-500 font-medium">유튜브에서 영상을 찾고 있어요...</p>
-                                </div>
-                            ) : searchResults.length === 0 ? (
-                                <div className="text-center py-12">
-                                    <p className="text-sm text-gray-400">조건에 맞는 영상이 없어요. 필터를 완화해보세요.</p>
-                                </div>
-                            ) : (
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                                    {searchResults.map(video => {
-                                        const videoUrl = `https://www.youtube.com/watch?v=${video.videoId}`
-                                        const isAlreadySaved = items.some(item => item.url === videoUrl)
-                                        
-                                        return (
-                                            <div key={video.videoId} className="group flex flex-col bg-white rounded-2xl overflow-hidden border border-gray-100 hover:shadow-md transition-all duration-200">
-                                                <div className="relative aspect-video bg-gray-200 overflow-hidden cursor-pointer"
-                                                    onClick={() => window.open(videoUrl, '_blank')}>
-                                                    <img 
-                                                        src={video.thumbnailUrl} 
-                                                        alt={video.title} 
-                                                        className="w-full h-full object-cover transition duration-300 group-hover:brightness-75"
-                                                    />
-                                                    <div className="absolute bottom-2 right-2 bg-black/80 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
-                                                        {formatDuration(video.duration)}
-                                                    </div>
-                                                </div>
-                                                <div className="p-4 flex flex-col flex-1">
-                                                    <h3 className="text-sm font-bold text-gray-800 line-clamp-2 leading-snug cursor-pointer hover:text-[#7C8C4E]"
-                                                        onClick={() => window.open(videoUrl, '_blank')}>
-                                                        {video.title}
-                                                    </h3>
-                                                    <div className="mt-2 flex flex-col gap-1">
-                                                        <p className="text-xs text-gray-500 flex items-center gap-1">
-                                                            <Tv size={12} className="text-gray-400" />
-                                                            {video.channelName} (구독자 {formatViewCount(video.channelSubscribers)})
-                                                        </p>
-                                                        <p className="text-[11px] text-gray-400 flex items-center gap-1">
-                                                            {formatViewCount(video.viewCount)} · {formatRelativeTime(video.publishedAt)}
-                                                        </p>
-                                                    </div>
-                                                    <div className="mt-4 pt-3 border-t border-gray-50 flex justify-end">
-                                                        <button 
-                                                            onClick={() => handleSaveSearchResult(video)}
-                                                            disabled={isAlreadySaved}
-                                                            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold transition ${
-                                                                isAlreadySaved 
-                                                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
-                                                                : 'bg-[#7C8C4E] text-white hover:opacity-90'
-                                                            }`}
-                                                        >
-                                                            {isAlreadySaved ? '저장됨' : <><Plus size={14} /> 저장</>}
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )
-                                    })}
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {/* 저장된 유튜브 자료 */}
-                    <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-                        <div className="flex items-center justify-between mb-4">
-                            <h2 className="font-semibold text-gray-700 flex items-center gap-2">
-                                <TrendingUp size={16} />
-                                저장된 유튜브 리서치
-                            </h2>
-                            <button
-                                onClick={() => setIsModalOpen(true)}
-                                className="flex items-center gap-1 px-3 py-1.5 text-xs bg-[#7C8C4E] text-white rounded-lg hover:opacity-90 transition"
-                            >
-                                <Plus size={12} /> 직접 추가
-                            </button>
-                        </div>
-                        {loading ? (
-                            <div className="flex justify-center py-8">
-                                <Loader2 size={20} className="animate-spin text-pink-400" />
-                            </div>
-                        ) : youtubeItems.length === 0 ? (
-                            <p className="text-sm text-gray-400 text-center py-8">저장된 유튜브 리서치가 없습니다.</p>
-                        ) : (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                                {youtubeItems.map(item => (
-                                    <div key={item.id} className="group flex flex-col bg-white rounded-2xl overflow-hidden border border-gray-100 hover:shadow-md transition-all duration-200">
-                                        {/* 썸네일 영역 */}
-                                        <div className="relative aspect-video bg-gray-200 overflow-hidden cursor-pointer">
-                                            {item.thumbnail_url ? (
-                                                <img 
-                                                    src={item.thumbnail_url} 
-                                                    alt={item.title} 
-                                                    className="w-full h-full object-cover transition duration-300 group-hover:brightness-75"
-                                                    onClick={() => item.url && window.open(item.url, '_blank')}
-                                                />
-                                            ) : (
-                                                <div className="w-full h-full flex items-center justify-center text-gray-400">
-                                                    <Play size={24} />
-                                                </div>
-                                            )}
-                                            {item.duration && (
-                                                <div className="absolute bottom-2 right-2 bg-black/80 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
-                                                    {formatDuration(item.duration)}
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* 정보 영역 */}
-                                        <div className="p-4 flex flex-col flex-1">
-                                            <h3 
-                                                className="text-sm font-bold text-gray-800 line-clamp-2 leading-snug cursor-pointer hover:text-[#7C8C4E]"
-                                                onClick={() => item.url && window.open(item.url, '_blank')}
-                                            >
-                                                {item.title}
-                                            </h3>
-                                            
-                                            <div className="mt-2 flex flex-col gap-1">
-                                                <p className="text-xs text-gray-500 flex items-center gap-1">
-                                                    <Tv size={12} className="text-gray-400" />
-                                                    {item.channel_name || "알 수 없는 채널"}
-                                                </p>
-                                                <p className="text-[11px] text-gray-400 flex items-center gap-1">
-                                                    {formatViewCount(item.view_count)} · {formatRelativeTime(item.published_at)}
-                                                </p>
-                                            </div>
-
-                                            {item.memo && (
-                                                <div className="mt-3 py-2 px-3 bg-gray-50 rounded-lg border border-gray-50">
-                                                    <p className="text-[11px] text-gray-500 line-clamp-1 italic">
-                                                        ✏️ {item.memo}
-                                                    </p>
-                                                </div>
-                                            )}
-
-                                            {Array.isArray(item.tags) && item.tags.length > 0 && (
-                                                <div className="mt-3 flex gap-1 overflow-x-auto pb-1 no-scrollbar">
-                                                    {item.tags.map(tag => (
-                                                        <span key={tag} className="flex-shrink-0 text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium border border-gray-200/50">
-                                                            #{tag}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            )}
-
-                                            <div className="mt-auto pt-3 flex justify-end">
-                                                <button 
-                                                    onClick={() => handleDelete(item.id)}
-                                                    className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
-                                                >
-                                                    <Trash2 size={14} />
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
-
-            {/* NotebookLM 탭 */}
-            {activeTab === 'notebook' && (
-                <div className="space-y-4">
-                    <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-                        <div className="flex items-center justify-between mb-4">
-                            <h2 className="font-semibold text-gray-700 flex items-center gap-2">
-                                <BookOpen size={16} />
-                                NotebookLM 연동
-                            </h2>
-                            <a href="https://notebooklm.google.com" target="_blank" rel="noopener noreferrer"
-                                className="flex items-center gap-1 text-xs text-[#7C8C4E] font-medium hover:underline">
-                                <ExternalLink size={12} />
-                                NotebookLM 열기
-                            </a>
-                        </div>
-                        <div className="space-y-3">
-                            <input
-                                type="text"
-                                value={noteTitle}
-                                onChange={e => setNoteTitle(e.target.value)}
-                                placeholder="제목"
-                                className="w-full px-4 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-pink-200"
-                            />
-                            <textarea
-                                value={noteMemo}
-                                onChange={e => setNoteMemo(e.target.value)}
-                                className="w-full h-40 p-4 rounded-xl border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-pink-200"
-                                placeholder="NotebookLM에서 정리한 내용을 붙여넣으세요..."
-                            />
-                            <input
-                                type="text"
-                                value={noteTags}
-                                onChange={e => setNoteTags(e.target.value)}
-                                placeholder="태그 (쉼표 구분, 예: 지정학, 석유, 경제)"
-                                className="w-full px-4 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-pink-200"
-                            />
-                        </div>
-                        <div className="flex gap-2 mt-3">
-                            <button onClick={handleSaveNote}
-                                className="px-4 py-2 bg-[#F2A8B8] text-white rounded-xl text-sm font-medium hover:opacity-90 transition">
-                                저장
-                            </button>
-                            <button onClick={() => { setNoteTitle(''); setNoteMemo(''); setNoteTags('') }}
-                                className="px-4 py-2 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 transition">
-                                초기화
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-                        <h2 className="font-semibold text-gray-700 mb-4">📋 저장된 노트</h2>
-                        {loading ? (
-                            <div className="flex justify-center py-8">
-                                <Loader2 size={20} className="animate-spin text-pink-400" />
-                            </div>
-                        ) : notebookItems.length === 0 ? (
-                            <p className="text-sm text-gray-400 text-center py-8">저장된 노트가 없습니다.</p>
-                        ) : (
-                            notebookItems.map(note => (
-                                <div key={note.id} className="flex items-center justify-between p-4 rounded-xl bg-gray-50 mb-2">
-                                    <div>
-                                        <p className="text-sm font-medium text-gray-800">{note.title}</p>
-                                        {Array.isArray(note.tags) && note.tags.length > 0 && (
-                                            <div className="flex gap-1 mt-1">
-                                                {note.tags.map(tag => (
-                                                    <span key={tag} className="text-xs bg-pink-100 text-pink-600 px-2 py-0.5 rounded-full">
-                                                        {tag}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-xs text-gray-400">{formatDate(note.id)}</span>
-                                        <button onClick={() => handleDelete(note.id)}
-                                            className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition">
-                                            <Trash2 size={13} />
-                                        </button>
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </div>
-            )}
-
-            {/* 저장된 자료 탭 */}
-            {activeTab === 'saved' && (
-                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-                    <h2 className="font-semibold text-gray-700 mb-4 flex items-center gap-2">
-                        <FileText size={16} />
-                        저장된 레퍼런스
-                    </h2>
-                    {loading ? (
-                        <div className="flex justify-center py-8">
-                            <Loader2 size={20} className="animate-spin text-pink-400" />
-                        </div>
-                    ) : savedItems.length === 0 ? (
-                        <p className="text-sm text-gray-400 text-center py-8">저장된 자료가 없습니다.</p>
-                    ) : (
-                        <div className="space-y-2">
-                            {savedItems.map(item => (
-                                <div key={item.id} className="flex items-center justify-between p-4 rounded-xl bg-gray-50">
-                                    <div className="flex items-center gap-3">
-                                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${item.type === '유튜브' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'
-                                            }`}>
-                                            {item.type}
-                                        </span>
-                                        <p className="text-sm text-gray-700">{item.title}</p>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-xs text-gray-400">{formatDate(item.id)}</span>
-                                        <button onClick={() => handleDelete(item.id)}
-                                            className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition">
-                                            <Trash2 size={13} />
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* 유튜브 리서치 추가 모달 */}
-            {isModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-3xl w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-2xl">
-                        <div className="p-6 space-y-5">
-                            <div className="flex items-center justify-between">
-                                <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                                    <Plus size={20} className="text-[#7C8C4E]" />
-                                    새 유튜브 리서치 추가
-                                </h3>
-                                <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600">
-                                    <Trash2 size={20} />
-                                </button>
-                            </div>
-
-                            <div className="space-y-4">
-                                {/* URL 입력 */}
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-gray-500 ml-1">YouTube URL</label>
-                                    <div className="flex gap-2">
-                                        <input
-                                            type="text"
-                                            value={newUrl}
-                                            onChange={e => setNewUrl(e.target.value)}
-                                            placeholder="https://www.youtube.com/watch?v=..."
-                                            className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#7C8C4E]/20"
-                                        />
-                                        <button 
-                                            onClick={fetchYouTubeData}
-                                            disabled={!newUrl || fetchLoading}
-                                            className="px-4 py-2 bg-gray-800 text-white rounded-xl text-sm font-semibold hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2"
-                                        >
-                                            {fetchLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
-                                            {fetchLoading ? "가져오는 중..." : "정보 가져오기"}
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* 제목 */}
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-gray-500 ml-1">제목</label>
-                                    <input
-                                        type="text"
-                                        value={newTitle}
-                                        onChange={e => setNewTitle(e.target.value)}
-                                        placeholder="영상 제목 (자동 입력 가능)"
-                                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#7C8C4E]/20"
-                                    />
-                                </div>
-
-                                {/* 미리보기 */}
-                                {ytData && (
-                                    <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100 flex gap-4">
-                                        <img 
-                                            src={ytData.thumbnailUrl} 
-                                            alt="Preview" 
-                                            className="w-36 aspect-video rounded-lg object-cover shadow-sm flex-shrink-0" 
-                                        />
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-bold text-gray-800 line-clamp-2 leading-snug">{newTitle}</p>
-                                            <p className="text-xs text-gray-500 mt-1.5 flex items-center gap-1">
-                                                <TrendingUp size={12} /> {ytData.channelName}
-                                            </p>
-                                            <p className="text-[11px] text-gray-400 mt-0.5">
-                                                조회수 {ytData.viewCount.toLocaleString()}회
-                                            </p>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* 메모 및 태그 */}
-                                <div className="grid grid-cols-1 gap-4">
-                                    <div className="space-y-1.5">
-                                        <label className="text-xs font-bold text-gray-500 ml-1">메모</label>
-                                        <textarea
-                                            value={newMemo}
-                                            onChange={e => setNewMemo(e.target.value)}
-                                            rows={3}
-                                            placeholder="분석 내용이나 특징을 기록하세요"
-                                            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#7C8C4E]/20 resize-none"
-                                        />
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-xs font-bold text-gray-500 ml-1">태그 (쉼표 구분)</label>
-                                        <input
-                                            type="text"
-                                            value={newTags}
-                                            onChange={e => setNewTags(e.target.value)}
-                                            placeholder="예: 썸네일대박, 구도가좋음, 쇼츠용"
-                                            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#7C8C4E]/20"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="flex gap-2 pt-2">
-                                <button 
-                                    onClick={handleSaveYouTube}
-                                    disabled={!newTitle}
-                                    className="flex-1 py-3 bg-[#7C8C4E] text-white rounded-2xl text-sm font-bold hover:opacity-90 disabled:opacity-50 transition"
-                                >
-                                    저장하기
-                                </button>
-                                <button 
-                                    onClick={() => setIsModalOpen(false)}
-                                    className="flex-1 py-3 border border-gray-200 text-gray-600 rounded-2xl text-sm font-bold hover:bg-gray-50 transition"
-                                >
-                                    취소
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
+  return (
+    <div className="px-3 py-3 sm:p-5 space-y-4 max-w-7xl mx-auto min-w-0">
+      
+      {/* ─── 1. 페이지 상단 헤더 영역 ─── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="p-2 bg-brand-olive/10 text-brand-olive rounded-xl shadow-inner">
+            <span className="text-2xl leading-none">🔖</span>
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-gray-800 tracking-tight">소스 게시판</h1>
+            <p className="text-[11px] text-gray-400 font-medium mt-0.5">영상 기획에 필요한 레퍼런스 소스 모음 및 관리</p>
+          </div>
         </div>
-    )
+        <button
+          onClick={openAddModal}
+          className="flex items-center justify-center gap-1.5 px-4 py-2 bg-[#7C8C4E] hover:bg-[#6c7b44] text-white rounded-xl text-xs font-semibold shadow-sm hover:shadow transition-all transform hover:-translate-y-0.5 active:translate-y-0 shrink-0"
+        >
+          <Plus size={14} className="stroke-[2.5]" />
+          <span>소스 추가</span>
+        </button>
+      </div>
+
+      {/* ─── 2. 검색 및 카테고리 필터 영역 (미니멀 + 상단 배치) ─── */}
+      <div className="flex flex-col sm:flex-row gap-2 max-w-2xl">
+        <div className="relative flex-1 min-w-0">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="검색..."
+            className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-gray-200 text-xs focus:outline-none focus:ring-1 focus:ring-[#7C8C4E]/30 focus:border-[#7C8C4E] transition-all bg-gray-50/50 text-gray-700 font-medium"
+          />
+        </div>
+        <div className="w-full sm:w-44 shrink-0">
+          <select
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            className="w-full px-2 py-1.5 rounded-lg border border-gray-200 text-xs focus:outline-none focus:ring-1 focus:ring-[#7C8C4E]/30 focus:border-[#7C8C4E] transition-all bg-white font-semibold text-gray-600 cursor-pointer"
+          >
+            <option value="전체">📂 전체 카테고리</option>
+            {uniqueCategories.map((cat) => (
+              <option key={cat} value={cat}>
+                {cat}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* ─── 3. 메인 게시판 리스트 영역 ─── */}
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-16 gap-2 bg-white rounded-2xl border border-gray-100 shadow-sm">
+          <Loader2 size={24} className="animate-spin text-[#7C8C4E]" />
+          <p className="text-xs font-semibold text-gray-400">데이터를 불러오는 중입니다...</p>
+        </div>
+      ) : sources.length === 0 ? (
+        /* 등록된 소스가 아예 없는 완전 초기 상태 */
+        <div className="flex flex-col items-center justify-center py-20 px-4 text-center bg-white rounded-3xl border border-dashed border-gray-200 shadow-sm space-y-3">
+          <div className="p-3 bg-gray-50 rounded-full text-gray-400">
+            <Folder size={32} className="stroke-[1.5]" />
+          </div>
+          <div className="space-y-0.5">
+            <h3 className="text-sm font-bold text-gray-700">아직 등록된 소스가 없어요</h3>
+            <p className="text-xs text-gray-400 max-w-sm">영상 제작에 참고할 유튜브 영상, 뉴스레터, 블로그 포스트 등 모든 소스 링크를 한 곳에 모아보세요.</p>
+          </div>
+          <button
+            onClick={openAddModal}
+            className="px-4 py-2 bg-[#7C8C4E] hover:bg-[#6c7b44] text-white text-xs font-semibold rounded-xl transition shadow-sm"
+          >
+            첫 소스 추가하기
+          </button>
+        </div>
+      ) : sortedCategoryKeys.length === 0 ? (
+        /* 검색/필터 결과가 없는 상태 */
+        <div className="flex flex-col items-center justify-center py-16 px-4 text-center bg-white rounded-2xl border border-gray-100 shadow-sm space-y-1.5">
+          <AlertCircle size={28} className="text-gray-400" />
+          <p className="text-xs font-bold text-gray-600">일치하는 소스를 찾지 못했습니다.</p>
+          <p className="text-[11px] text-gray-400">검색어나 카테고리 필터를 다시 확인해 보세요.</p>
+        </div>
+      ) : (
+        /* 그룹핑된 리스트형 게시판 (세로 간격 대폭 조임) */
+        <div className="space-y-3">
+          {sortedCategoryKeys.map((categoryName) => {
+            const list = groupedSources[categoryName]
+            return (
+              <div
+                key={categoryName}
+                className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden transition-all hover:shadow-md"
+              >
+                {/* 카테고리 타이틀 바 (세로 축소) */}
+                <div className="flex items-center gap-1.5 px-4 py-2 bg-gray-50/50 border-b border-gray-100">
+                  <Folder size={14} className="text-[#7C8C4E]" />
+                  <h2 className="text-xs font-bold text-gray-800 tracking-tight">
+                    {categoryName}
+                    <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-semibold text-gray-400 bg-gray-200/50 rounded-full">
+                      {list.length}
+                    </span>
+                  </h2>
+                </div>
+
+                {/* 소스 리스트 나열 (세로 패딩 py-1.5로 촘촘하게 축소) */}
+                <div className="divide-y divide-gray-50">
+                  {list.map((source) => (
+                    <div
+                      key={source.id}
+                      className="flex items-center justify-between px-4 py-1.5 hover:bg-gray-50/40 transition-colors group gap-3 min-w-0"
+                    >
+                      {/* 제목 및 메모 정보 영역 (한 줄 가로 나열 구조) */}
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <h3
+                            onClick={() => openEditModal(source)}
+                            className="text-xs sm:text-sm font-semibold text-gray-700 hover:text-[#7C8C4E] hover:underline cursor-pointer truncate shrink-0 max-w-[55%] transition-colors"
+                            title="클릭하여 소스 수정하기"
+                          >
+                            {source.title || source.url}
+                          </h3>
+                          {source.memo && (
+                            <span 
+                              className="text-[10px] sm:text-[11px] text-gray-400 truncate font-medium flex-1 min-w-0" 
+                              title={source.memo}
+                            >
+                              {source.memo}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 액션 버튼 영역 (세로 크기 컴팩트화) */}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          onClick={() => window.open(source.url, '_blank')}
+                          className="flex items-center gap-0.5 px-2 py-0.5 sm:py-1 rounded-lg border border-gray-200 text-[10px] sm:text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition font-semibold"
+                          title="새 창에서 링크 열기"
+                        >
+                          <ExternalLink size={10} />
+                          <span className="hidden sm:inline">열기</span>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteSource(source.id)}
+                          className="p-1 rounded-lg border border-transparent text-gray-300 hover:text-red-500 hover:bg-red-50 hover:border-red-100 transition-all md:opacity-0 md:group-hover:opacity-100"
+                          title="소스 삭제"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* ─── 소스 추가/수정 팝업 모달 ─── */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl border border-gray-100 overflow-hidden transform transition-all animate-in zoom-in-95 duration-200">
+            {/* 모달 헤더 */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+              <h3 className="text-base font-bold text-gray-800 flex items-center gap-2">
+                <span className="text-xl">🔖</span>
+                <span>{editingSourceId ? '소스 레퍼런스 수정' : '새 소스 레퍼런스 추가'}</span>
+              </h3>
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* 모달 폼 */}
+            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              {/* 카테고리 입력 */}
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">
+                  카테고리
+                </label>
+                <input
+                  type="text"
+                  list="modal-categories"
+                  value={formCategory}
+                  onChange={(e) => setFormCategory(e.target.value)}
+                  placeholder="예: 요리, 경제, 테크 (비워두면 '미분류')"
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-olive/20 focus:border-[#7C8C4E] transition-all bg-gray-50/30"
+                  maxLength={30}
+                />
+                <datalist id="modal-categories">
+                  {uniqueCategories.map((cat) => (
+                    <option key={cat} value={cat} />
+                  ))}
+                </datalist>
+              </div>
+
+              {/* 제목 입력 */}
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">
+                  제목 (선택)
+                </label>
+                <input
+                  type="text"
+                  value={formTitle}
+                  onChange={(e) => setFormTitle(e.target.value)}
+                  placeholder="나중에 알아보기 쉽게 제목을 적어주세요"
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-olive/20 focus:border-[#7C8C4E] transition-all bg-gray-50/30"
+                  maxLength={100}
+                />
+              </div>
+
+              {/* URL 입력 */}
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">
+                  링크 URL (필수)
+                </label>
+                <input
+                  type="url"
+                  required
+                  value={formUrl}
+                  onChange={(e) => setFormUrl(e.target.value)}
+                  placeholder="https://example.com"
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-olive/20 focus:border-[#7C8C4E] transition-all bg-gray-50/30 font-medium"
+                />
+              </div>
+
+              {/* 메모 입력 */}
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">
+                  메모 (선택)
+                </label>
+                <textarea
+                  value={formMemo}
+                  onChange={(e) => setFormMemo(e.target.value)}
+                  placeholder="참고할 점 / 선정 이유"
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-olive/20 focus:border-[#7C8C4E] transition-all bg-gray-50/30 h-24 resize-none"
+                  maxLength={500}
+                />
+              </div>
+
+              {/* 푸터 버튼 */}
+              <div className="flex gap-2.5 pt-4 border-t border-gray-100 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl text-sm font-semibold transition"
+                >
+                  취소
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-3 bg-[#7C8C4E] hover:bg-[#6c7b44] text-white rounded-xl text-sm font-semibold transition shadow-md hover:shadow-lg"
+                >
+                  {editingSourceId ? '수정하기' : '추가하기'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── 토스트 메시지 UI ─── */}
+      {toastMessage && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4 fade-in">
+          <div className="bg-gray-800/95 backdrop-blur text-white px-6 py-3 rounded-2xl shadow-xl font-medium text-xs sm:text-sm flex items-center gap-2 border border-gray-700">
+            <Check size={16} className="text-green-400 shrink-0" />
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
+
+    </div>
+  )
 }
