@@ -412,10 +412,10 @@ export default function ResearchPage() {
                                         <button 
                                             onClick={handleSearch}
                                             disabled={isSearching}
-                                            className="px-6 py-2 bg-[#F2A8B8] text-white rounded-xl text-sm font-bold hover:opacity-90 transition disabled:opacity-50 flex items-center gap-2"
+                                            aria-label="검색"
+                                            className="px-4 py-2 bg-[#F2A8B8] text-white rounded-xl hover:opacity-90 transition disabled:opacity-50 flex items-center justify-center shrink-0"
                                         >
                                             {isSearching ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
-                                            {isSearching ? "검색 중..." : "검색"}
                                         </button>
                                     </div>
                                 </div>
