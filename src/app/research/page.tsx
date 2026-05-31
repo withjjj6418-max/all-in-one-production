@@ -11,6 +11,7 @@ interface Source {
   title: string | null
   url: string
   memo: string | null
+  nickname: string | null
   created_at: string
 }
 
@@ -40,7 +41,7 @@ export default function ResearchPage() {
     setTimeout(() => setToastMessage(null), 3000)
   }
 
-  // 데이터 조회
+  // 데이터 조회 (RPC 함수 호출로 변경)
   const fetchSources = useCallback(async () => {
     setLoading(true)
     try {
@@ -52,11 +53,8 @@ export default function ResearchPage() {
       }
       setUserId(user.id)
       
-      const { data, error } = await supabase
-        .from('research_sources')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
+      // get_sources_with_nickname RPC 호출 (정렬 및 RLS 필터가 DB 내부에서 자동 수행됨)
+      const { data, error } = await supabase.rpc('get_sources_with_nickname')
 
       if (error) {
         console.error('소스 조회 중 오류 발생:', error.message)
@@ -104,7 +102,7 @@ export default function ResearchPage() {
     setIsModalOpen(true)
   }
 
-  // 폼 제출 (추가 또는 수정 처리)
+  // 폼 제출 (추가 또는 수정 처리 - 테이블 insert/update)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -161,7 +159,7 @@ export default function ResearchPage() {
     }
   }
 
-  // 소스 삭제
+  // 소스 삭제 - 테이블 delete
   const handleDeleteSource = async (id: number) => {
     if (!window.confirm('정말로 이 소스를 삭제하시겠습니까?')) return
 
@@ -192,7 +190,8 @@ export default function ResearchPage() {
     const titleMatch = source.title?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false
     const urlMatch = source.url.toLowerCase().includes(searchQuery.toLowerCase())
     const memoMatch = source.memo?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false
-    const keywordMatch = searchQuery === '' || titleMatch || urlMatch || memoMatch
+    const nicknameMatch = source.nickname?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false
+    const keywordMatch = searchQuery === '' || titleMatch || urlMatch || memoMatch || nicknameMatch
 
     const categoryMatch = selectedCategory === '전체' || (source.category || '미분류') === selectedCategory
 
@@ -305,7 +304,7 @@ export default function ResearchPage() {
                 key={categoryName}
                 className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden transition-all hover:shadow-md"
               >
-                {/* 카테고리 타이틀 바 (우측 콤팩트한 플러스 추가 버튼 배치) */}
+                {/* 카테고리 타이틀 바 */}
                 <div className="flex items-center justify-between px-4 py-2 bg-gray-50/50 border-b border-gray-100">
                   <div className="flex items-center gap-1.5 min-w-0 flex-1">
                     <Folder size={14} className="text-[#7C8C4E] shrink-0" />
@@ -332,16 +331,29 @@ export default function ResearchPage() {
                       key={source.id}
                       className="flex items-center justify-between px-4 py-1.5 hover:bg-gray-50/40 transition-colors group gap-3 min-w-0"
                     >
-                      {/* 제목 및 메모 정보 영역 */}
+                      {/* 제목, 작성자 닉네임 및 메모 정보 영역 (가로 병렬 정렬 구조) */}
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          {/* 닉네임 뱃지 */}
+                          {source.nickname && (
+                            <span 
+                              className="shrink-0 px-1.5 py-0.2 text-[9px] font-bold text-[#7C8C4E] bg-[#7C8C4E]/10 rounded border border-[#7C8C4E]/10 truncate max-w-[70px] sm:max-w-[100px]" 
+                              title={`작성자: ${source.nickname}`}
+                            >
+                              {source.nickname}
+                            </span>
+                          )}
+
+                          {/* 제목 */}
                           <h3
                             onClick={() => openEditModal(source)}
-                            className="text-xs sm:text-sm font-semibold text-gray-700 hover:text-[#7C8C4E] hover:underline cursor-pointer truncate shrink-0 max-w-[55%] transition-colors"
+                            className="text-xs sm:text-sm font-semibold text-gray-700 hover:text-[#7C8C4E] hover:underline cursor-pointer truncate shrink-0 max-w-[45%] transition-colors"
                             title="클릭하여 소스 수정하기"
                           >
                             {source.title || source.url}
                           </h3>
+
+                          {/* 메모 */}
                           {source.memo && (
                             <span 
                               className="text-[10px] sm:text-[11px] text-gray-400 truncate font-medium flex-1 min-w-0" 
