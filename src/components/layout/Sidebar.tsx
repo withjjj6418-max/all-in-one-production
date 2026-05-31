@@ -18,6 +18,7 @@ import {
   Settings,
   LogOut,
   User,
+  Menu,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -45,6 +46,7 @@ export function Sidebar() {
   const isPostProductionActive = pathname.startsWith("/post");
   const [isPostOpen, setIsPostOpen] = useState(isPostProductionActive);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -89,7 +91,28 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="fixed left-0 top-0 z-30 flex h-screen w-60 flex-col border-r border-sidebar-border bg-sidebar">
+    <>
+      {/* 🍔 모바일 햄버거 버튼 */}
+      <button
+        onClick={() => setIsMobileOpen(true)}
+        className="fixed left-4 top-3.5 z-40 flex h-9 w-9 items-center justify-center rounded-lg border border-sidebar-border bg-sidebar text-muted-foreground shadow-sm hover:text-foreground lg:hidden"
+        aria-label="메뉴 열기"
+      >
+        <Menu size={20} />
+      </button>
+
+      {/* 🖤 모바일 오버레이 배경 */}
+      {isMobileOpen && (
+        <div
+          onClick={() => setIsMobileOpen(false)}
+          className="fixed inset-0 z-20 bg-black/40 backdrop-blur-xs lg:hidden"
+        />
+      )}
+
+      {/* 🎬 사이드바 */}
+      <aside className={`fixed left-0 top-0 z-30 flex h-screen w-60 flex-col border-r border-sidebar-border bg-sidebar transition-transform duration-300 -translate-x-full lg:translate-x-0 ${
+        isMobileOpen ? "translate-x-0" : ""
+      }`}>
       {/* App Title */}
       <div className="flex h-[60px] items-center gap-2.5 border-b border-sidebar-border px-5">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-olive">
@@ -121,6 +144,7 @@ export function Sidebar() {
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={() => setIsMobileOpen(false)}
                 className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${isActive
                     ? "bg-brand-pink/20 text-brand-olive-dark"
                     : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"
@@ -181,6 +205,7 @@ export function Sidebar() {
                   <Link
                     key={item.href}
                     href={item.href}
+                    onClick={() => setIsMobileOpen(false)}
                     className={`group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-all duration-200 ${isActive
                         ? "bg-brand-pink/15 text-brand-olive-dark"
                         : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"
@@ -206,6 +231,7 @@ export function Sidebar() {
           {/* Channel Management */}
           <Link
             href="/channels"
+            onClick={() => setIsMobileOpen(false)}
             className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${pathname === "/channels"
                 ? "bg-brand-pink/20 text-brand-olive-dark"
                 : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"
@@ -290,5 +316,6 @@ export function Sidebar() {
         </div>
       </div>
     </aside>
+    </>
   );
 }
