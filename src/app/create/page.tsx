@@ -212,14 +212,20 @@ function CreationTab() {
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-top-4 duration-500">
-      <div className="mb-2">
-        <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-          ✨ 창작
-        </h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          새로운 콘텐츠의 소재와 스타일을 정하고 대본 프롬프트를 만드세요.
-        </p>
+    <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-500">
+      {/* ── 상단 헤더 ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="p-2 bg-brand-olive/10 text-brand-olive rounded-xl shadow-inner">
+            <span className="text-2xl leading-none">✨</span>
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-gray-800 tracking-tight">창작</h1>
+            <p className="text-[11px] text-gray-400 font-medium mt-0.5">
+              새로운 콘텐츠의 소재와 스타일을 정하고 대본 프롬프트를 만드세요.
+            </p>
+          </div>
+        </div>
       </div>
 
       <div className="space-y-6">

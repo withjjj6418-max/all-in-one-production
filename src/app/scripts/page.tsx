@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Copy, FileUp, ChevronDown, Check, Folder, Save, Scissors, Plus, ArrowRight, Edit2, X } from "lucide-react";
+import { useState, useEffect, Suspense } from "react";
+import { Copy, FileUp, ChevronDown, Check, Folder, Save, Scissors, Plus, ArrowRight, Edit2, X, Loader2 } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getEditPointsPromptGemini, getEditPointsPromptClaude } from '@/constants/prompts';
 
-export default function ScriptsPage() {
+function ScriptsPageContent() {
   const supabase = createClient();
   
   /* ============================================================
@@ -81,14 +82,24 @@ export default function ScriptsPage() {
     }
   };
 
+  const searchParams = useSearchParams();
+
   useEffect(() => {
     fetchProjects();
-    const params = new URLSearchParams(window.location.search);
-    const pid = params.get("project_id");
+    const pid = searchParams.get("project_id");
     if (pid) {
       setSelectedProjectId(Number(pid));
     }
-  }, []);
+  }, [searchParams]);
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab === "list") {
+      setActiveTab("list");
+    } else if (tab === "write") {
+      setActiveTab("write");
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     setIsEditingTitle(false);
@@ -271,43 +282,29 @@ export default function ScriptsPage() {
   };
 
   return (
-    <div className="space-y-8 pb-16">
-      {/* ── 페이지 제목 및 탭 ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <h2 className="text-xl font-bold tracking-tight text-foreground">
-            ✍️ 대본
-          </h2>
-          <div className="flex bg-muted/50 p-1 rounded-lg border border-border">
-            <button
-              onClick={() => setActiveTab('write')}
-              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
-                activeTab === 'write' 
-                  ? 'bg-white text-foreground shadow-sm' 
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              ✏️ 작성
-            </button>
-            <button
-              onClick={() => setActiveTab('list')}
-              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
-                activeTab === 'list' 
-                  ? 'bg-white text-foreground shadow-sm' 
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              📚 모아보기
-            </button>
+    <div className="space-y-6 pb-16">
+      {/* ── 상단 헤더 ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="p-2 bg-brand-olive/10 text-brand-olive rounded-xl shadow-inner">
+            <span className="text-2xl leading-none">✍️</span>
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-gray-800 tracking-tight">
+              {activeTab === "write" ? "대본 수정" : "대본 목록"}
+            </h1>
+            <p className="text-[11px] text-gray-400 font-medium mt-0.5">
+              {activeTab === "write" ? "대본 작성 및 관리" : "작성한 대본 모아보기"}
+            </p>
           </div>
         </div>
-        
+
         {/* 리서치/분석 도우미 안내 */}
         <Link 
           href="/analytics" 
-          className="flex items-center gap-1.5 rounded-lg border border-border bg-white px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-sm transition-colors hover:border-brand-olive-light hover:text-foreground"
+          className="flex items-center justify-center gap-1.5 rounded-lg border border-border bg-white px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-sm transition-colors hover:border-brand-olive-light hover:text-foreground shrink-0 sm:self-auto self-start"
         >
-          소재 작성 및 기획은 채널/영상 분석에서 <ArrowRight size={14} />
+          소재 작성 및 기획은 영상 분석에서 <ArrowRight size={14} />
         </Link>
       </div>
 
@@ -321,12 +318,6 @@ export default function ScriptsPage() {
             <Folder size={18} className="text-brand-olive" />
             작업할 프로젝트
           </h3>
-          <button
-            onClick={() => setIsNewProjectModalOpen(true)}
-            className="text-xs font-semibold text-brand-olive hover:text-brand-olive-dark flex items-center gap-1"
-          >
-            <Plus size={14} /> 새 프로젝트
-          </button>
         </div>
         
         <div className="flex flex-col sm:flex-row sm:items-center gap-4 p-4 rounded-xl border border-border bg-white shadow-sm">
@@ -615,5 +606,17 @@ export default function ScriptsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ScriptsPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-[400px] items-center justify-center">
+        <Loader2 size={24} className="animate-spin text-brand-olive" />
+      </div>
+    }>
+      <ScriptsPageContent />
+    </Suspense>
   );
 }

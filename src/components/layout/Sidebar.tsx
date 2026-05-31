@@ -19,6 +19,7 @@ import {
   LogOut,
   User,
   Menu,
+  FileText,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -26,8 +27,6 @@ const mainMenuItems = [
   { label: "프로젝트", href: "/projects", icon: FolderKanban },
   { label: "소스리서치", href: "/research", icon: Search },
   { label: "영상 분석", href: "/analytics", icon: BarChart3 },
-  { label: "창작", href: "/create", icon: Sparkles },
-  { label: "대본작성", href: "/scripts", icon: PenLine },
 ];
 
 const postProductionItems = [
@@ -45,6 +44,10 @@ export function Sidebar() {
   
   const isPostProductionActive = pathname.startsWith("/post");
   const [isPostOpen, setIsPostOpen] = useState(isPostProductionActive);
+
+  const isScriptsActive = pathname.startsWith("/scripts") || pathname === "/create";
+  const [isScriptsOpen, setIsScriptsOpen] = useState(isScriptsActive);
+
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
@@ -164,6 +167,76 @@ export function Sidebar() {
               </Link>
             );
           })}
+
+          {/* 대본작성 Toggle */}
+          <button
+            onClick={() => setIsScriptsOpen((prev) => !prev)}
+            className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${isScriptsActive
+                ? "bg-brand-pink/20 text-brand-olive-dark"
+                : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"
+              }`}
+          >
+            <PenLine
+              size={18}
+              className={`transition-colors duration-200 ${isScriptsActive
+                  ? "text-brand-olive"
+                  : "text-muted-foreground group-hover:text-brand-olive-light"
+                }`}
+            />
+            <span>대본작성</span>
+            <ChevronDown
+              size={16}
+              className={`ml-auto transition-transform duration-200 ${isScriptsOpen ? "rotate-180" : ""
+                } ${isScriptsActive
+                  ? "text-brand-olive"
+                  : "text-muted-foreground"
+                }`}
+            />
+          </button>
+
+          {/* Sub-menu (대본작성 하위 항목) */}
+          <div
+            className={`overflow-hidden transition-all duration-200 ${isScriptsOpen ? "max-h-48 opacity-100" : "max-h-0 opacity-0"
+              }`}
+          >
+            <div className="ml-4 space-y-0.5 border-l border-sidebar-border pl-3 py-1">
+              {[
+                { label: "창작", href: "/create", icon: Sparkles },
+                { label: "수정", href: "/scripts?tab=write", icon: PenLine },
+                { label: "목록", href: "/scripts?tab=list", icon: FileText },
+              ].map((item) => {
+                const isItemActive = item.href.includes("?") 
+                  ? (pathname === item.href.split("?")[0] && typeof window !== "undefined" && window.location.search.includes(item.href.split("?")[1]))
+                  : (pathname === item.href);
+
+                const Icon = item.icon;
+
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setIsMobileOpen(false)}
+                    className={`group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-all duration-200 ${isItemActive
+                        ? "bg-brand-pink/15 text-brand-olive-dark"
+                        : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"
+                      }`}
+                  >
+                    <Icon
+                      size={15}
+                      className={`transition-colors duration-200 ${isItemActive
+                          ? "text-brand-olive"
+                          : "text-muted-foreground group-hover:text-brand-olive-light"
+                        }`}
+                    />
+                    <span>{item.label}</span>
+                    {isItemActive && (
+                      <div className="ml-auto h-1.5 w-1.5 rounded-full bg-brand-pink" />
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
 
           {/* Post-Production Toggle */}
           <button
