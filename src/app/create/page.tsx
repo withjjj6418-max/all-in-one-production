@@ -309,16 +309,18 @@ function CreationTab() {
         <div className="flex flex-col sm:flex-row gap-4">
           <button
             onClick={handleSendToGemini}
-            className="flex-1 flex items-center justify-center gap-2 h-14 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold transition-all shadow-sm"
+            style={{ backgroundColor: '#4A90E2' }}
+            className="flex-1 flex items-center justify-center gap-1.5 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-md transition-all hover:brightness-95 hover:shadow-lg cursor-pointer"
           >
-            <span className="text-lg">✨</span>
+            <img src="/gemini_logo.png" alt="Gemini" className="w-[18px] h-[18px] object-contain shrink-0" />
             Gemini로 보내기
           </button>
           <button
             onClick={handleSendToClaude}
-            className="flex-1 flex items-center justify-center gap-2 h-14 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold transition-all shadow-sm"
+            style={{ backgroundColor: '#D36B42' }}
+            className="flex-1 flex items-center justify-center gap-1.5 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-md transition-all hover:brightness-95 hover:shadow-lg cursor-pointer"
           >
-            <span className="text-lg">✨</span>
+            <img src="/claude_logo.png" alt="Claude" className="w-[18px] h-[18px] object-contain shrink-0" />
             Claude로 보내기
           </button>
         </div>
