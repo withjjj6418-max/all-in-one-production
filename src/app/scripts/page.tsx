@@ -494,7 +494,7 @@ function ScriptsPageContent() {
             value={generatedScript}
             onChange={(e) => setGeneratedScript(e.target.value)}
             placeholder="Gemini Gems 등에서 생성한 대본을 여기에 붙여넣으세요..."
-            className="w-full flex-1 min-h-[300px] resize-none rounded-t-xl bg-transparent p-6 text-sm leading-relaxed text-foreground outline-none"
+            className="w-full flex-1 min-h-[300px] resize-none rounded-t-xl bg-transparent p-6 text-base sm:text-lg leading-loose text-foreground outline-none"
           />
           
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 border-t border-border bg-muted/5 rounded-b-xl">
@@ -520,10 +520,25 @@ function ScriptsPageContent() {
                 <Save size={14} /> 대본저장
               </button>
             </div>
-            <div className="flex items-center gap-2 rounded-full bg-brand-cream/80 px-3 py-1 border border-border/50 shadow-sm self-end sm:self-auto">
-              <span className="text-[10px] font-bold text-brand-olive uppercase tracking-wider">Words</span>
-              <span className="text-xs font-bold text-foreground">{generatedScript.length.toLocaleString()}</span>
-            </div>
+            {(() => {
+              const charCount = generatedScript.length;
+              const ttsSeconds = Math.round((charCount / 350) * 60);
+              const ttsMinutes = Math.floor(ttsSeconds / 60);
+              const ttsRemainingSeconds = ttsSeconds % 60;
+              const ttsFormatted = `${ttsMinutes}:${ttsRemainingSeconds.toString().padStart(2, '0')}`;
+              return (
+                <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
+                  <div className="flex items-center gap-2 rounded-full bg-brand-cream/80 px-3 py-1 border border-border/50 shadow-sm">
+                    <span className="text-[10px] font-bold text-brand-olive uppercase tracking-wider">Words</span>
+                    <span className="text-xs font-bold text-foreground">{charCount.toLocaleString()}</span>
+                  </div>
+                  <div className="flex items-center gap-2 rounded-full bg-brand-cream/80 px-3 py-1 border border-border/50 shadow-sm">
+                    <span className="text-[10px] font-bold text-brand-olive uppercase tracking-wider">예상 TTS ⏱</span>
+                    <span className="text-xs font-bold text-foreground">{ttsFormatted}</span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       </section>
