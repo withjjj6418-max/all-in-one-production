@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect, Suspense } from "react";
-import { Copy, FileUp, ChevronDown, Check, Folder, Save, Scissors, Plus, ArrowRight, Edit2, X, Loader2, ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from "lucide-react";
-import Link from "next/link";
+import { Copy, FileUp, ChevronDown, Check, Folder, Save, Scissors, Plus, Edit2, X, Loader2, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, History } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getEditPointsPromptGemini, getEditPointsPromptClaude } from '@/constants/prompts';
@@ -42,6 +41,51 @@ function ScriptsPageContent() {
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
   const [categoryPages, setCategoryPages] = useState<Record<string, number>>({});
   const [categorySort, setCategorySort] = useState<{ dir: 'asc' | 'desc' }>({ dir: 'asc' });
+
+  // 버전 기록 관리 상태
+  const [isVersionModalOpen, setIsVersionModalOpen] = useState(false);
+  const [versions, setVersions] = useState<any[]>([]);
+  const [loadingVersions, setLoadingVersions] = useState(false);
+  const [selectedVersion, setSelectedVersion] = useState<any | null>(null);
+
+  const fetchVersions = async () => {
+    if (!scriptId) return;
+    setLoadingVersions(true);
+    try {
+      const { data, error } = await supabase
+        .from("script_versions")
+        .select("*")
+        .eq("script_id", scriptId)
+        .order("created_at", { ascending: false });
+      if (!error && data) {
+        setVersions(data);
+        if (data.length > 0) {
+          setSelectedVersion(data[0]);
+        } else {
+          setSelectedVersion(null);
+        }
+      }
+    } catch (err) {
+      console.error("버전 조회 실패:", err);
+    } finally {
+      setLoadingVersions(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isVersionModalOpen && scriptId) {
+      fetchVersions();
+    }
+  }, [isVersionModalOpen, scriptId]);
+
+  const handleRestoreVersion = (version: any) => {
+    if (!version) return;
+    if (confirm("이 버전으로 되돌릴까요? 현재 작성 중인 내용은 따로 저장하지 않으면 사라질 수 있어요.")) {
+      setGeneratedScript(version.content);
+      setIsVersionModalOpen(false);
+      showToast("대본을 이전 버전으로 불러왔어요. 저장을 누르셔야 최종 반영됩니다!");
+    }
+  };
 
   // 카테고리 접기/펼치기 토글 핸들러
   const toggleCategoryCollapse = (category: string) => {
@@ -219,6 +263,21 @@ function ScriptsPageContent() {
       // 이전의 복잡한 입력 속성들(style, format 등)은 더 이상 이 페이지에서 설정하지 않음.
     };
 
+    const saveVersion = async (targetScriptId: string) => {
+      try {
+        const { error: versionError } = await supabase.from("script_versions").insert({
+          script_id: targetScriptId,
+          content: generatedScript,
+          char_count: generatedScript.length,
+        });
+        if (versionError) {
+          console.error("버전 기록 실패:", versionError.message);
+        }
+      } catch (err) {
+        console.error("버전 기록 중 오류 발생:", err);
+      }
+    };
+
     if (scriptId) {
       const { error } = await supabase.from("scripts").update(payload).eq("id", scriptId);
       if (error) {
@@ -226,6 +285,7 @@ function ScriptsPageContent() {
         console.error(error);
       } else {
         alert("대본이 저장됐어요");
+        await saveVersion(scriptId);
       }
     } else {
       const { data, error } = await supabase.from("scripts").insert(payload).select().single();
@@ -235,6 +295,7 @@ function ScriptsPageContent() {
       } else {
         setScriptId(data.id);
         alert("대본이 저장됐어요");
+        await saveVersion(data.id);
       }
     }
   };
@@ -519,6 +580,15 @@ function ScriptsPageContent() {
               >
                 <Save size={14} /> 대본저장
               </button>
+              {scriptId && (
+                <button
+                  type="button"
+                  onClick={() => setIsVersionModalOpen(true)}
+                  className="flex items-center justify-center gap-1 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs sm:text-sm font-semibold text-gray-600 shadow-sm transition-all hover:bg-gray-50 cursor-pointer"
+                >
+                  <History size={14} /> 버전 기록
+                </button>
+              )}
             </div>
             {(() => {
               const charCount = generatedScript.length;
@@ -820,6 +890,109 @@ function ScriptsPageContent() {
               >
                 만들기
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 버전 기록 모달 ── */}
+      {isVersionModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-4xl h-[600px] max-h-[85vh] animate-in fade-in zoom-in duration-200 rounded-2xl bg-white p-6 shadow-2xl flex flex-col">
+            {/* 모달 헤더 */}
+            <div className="flex items-center justify-between pb-3 border-b border-border">
+              <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <History size={18} className="text-brand-olive" />
+                <span>대본 버전 기록</span>
+              </h2>
+              <button 
+                onClick={() => setIsVersionModalOpen(false)}
+                className="p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* 모달 바디 */}
+            <div className="flex flex-col md:flex-row gap-4 overflow-hidden flex-1 mt-4 min-h-0">
+              {loadingVersions ? (
+                <div className="flex-1 flex flex-col items-center justify-center gap-2">
+                  <Loader2 size={24} className="animate-spin text-brand-olive" />
+                  <p className="text-xs font-semibold text-gray-400">버전 정보를 불러오고 있습니다...</p>
+                </div>
+              ) : versions.length === 0 ? (
+                <div className="flex-1 flex items-center justify-center text-sm text-gray-400">
+                  아직 저장된 버전이 없어요.
+                </div>
+              ) : (
+                <>
+                  {/* 좌측: 버전 리스트 */}
+                  <div className="w-full md:w-72 overflow-y-auto space-y-2 pr-1 border-r border-gray-100 flex-shrink-0 max-h-[200px] md:max-h-none">
+                    {versions.map((v, idx) => {
+                      const isSelected = selectedVersion?.id === v.id;
+                      return (
+                        <div
+                          key={v.id}
+                          onClick={() => setSelectedVersion(v)}
+                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                            isSelected 
+                              ? "border-brand-olive bg-brand-olive/5 shadow-sm"
+                              : "border-gray-200 hover:bg-gray-50/80"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-gray-700">
+                              {new Date(v.created_at).toLocaleString('ko-KR', {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                second: '2-digit'
+                              })}
+                            </span>
+                            {idx === 0 && (
+                              <span className="text-[9px] font-extrabold text-[#7C8C4E] bg-[#7C8C4E]/10 px-1.5 py-0.5 rounded-full">
+                                현재 (최신)
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-gray-400 font-semibold mt-1">
+                            글자수: {v.char_count.toLocaleString()}자
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* 우측: 버전 내용 미리보기 및 되돌리기 */}
+                  <div className="flex-1 flex flex-col min-h-0">
+                    {selectedVersion ? (
+                      <div className="flex-1 flex flex-col min-h-0">
+                        <div className="flex items-center justify-between pb-2 mb-2 border-b border-gray-50 flex-shrink-0">
+                          <div className="text-xs text-gray-500 font-semibold">
+                            선택된 버전: {new Date(selectedVersion.created_at).toLocaleString('ko-KR')} ({selectedVersion.char_count.toLocaleString()}자)
+                          </div>
+                          <button
+                            onClick={() => handleRestoreVersion(selectedVersion)}
+                            className="px-3 py-1.5 bg-[#7C8C4E] hover:bg-[#6c7b44] text-white rounded-lg text-xs font-semibold shadow-sm transition"
+                          >
+                            이 버전으로 되돌리기
+                          </button>
+                        </div>
+                        <textarea
+                          readOnly
+                          value={selectedVersion.content || ""}
+                          className="flex-1 w-full p-4 rounded-xl border border-gray-200 bg-gray-50/50 text-xs sm:text-sm leading-relaxed text-gray-700 resize-none outline-none focus:outline-none overflow-y-auto"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex-1 flex items-center justify-center text-sm text-gray-400">
+                        버전을 선택하시면 미리보기가 표시됩니다.
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
