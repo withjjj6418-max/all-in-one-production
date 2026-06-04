@@ -641,7 +641,10 @@ function ScriptsPageContent() {
                       className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden transition-all hover:shadow-md animate-in fade-in duration-200"
                     >
                       {/* 카테고리 폴더 헤더 */}
-                      <div className="flex items-center justify-between px-4 py-3 bg-gray-50/50 border-b border-gray-100 gap-2 min-w-0">
+                      <div 
+                        onClick={() => toggleCategoryCollapse(categoryName)}
+                        className="flex items-center justify-between px-4 py-3 bg-gray-50/50 border-b border-gray-100 gap-2 min-w-0 cursor-pointer"
+                      >
                         {/* 왼쪽: 폴더 아이콘, 폴더 이름, 개수 뱃지 */}
                         <div className="flex items-center gap-2 min-w-0 flex-1">
                           <Folder size={16} className="text-brand-olive shrink-0" />
@@ -659,7 +662,10 @@ function ScriptsPageContent() {
                           {totalPages > 1 && !activeCollapsed && (
                             <div className="flex items-center gap-1 flex-wrap shrink-0 mr-2">
                               <button
-                                onClick={() => handlePageChange(categoryName, Math.max(1, activePage - 1))}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handlePageChange(categoryName, Math.max(1, activePage - 1));
+                                }}
                                 disabled={activePage === 1}
                                 className="p-1 rounded hover:bg-gray-100 text-gray-400 disabled:opacity-30 disabled:hover:bg-transparent transition cursor-pointer"
                                 title="이전 페이지"
@@ -678,7 +684,10 @@ function ScriptsPageContent() {
                                 return (
                                   <button
                                     key={`page-${p}`}
-                                    onClick={() => handlePageChange(categoryName, p as number)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handlePageChange(categoryName, p as number);
+                                    }}
                                     className={`px-2 py-0.5 rounded text-[11px] font-bold transition cursor-pointer ${
                                       activePage === p
                                         ? 'bg-brand-olive text-white shadow-sm'
@@ -691,7 +700,10 @@ function ScriptsPageContent() {
                               })}
 
                               <button
-                                onClick={() => handlePageChange(categoryName, Math.min(totalPages, activePage + 1))}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handlePageChange(categoryName, Math.min(totalPages, activePage + 1));
+                                }}
                                 disabled={activePage === totalPages}
                                 className="p-1 rounded hover:bg-gray-100 text-gray-400 disabled:opacity-30 disabled:hover:bg-transparent transition cursor-pointer"
                                 title="다음 페이지"
@@ -701,17 +713,16 @@ function ScriptsPageContent() {
                             </div>
                           )}
 
-                          {/* "V" 토글 버튼 */}
-                          <button
-                            onClick={() => toggleCategoryCollapse(categoryName)}
-                            className="p-1 rounded hover:bg-gray-200/50 text-gray-400 hover:text-brand-olive transition shrink-0"
+                          {/* "V" 상태 표시 아이콘 (ChevronDown) */}
+                          <div
+                            className="p-1 text-gray-400 shrink-0"
                             title={activeCollapsed ? `${categoryName} 펼치기` : `${categoryName} 접기`}
                           >
                             <ChevronDown
                               size={16}
                               className={`transition-transform duration-200 ${activeCollapsed ? 'rotate-180' : ''}`}
                             />
-                          </button>
+                          </div>
                         </div>
                       </div>
 

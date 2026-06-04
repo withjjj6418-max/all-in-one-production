@@ -545,13 +545,19 @@ export default function ProjectsPage() {
                 className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden transition-all hover:shadow-md"
               >
                 {/* 카테고리 폴더 타이틀 바 */}
-                <div className="flex items-center justify-between px-4 py-2 bg-gray-50/50 border-b border-gray-100 gap-2 min-w-0">
+                <div 
+                  onClick={() => toggleCategoryCollapse(categoryName)}
+                  className="flex items-center justify-between px-4 py-2 bg-gray-50/50 border-b border-gray-100 gap-2 min-w-0 cursor-pointer"
+                >
                   {/* 왼쪽: 아이콘, 카테고리명, 개수뱃지 */}
                   <div className="flex items-center gap-1.5 min-w-0 flex-1">
                     <Folder size={14} className="text-[#7C8C4E] shrink-0" />
                     
                     {editingCategory === categoryName ? (
-                      <div className="flex items-center gap-1 min-w-0 flex-1 max-w-[80%] sm:max-w-[70%]">
+                      <div 
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex items-center gap-1 min-w-0 flex-1 max-w-[80%] sm:max-w-[70%]"
+                      >
                         <input
                           type="text"
                           value={editingCategoryName}
@@ -560,19 +566,26 @@ export default function ProjectsPage() {
                             if (e.key === "Enter") handleSaveCategoryName(categoryName);
                             else if (e.key === "Escape") cancelEditCategory();
                           }}
+                          onClick={(e) => e.stopPropagation()}
                           className="px-1.5 py-0.5 rounded border border-gray-300 text-xs focus:outline-none focus:ring-1 focus:ring-[#7C8C4E] focus:border-[#7C8C4E] bg-white font-semibold text-gray-700 min-w-0 flex-1 max-w-[120px] sm:max-w-[200px]"
                           maxLength={30}
                           autoFocus
                         />
                         <button
-                          onClick={() => handleSaveCategoryName(categoryName)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSaveCategoryName(categoryName);
+                          }}
                           className="p-0.5 rounded hover:bg-gray-200 text-green-600 transition shrink-0 cursor-pointer"
                           title="저장"
                         >
                           <Check size={12} className="stroke-[2.5]" />
                         </button>
                         <button
-                          onClick={cancelEditCategory}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            cancelEditCategory();
+                          }}
                           className="p-0.5 rounded hover:bg-gray-200 text-red-500 transition shrink-0 cursor-pointer"
                           title="취소"
                         >
@@ -581,7 +594,10 @@ export default function ProjectsPage() {
                       </div>
                     ) : (
                       <h2 
-                        onClick={() => startEditCategory(categoryName)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          startEditCategory(categoryName);
+                        }}
                         className="text-xs font-bold text-gray-800 tracking-tight truncate flex items-center gap-1.5 min-w-0 hover:text-[#7C8C4E] hover:underline cursor-pointer group/title"
                         title="클릭하여 카테고리 이름 변경하기"
                       >
@@ -598,7 +614,10 @@ export default function ProjectsPage() {
                     {totalPages > 1 && !activeCollapsed && (
                       <div className="flex items-center gap-0.5 flex-wrap shrink-0">
                         <button
-                          onClick={() => handlePageChange(categoryName, Math.max(1, activePage - 1))}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handlePageChange(categoryName, Math.max(1, activePage - 1));
+                          }}
                           disabled={activePage === 1}
                           className="p-0.5 rounded hover:bg-gray-100 text-gray-400 disabled:opacity-30 disabled:hover:bg-transparent transition cursor-pointer"
                           title="이전 페이지"
@@ -617,7 +636,10 @@ export default function ProjectsPage() {
                           return (
                             <button
                               key={`page-${p}`}
-                              onClick={() => handlePageChange(categoryName, p as number)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handlePageChange(categoryName, p as number);
+                              }}
                               className={`px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-bold transition cursor-pointer ${
                                 activePage === p
                                   ? "bg-[#7C8C4E]/90 text-white shadow-sm"
@@ -630,7 +652,10 @@ export default function ProjectsPage() {
                         })}
 
                         <button
-                          onClick={() => handlePageChange(categoryName, Math.min(totalPages, activePage + 1))}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handlePageChange(categoryName, Math.min(totalPages, activePage + 1));
+                          }}
                           disabled={activePage === totalPages}
                           className="p-0.5 rounded hover:bg-gray-100 text-gray-400 disabled:opacity-30 disabled:hover:bg-transparent transition cursor-pointer"
                           title="다음 페이지"
@@ -641,23 +666,26 @@ export default function ProjectsPage() {
                     )}
 
                     <button
-                      onClick={() => openAddModalWithCategory(categoryName)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openAddModalWithCategory(categoryName);
+                      }}
                       className="p-1 rounded text-gray-400 hover:text-[#7C8C4E] hover:bg-gray-200/40 transition shrink-0 ml-1"
                       title={`${categoryName} 카테고리에 새 프로젝트 추가`}
                     >
                       <Plus size={13} className="stroke-[2.5]" />
                     </button>
 
-                    <button
-                      onClick={() => toggleCategoryCollapse(categoryName)}
-                      className="p-1 rounded text-gray-400 hover:text-[#7C8C4E] hover:bg-gray-200/40 transition shrink-0"
+                    {/* "V" 상태 표시 아이콘 (ChevronDown) */}
+                    <div
+                      className="p-1 text-gray-400 shrink-0"
                       title={activeCollapsed ? "펼치기" : "접기"}
                     >
                       <ChevronDown
                         size={13}
                         className={`transition-transform duration-200 ${activeCollapsed ? "rotate-180" : ""}`}
                       />
-                    </button>
+                    </div>
                   </div>
                 </div>
 
