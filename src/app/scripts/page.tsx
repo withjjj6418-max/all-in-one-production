@@ -550,12 +550,12 @@ function ScriptsPageContent() {
           </div>
         </div>
 
-        <div className="group relative mt-3 flex min-h-[400px] flex-col rounded-xl border border-border bg-white shadow-sm focus-within:border-brand-olive-light focus-within:ring-2 focus-within:ring-brand-olive/5 transition-all">
+        <div className="group relative mt-3 flex min-h-[450px] lg:min-h-[600px] flex-col rounded-xl border border-border bg-white shadow-sm focus-within:border-brand-olive-light focus-within:ring-2 focus-within:ring-brand-olive/5 transition-all">
           <textarea
             value={generatedScript}
             onChange={(e) => setGeneratedScript(e.target.value)}
             placeholder="Gemini Gems 등에서 생성한 대본을 여기에 붙여넣으세요..."
-            className="w-full flex-1 min-h-[300px] resize-none rounded-t-xl bg-transparent p-6 text-base sm:text-lg leading-loose text-foreground outline-none"
+            className="w-full flex-1 min-h-[350px] lg:min-h-[450px] resize-none rounded-t-xl bg-transparent p-6 text-base sm:text-lg leading-loose text-foreground outline-none"
           />
           
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 border-t border-border bg-muted/5 rounded-b-xl">
