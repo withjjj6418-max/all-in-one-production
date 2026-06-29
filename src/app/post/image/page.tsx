@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import styles from "./page.module.css";
 
 // ===== 데이터: 화면에 보일 이름 (네가 정한 표 그대로) =====
@@ -51,9 +51,54 @@ export default function Home() {
   const [selectedChar, setSelectedChar] = useState<Item | null>(null);
   const [selectedExpr, setSelectedExpr] = useState<Item | null>(null);
   const [poseText, setPoseText] = useState("");
+  // 포즈 참고 그림: base64 데이터 URL 한 장 (업로드 또는 붙여넣기)
+  const [poseImage, setPoseImage] = useState<string | null>(null);
+  // 옵션: 표정 충실도 / 모델 품질
+  const [exprMode, setExprMode] = useState<"image" | "word">("image");
+  const [quality, setQuality] = useState<"flash" | "pro">("flash");
   const [loading, setLoading] = useState(false);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ===== 파일을 base64 데이터 URL로 변환하는 공통 함수 =====
+  function fileToDataUrl(file: File) {
+    if (!file.type.startsWith("image/")) {
+      alert("이미지 파일만 넣을 수 있어요.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setPoseImage(reader.result as string);
+    reader.readAsDataURL(file);
+  }
+
+  // ===== 업로드 버튼으로 파일 선택 =====
+  function onFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) fileToDataUrl(file);
+  }
+
+  // ===== 붙여넣기(Ctrl+V): 클립보드의 이미지를 받음 =====
+  useEffect(() => {
+    function onPaste(e: ClipboardEvent) {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) {
+            fileToDataUrl(file);
+            e.preventDefault();
+          }
+          break;
+        }
+      }
+    }
+    // 화면 전체에서 Ctrl+V를 감지
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, []);
 
   // ===== 생성 버튼: 서버(/api/illust-generate)를 호출 =====
   async function onGenerate() {
@@ -65,7 +110,6 @@ export default function Home() {
     setResultUrl(null);
 
     try {
-      // 서버에 무엇을 만들지 알려준다 (키는 서버가 가지고 있음, 화면은 모름)
       const res = await fetch("/api/illust-generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -73,6 +117,9 @@ export default function Home() {
           characterId: selectedChar.id,
           expressionId: selectedExpr.id,
           poseText: poseText.trim(),
+          poseImage: poseImage, // 포즈 참고 그림 (없으면 null)
+          exprMode: exprMode,   // 표정 충실도
+          quality: quality,     // 모델 품질
         }),
       });
 
@@ -80,7 +127,6 @@ export default function Home() {
       if (!res.ok) {
         throw new Error(data.error || "생성에 실패했습니다.");
       }
-      // 서버가 돌려준 이미지(base64 데이터 URL)를 화면에 표시
       setResultUrl(data.image);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "알 수 없는 오류");
@@ -144,7 +190,7 @@ export default function Home() {
       {/* 3. 포즈 */}
       <section className={styles.section}>
         <p className={styles.sectionTitle}>
-          <span className={styles.num}>3</span> 포즈 <span className={styles.hint}>글로 쓰거나 비워두면 기본 자세로 나옵니다</span>
+          <span className={styles.num}>3</span> 포즈 <span className={styles.hint}>글로 쓰거나, 참고 그림을 올리거나 붙여넣기(Ctrl+V)</span>
         </p>
         <textarea
           className={styles.textarea}
@@ -152,6 +198,97 @@ export default function Home() {
           value={poseText}
           onChange={(e) => setPoseText(e.target.value)}
         />
+
+        {/* 포즈 참고 그림 영역 */}
+        <div className={styles.poseRow}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={onFileSelect}
+            style={{ display: "none" }}
+          />
+          <button
+            type="button"
+            className={styles.btnSub}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            포즈 그림 업로드
+          </button>
+          <span className={styles.hint}>또는 이 화면에서 Ctrl+V로 붙여넣기</span>
+        </div>
+
+        {/* 넣은 포즈 그림 미리보기 */}
+        {poseImage && (
+          <div className={styles.posePreview}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={poseImage} alt="포즈 참고" />
+            <button
+              type="button"
+              className={styles.btnRemove}
+              onClick={() => setPoseImage(null)}
+            >
+              포즈 그림 제거
+            </button>
+          </div>
+        )}
+      </section>
+
+      {/* 4. 옵션 */}
+      <section className={styles.section}>
+        <p className={styles.sectionTitle}>
+          <span className={styles.num}>4</span> 옵션 <span className={styles.hint}>결과가 마음에 안 들면 바꿔보세요</span>
+        </p>
+
+        <div className={styles.optionRow}>
+          <span className={styles.optionLabel}>표정 적용 방식</span>
+          <div className={styles.optionBtns}>
+            <button
+              type="button"
+              className={`${styles.optBtn} ${exprMode === "image" ? styles.optBtnOn : ""}`}
+              onClick={() => setExprMode("image")}
+            >
+              그림 그대로
+            </button>
+            <button
+              type="button"
+              className={`${styles.optBtn} ${exprMode === "word" ? styles.optBtnOn : ""}`}
+              onClick={() => setExprMode("word")}
+            >
+              단어 설명 포함
+            </button>
+          </div>
+        </div>
+        <p className={styles.optionDesc}>
+          {exprMode === "image"
+            ? "표정 그림의 눈·입 모양을 최대한 그대로 따릅니다 (과장 적음)."
+            : "표정 이름(예: 화난 표정)도 함께 알려줍니다 (AI 해석이 더 들어감)."}
+        </p>
+
+        <div className={styles.optionRow}>
+          <span className={styles.optionLabel}>모델 품질</span>
+          <div className={styles.optionBtns}>
+            <button
+              type="button"
+              className={`${styles.optBtn} ${quality === "flash" ? styles.optBtnOn : ""}`}
+              onClick={() => setQuality("flash")}
+            >
+              빠름 · 저렴
+            </button>
+            <button
+              type="button"
+              className={`${styles.optBtn} ${quality === "pro" ? styles.optBtnOn : ""}`}
+              onClick={() => setQuality("pro")}
+            >
+              고품질
+            </button>
+          </div>
+        </div>
+        <p className={styles.optionDesc}>
+          {quality === "flash"
+            ? "Flash 모델 — 빠르고 저렴합니다."
+            : "Pro 모델 — reference를 더 정밀히 따릅니다 (장당 비용이 조금 더 듭니다)."}
+        </p>
       </section>
 
       {/* 하단: 생성 + 결과 */}
@@ -160,6 +297,7 @@ export default function Home() {
           <p className={styles.summary}>
             {selectedChar ? <b>{selectedChar.name}</b> : "(캐릭터 미선택)"} 캐릭터 ·{" "}
             {selectedExpr ? <b>{selectedExpr.name}</b> : "(표정 미선택)"} 표정
+            {poseImage ? " · 포즈 그림 있음" : ""}
           </p>
           <button className={styles.btnGenerate} onClick={onGenerate} disabled={loading}>
             {loading ? "생성 중… (10~30초)" : "생성하기"}

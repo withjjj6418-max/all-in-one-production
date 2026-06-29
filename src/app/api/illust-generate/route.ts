@@ -3,10 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-// 서버는 Node.js 환경에서 돈다 (파일 읽기 + 키 사용 때문에 필요)
 export const runtime = "nodejs";
 
-// 표정 id를 한글 설명으로 (프롬프트에 보조로 넣어 정확도를 높인다)
 const EXPRESSION_LABELS: Record<string, string> = {
   expr01: "곤란한 표정", expr02: "곤란한 표정", expr03: "곤란한 표정", expr04: "곤란한 표정",
   expr05: "놀란 표정", expr06: "놀란 표정",
@@ -20,15 +18,24 @@ interface GenerateBody {
   characterId: string;
   expressionId: string;
   poseText: string;
+  poseImage: string | null;
+  // 표정 충실도: "image" = 그림 그대로(단어 뺌), "word" = 단어 설명 포함
+  exprMode: "image" | "word";
+  // 모델 품질: "flash" = 빠름/저렴, "pro" = 고품질
+  quality: "flash" | "pro";
+}
+
+function parseDataUrl(dataUrl: string): { mimeType: string; data: string } | null {
+  const match = dataUrl.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
+  if (!match) return null;
+  return { mimeType: match[1], data: match[2] };
 }
 
 export async function POST(req: NextRequest) {
   try {
-    // 1. 화면에서 보낸 선택 정보 받기
     const body: GenerateBody = await req.json();
-    const { characterId, expressionId, poseText } = body;
+    const { characterId, expressionId, poseText, poseImage, exprMode, quality } = body;
 
-    // 2. 키 확인 (.env.local 에서 가져옴, 화면에는 절대 노출 안 됨)
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
@@ -37,17 +44,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 3. 캐릭터 전신 그림과 표정 그림을 디스크에서 읽기
-    //    public/images/ 안의 char01_full.png, expr01.png 형식
     const imagesDir = path.join(process.cwd(), "public", "images");
-
     let charBuffer: Buffer;
     let exprBuffer: Buffer;
     try {
       charBuffer = await fs.readFile(path.join(imagesDir, `${characterId}_full.png`));
     } catch {
       return NextResponse.json(
-        { error: `캐릭터 전신 그림(${characterId}_full.png)을 찾을 수 없습니다. public/images 폴더를 확인하세요.` },
+        { error: `캐릭터 전신 그림(${characterId}_full.png)을 찾을 수 없습니다.` },
         { status: 400 }
       );
     }
@@ -60,34 +64,71 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4. 프롬프트 구성: 첫 그림=캐릭터, 둘째 그림=표정. 얼굴은 캐릭터 유지, 표정만 가져오기.
-    const exprLabel = EXPRESSION_LABELS[expressionId] ?? "지정된 표정";
-    const poseLine = poseText
-      ? `포즈는 다음과 같이: ${poseText}.`
-      : "포즈는 정면을 보고 서 있는 기본 자세로.";
+    const hasPoseImage = !!poseImage;
+
+    // ===== 표정 지시: 선택에 따라 문구를 바꾼다 =====
+    let exprLine: string;
+    if (exprMode === "image") {
+      // 그림 그대로 모드: 단어 설명을 빼고, 그림을 정확히 따르라고 강조
+      exprLine =
+        "두 번째 이미지는 표정 참고용입니다. 그 그림의 눈, 눈썹, 입 모양을 있는 그대로 정확히 캐릭터 얼굴에 옮기세요. " +
+        "표정을 과장하거나 임의로 해석하지 말고, 참고 그림의 표정 강도와 모양을 그대로 유지하세요. " +
+        "두 번째 이미지의 얼굴형이나 이목구비 자체는 캐릭터에 섞지 마세요.";
+    } else {
+      // 단어 설명 모드: 기존 방식 (표정 이름도 함께 알려줌)
+      const exprLabel = EXPRESSION_LABELS[expressionId] ?? "지정된 표정";
+      exprLine =
+        `두 번째 이미지는 표정 참고용입니다. 그 표정(${exprLabel})을 캐릭터 얼굴에 적용하고, ` +
+        "두 번째 이미지의 얼굴형이나 이목구비 자체는 캐릭터에 섞지 마세요.";
+    }
+
+    // ===== 포즈 지시 =====
+    let poseLine: string;
+    if (hasPoseImage) {
+      poseLine =
+        "세 번째 이미지는 포즈 참고용입니다. 그 포즈(자세, 팔다리 방향, 몸의 각도)만 캐릭터에 적용하고, " +
+        "세 번째 이미지의 인물 생김새나 옷은 캐릭터에 섞지 마세요.";
+      if (poseText) poseLine += ` 추가로 다음도 반영: ${poseText}.`;
+    } else if (poseText) {
+      poseLine = `포즈는 다음과 같이: ${poseText}.`;
+    } else {
+      poseLine = "포즈는 정면을 보고 서 있는 기본 자세로.";
+    }
 
     const promptText =
       "첫 번째 이미지의 캐릭터를 그대로 사용하세요. " +
       "캐릭터의 정체성, 그림체, 머리 모양, 옷, 신체 비율을 정확히 유지하세요. " +
-      `두 번째 이미지는 표정 참고용입니다. 그 표정(${exprLabel})만 캐릭터 얼굴에 적용하고, ` +
-      "두 번째 이미지의 얼굴형이나 이목구비 자체는 캐릭터에 섞지 마세요. " +
+      `${exprLine} ` +
       `${poseLine} ` +
       "배경은 완전한 순백색(#FFFFFF)으로, 그림자나 다른 요소 없이. " +
       "캐릭터 한 명만 그리세요.";
 
-    // 5. Gemini 호출
+    const contents: Array<
+      | { text: string }
+      | { inlineData: { mimeType: string; data: string } }
+    > = [
+      { text: promptText },
+      { inlineData: { mimeType: "image/png", data: charBuffer.toString("base64") } },
+      { inlineData: { mimeType: "image/png", data: exprBuffer.toString("base64") } },
+    ];
+
+    if (poseImage) {
+      const parsed = parseDataUrl(poseImage);
+      if (parsed) {
+        contents.push({ inlineData: { mimeType: parsed.mimeType, data: parsed.data } });
+      }
+    }
+
+    // ===== 모델 선택: 품질에 따라 =====
+    const modelName =
+      quality === "pro" ? "gemini-3-pro-image-preview" : "gemini-2.5-flash-image";
+
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
-      // 처음엔 2.5 Flash Image(Nano Banana). 품질을 더 원하면 gemini-3-pro-image-preview 로 변경.
-      model: "gemini-2.5-flash-image",
-      contents: [
-        { text: promptText },
-        { inlineData: { mimeType: "image/png", data: charBuffer.toString("base64") } },
-        { inlineData: { mimeType: "image/png", data: exprBuffer.toString("base64") } },
-      ],
+      model: modelName,
+      contents,
     });
 
-    // 6. 응답에서 이미지 부분을 찾아서 화면으로 돌려주기
     const parts = response.candidates?.[0]?.content?.parts ?? [];
     for (const part of parts) {
       if (part.inlineData?.data) {
@@ -96,14 +137,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 이미지가 없으면 (안전필터에 걸렸거나 텍스트만 온 경우)
     return NextResponse.json(
-      { error: "이미지가 생성되지 않았습니다. 프롬프트나 표정/포즈를 바꿔서 다시 시도해 보세요." },
+      { error: "이미지가 생성되지 않았습니다. 포즈나 표정을 바꿔서 다시 시도해 보세요." },
       { status: 502 }
     );
   } catch (err) {
     console.error("generate error:", err);
-    // 결제 미설정, 키 오류 등은 보통 여기로 온다
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "알 수 없는 오류" },
       { status: 500 }
