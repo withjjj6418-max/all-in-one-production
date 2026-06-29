@@ -56,6 +56,8 @@ export default function Home() {
   // 옵션: 표정 충실도 / 모델 품질
   const [exprMode, setExprMode] = useState<"image" | "word">("image");
   const [quality, setQuality] = useState<"flash" | "pro">("flash");
+  // 드래그앤드롭으로 파일을 끌고 있는 중인지 (테두리 강조용)
+  const [dragOver, setDragOver] = useState(false);
   const [loading, setLoading] = useState(false);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -77,6 +79,22 @@ export default function Home() {
   function onFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (file) fileToDataUrl(file);
+  }
+
+  // ===== 드래그앤드롭: 파일을 끌어다 놓기 =====
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) fileToDataUrl(file);
+  }
+  function onDragOver(e: React.DragEvent) {
+    e.preventDefault(); // 이걸 해야 브라우저가 파일을 열어버리지 않음
+    setDragOver(true);
+  }
+  function onDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
   }
 
   // ===== 붙여넣기(Ctrl+V): 클립보드의 이미지를 받음 =====
@@ -199,23 +217,24 @@ export default function Home() {
           onChange={(e) => setPoseText(e.target.value)}
         />
 
-        {/* 포즈 참고 그림 영역 */}
-        <div className={styles.poseRow}>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={onFileSelect}
-            style={{ display: "none" }}
-          />
-          <button
-            type="button"
-            className={styles.btnSub}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            포즈 그림 업로드
-          </button>
-          <span className={styles.hint}>또는 이 화면에서 Ctrl+V로 붙여넣기</span>
+        {/* 포즈 참고 그림 영역 (업로드 / 붙여넣기 / 드래그앤드롭) */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={onFileSelect}
+          style={{ display: "none" }}
+        />
+        <div
+          className={`${styles.dropZone} ${dragOver ? styles.dropZoneOver : ""}`}
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <span className={styles.dropText}>
+            포즈 참고 그림을 여기로 끌어다 놓거나, 클릭해서 업로드, 또는 Ctrl+V로 붙여넣기
+          </span>
         </div>
 
         {/* 넣은 포즈 그림 미리보기 */}

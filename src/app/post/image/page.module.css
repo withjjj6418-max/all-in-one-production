@@ -283,3 +283,25 @@
   color: #9a978d;
   margin: 0 0 16px;
 }
+
+.dropZone {
+  margin-top: 10px;
+  border: 2px dashed #c9c5ba;
+  border-radius: 10px;
+  padding: 20px 16px;
+  text-align: center;
+  cursor: pointer;
+  background: #fbfaf7;
+  transition: all .12s;
+}
+.dropZone:hover { border-color: #3a6ea5; background: #f4f8fc; }
+.dropZoneOver {
+  border-color: #3a6ea5;
+  background: #eaf1f8;
+}
+.dropText {
+  font-size: 13px;
+  color: #9a978d;
+  pointer-events: none;
+}
+.dropZoneOver .dropText { color: #3a6ea5; }
