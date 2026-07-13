@@ -12,7 +12,7 @@ function ScriptsPageContent() {
   /* ============================================================
      프로젝트 연동 관련 상태 및 이펙트
      ============================================================ */
-  const [projects, setProjects] = useState<{id: number, title: string, status: string | null, progress: number, category: string | null}[]>([]);
+  const [projects, setProjects] = useState<{id: number, title: string, status: string | null, progress: number, category: string | null, uploaded?: boolean | null}[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [scriptId, setScriptId] = useState<string | null>(null);
   const [editPoints, setEditPoints] = useState("");
@@ -167,7 +167,7 @@ function ScriptsPageContent() {
   }, [activeTab]);
 
   const fetchProjects = async () => {
-    const { data, error } = await supabase.from("projects").select("id, title, status, progress, category").order("updated_at", { ascending: false });
+    const { data, error } = await supabase.from("projects").select("id, title, status, progress, category, uploaded").order("updated_at", { ascending: false });
     if (!error && data) {
       setProjects(data);
     }
@@ -449,9 +449,12 @@ function ScriptsPageContent() {
                className="w-full h-10 appearance-none rounded-lg border border-border bg-brand-cream/50 px-3 text-sm outline-none transition-colors focus:border-brand-olive focus:ring-2 focus:ring-brand-olive/20"
              >
                <option value="">프로젝트를 선택하세요...</option>
-               {projects.map(p => (
-                 <option key={p.id} value={p.id}>{p.title}</option>
-               ))}
+               {projects
+                 .filter(p => p.uploaded !== true || p.id === selectedProjectId)
+                 .map(p => (
+                   <option key={p.id} value={p.id}>{p.title}</option>
+                 ))
+               }
                <option value="__new__">+ 새 프로젝트 만들기</option>
              </select>
              <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
@@ -688,12 +691,15 @@ function ScriptsPageContent() {
           ) : (
             <div className="space-y-6">
               {(() => {
-                // 1. 카테고리 매핑
-                const scriptsWithCategory = allScripts.map(script => {
-                  const project = projects.find(p => p.id === Number(script.project_id));
-                  const category = project?.category ? project.category.trim() : "미분류";
-                  return { ...script, category };
-                });
+                // 1. 카테고리 매핑 및 업로드 완료된 프로젝트의 대본 제외
+                const scriptsWithCategory = allScripts
+                  .map(script => {
+                    const project = projects.find(p => p.id === Number(script.project_id));
+                    const category = project?.category ? project.category.trim() : "미분류";
+                    const isUploaded = project?.uploaded === true;
+                    return { ...script, category, isUploaded };
+                  })
+                  .filter(script => !script.isUploaded);
 
                 // 2. 카테고리별 그룹화
                 const grouped: Record<string, typeof scriptsWithCategory> = {};
