@@ -31,6 +31,7 @@ type Project = {
   memo: string | null;
   updated_at: string | null;
   category: string | null;
+  uploaded?: boolean | null;
 };
 
 const bgColors = ["bg-amber-100", "bg-sky-100", "bg-rose-100", "bg-violet-100", "bg-emerald-100", "bg-orange-100"];
@@ -69,6 +70,7 @@ export default function ProjectsPage() {
   const [formProgress, setFormProgress] = useState(0);
   const [formMemo, setFormMemo] = useState("");
   const [newCategoryName, setNewCategoryName] = useState("");
+  const [formUploaded, setFormUploaded] = useState(false);
 
   // 유저 정보 및 토스트
   const [userId, setUserId] = useState<string | null>(null);
@@ -114,7 +116,8 @@ export default function ProjectsPage() {
 
       const { data, error } = await supabase
         .from("projects")
-        .select("id, title, status, progress, memo, updated_at, category")
+        .select("id, title, status, progress, memo, updated_at, category, uploaded")
+        .or("uploaded.eq.false,uploaded.is.null")
         .order("updated_at", { ascending: false });
 
       if (error) {
@@ -204,6 +207,7 @@ export default function ProjectsPage() {
     setFormStatus("시작 전");
     setFormProgress(0);
     setFormMemo("");
+    setFormUploaded(false);
     setIsModalOpen(true);
   };
 
@@ -215,6 +219,7 @@ export default function ProjectsPage() {
     setFormStatus("시작 전");
     setFormProgress(0);
     setFormMemo("");
+    setFormUploaded(false);
     setIsModalOpen(true);
   };
 
@@ -226,6 +231,7 @@ export default function ProjectsPage() {
     setFormStatus(project.status || "시작 전");
     setFormProgress(project.progress || 0);
     setFormMemo(project.memo || "");
+    setFormUploaded(project.uploaded || false);
     setIsModalOpen(true);
   };
 
@@ -241,7 +247,7 @@ export default function ProjectsPage() {
     const finalCategory = (formCategory === "__new__" ? newCategoryName.trim() : formCategory.trim()) || null;
 
     try {
-      const payload = {
+      const payload: Record<string, any> = {
         title: formTitle.trim(),
         status: formStatus,
         progress: formProgress,
@@ -252,6 +258,7 @@ export default function ProjectsPage() {
       };
 
       if (editingProjectId) {
+        payload.uploaded = formUploaded;
         // 수정 모드
         const { error } = await supabase
           .from("projects")
@@ -778,6 +785,26 @@ export default function ProjectsPage() {
                   maxLength={100}
                 />
               </div>
+
+              {/* 업로드 완료 체크박스 (수정 모드일 때만 표시) */}
+              {editingProjectId && (
+                <div className="flex items-center gap-2.5 py-1 px-1 bg-gray-50/50 rounded-xl border border-gray-100/80">
+                  <input
+                    type="checkbox"
+                    id="formUploaded"
+                    checked={formUploaded}
+                    onChange={(e) => setFormUploaded(e.target.checked)}
+                    className="h-4.5 w-4.5 rounded border-gray-300 text-[#7C8C4E] focus:ring-[#7C8C4E]/30 cursor-pointer accent-[#7C8C4E]"
+                  />
+                  <label
+                    htmlFor="formUploaded"
+                    className="text-xs font-bold text-gray-600 cursor-pointer select-none flex-1"
+                  >
+                    업로드 완료
+                    <span className="block text-[10px] font-normal text-gray-400 mt-0.5">이 프로젝트는 업로드까지 끝난 것으로 표시</span>
+                  </label>
+                </div>
+              )}
 
               {/* 상태 선택 */}
               <div>
