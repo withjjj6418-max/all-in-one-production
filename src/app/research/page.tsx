@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Search, Plus, ExternalLink, Trash2, Folder, AlertCircle, Check, X, Loader2, ChevronLeft, ChevronRight, ChevronDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { Search, Plus, ExternalLink, Trash2, Folder, AlertCircle, Check, X, Loader2, ChevronLeft, ChevronRight, ChevronDown, ArrowUp, ArrowDown, ScanSearch } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 interface Source {
@@ -35,6 +35,113 @@ export default function ResearchPage() {
   // 유저 정보 및 토스트
   const [userId, setUserId] = useState<string | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
+
+  // 원본 조사 상태
+  const [investigatingId, setInvestigatingId] = useState<number | null>(null)
+
+  // 원본 다운로드 상태
+  const [downloadUrl, setDownloadUrl] = useState('')
+  const [downloading, setDownloading] = useState(false)
+
+  // 도우미 서버를 통한 원본 다운로드 핸들러
+  const handleDownloadVideo = async () => {
+    if (downloading || !downloadUrl.trim()) return
+    setDownloading(true)
+
+    try {
+      // 1. 도우미 서버 헬스 체크 (2초 타임아웃)
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 2000)
+
+      try {
+        const healthRes = await fetch("http://localhost:8787/health", {
+          signal: controller.signal,
+          mode: 'cors'
+        })
+        clearTimeout(timeoutId)
+        if (!healthRes.ok) throw new Error("헬스체크 응답 에러")
+      } catch (healthErr) {
+        clearTimeout(timeoutId)
+        showToast("❌ 조사 도우미가 꺼져 있어요. '조사도우미시작'을 실행해주세요. (Vercel 등 https 환경 시 로컬 개발화면 localhost:3000에서 테스트하세요.)")
+        setDownloading(false)
+        return
+      }
+
+      // 2. 다운로드 실행
+      showToast("📥 원본 영상 다운로드를 시작합니다. 최고 화질이라 시간이 다소 걸릴 수 있습니다...")
+      const res = await fetch("http://localhost:8787/download", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ url: downloadUrl.trim() }),
+        mode: 'cors'
+      })
+
+      const result = await res.json()
+      if (res.ok && result.ok) {
+        showToast(`🎉 다운로드 완료! 폴더가 열렸어요. (파일명: ${result.filename})`)
+        setDownloadUrl('')
+      } else {
+        showToast(`❌ 다운로드 실패: ${result.error || "오류가 발생했습니다."}`)
+      }
+    } catch (err: any) {
+      console.error(err)
+      showToast(`❌ 통신 실패: 도우미 서버 연결을 확인해 주세요. (로컬 개발화면 localhost:3000 확인)`)
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  // 도우미 서버를 통한 원본 조사 핸들러
+  const handleInvestigate = async (source: Source) => {
+    if (investigatingId !== null) return
+    setInvestigatingId(source.id)
+
+    try {
+      // 1. 도우미 서버 헬스 체크 (2초 타임아웃)
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 2000)
+
+      try {
+        const healthRes = await fetch("http://localhost:8787/health", {
+          signal: controller.signal,
+          mode: 'cors'
+        })
+        clearTimeout(timeoutId)
+        if (!healthRes.ok) throw new Error("헬스체크 응답 에러")
+      } catch (healthErr) {
+        clearTimeout(timeoutId)
+        showToast("❌ 조사 도우미가 꺼져 있어요. '조사도우미시작'을 실행해주세요. (Vercel 등 https 환경 시 로컬 개발화면 localhost:3000에서 테스트하세요.)")
+        setInvestigatingId(null)
+        return
+      }
+
+      // 2. 조사 실행 요청
+      showToast("🔍 영상 원본 조사를 시작합니다. 수십 초 정도 걸릴 수 있습니다...")
+      const res = await fetch("http://localhost:8787/investigate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ url: source.url }),
+        mode: 'cors'
+      })
+
+      const result = await res.json()
+      if (res.ok && result.ok) {
+        showToast("🎉 조사 완료! 작업 폴더가 열렸습니다. 구글 렌즈로 원본을 역검색해 보세요!")
+        window.open("https://lens.google.com/", "_blank")
+      } else {
+        showToast(`❌ 조사 실패: ${result.error || "오류가 발생했습니다."}`)
+      }
+    } catch (err: any) {
+      console.error(err)
+      showToast(`❌ 통신 실패: 도우미 서버 연결을 확인해 주세요. (로컬 개발화면 localhost:3000 확인)`)
+    } finally {
+      setInvestigatingId(null)
+    }
+  }
 
   // 카테고리별 페이지 상태
   const [categoryPages, setCategoryPages] = useState<Record<string, number>>({})
@@ -394,6 +501,30 @@ export default function ResearchPage() {
         </div>
       </div>
 
+      {/* ─── 원본 다운로드 영역 (미니멀) ─── */}
+      <div className="flex items-center gap-2 max-w-2xl p-2 bg-gray-50/50 rounded-lg border border-gray-100 text-xs text-gray-500">
+        <span className="font-bold text-gray-600 shrink-0">📥 원본 다운로드:</span>
+        <input
+          type="text"
+          value={downloadUrl}
+          onChange={(e) => setDownloadUrl(e.target.value)}
+          placeholder="다운로드할 영상 URL 입력..."
+          className="flex-1 px-2.5 py-1 rounded border border-gray-200 focus:outline-none focus:ring-1 focus:ring-[#7C8C4E]/30 focus:border-[#7C8C4E] bg-white text-gray-700 font-medium"
+          disabled={downloading}
+        />
+        <button
+          onClick={handleDownloadVideo}
+          disabled={downloading || !downloadUrl.trim()}
+          className={`px-3 py-1 rounded font-bold text-white transition shrink-0 ${
+            downloading
+              ? 'bg-amber-500 cursor-not-allowed animate-pulse'
+              : 'bg-[#7C8C4E] hover:bg-[#6c7b44] active:bg-[#5c693a] disabled:opacity-50 disabled:cursor-not-allowed'
+          }`}
+        >
+          {downloading ? '다운로드 중...' : '다운로드'}
+        </button>
+      </div>
+
       {/* ─── 정렬 컨트롤 영역 (단순 한 줄 버튼 4개) ─── */}
       <div className="flex items-center gap-1.5 flex-wrap p-1 max-w-2xl text-[11px] sm:text-xs">
         {/* 1. 폴더이름 (카테고리 폴더 순서 정렬) */}
@@ -697,8 +828,32 @@ export default function ResearchPage() {
                         {/* 액션 버튼 영역 */}
                         <div className="flex items-center gap-1.5 shrink-0">
                           <button
+                            onClick={() => handleInvestigate(source)}
+                            disabled={investigatingId !== null}
+                            className={`flex items-center gap-0.5 px-2 py-0.5 sm:py-1 rounded-lg border text-[10px] sm:text-xs transition font-semibold shrink-0 ${
+                              investigatingId === source.id
+                                ? 'bg-amber-50 border-amber-200 text-amber-600 cursor-not-allowed'
+                                : investigatingId !== null
+                                ? 'bg-gray-50 border-gray-100 text-gray-400 cursor-not-allowed'
+                                : 'border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                            }`}
+                            title="로컬 도우미로 영상 원본 조사하기"
+                          >
+                            {investigatingId === source.id ? (
+                              <>
+                                <Loader2 size={10} className="animate-spin" />
+                                <span>조사 중...</span>
+                              </>
+                            ) : (
+                              <>
+                                <ScanSearch size={10} />
+                                <span>조사</span>
+                              </>
+                            )}
+                          </button>
+                          <button
                             onClick={() => window.open(source.url, '_blank')}
-                            className="flex items-center gap-0.5 px-2 py-0.5 sm:py-1 rounded-lg border border-gray-200 text-[10px] sm:text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition font-semibold"
+                            className="flex items-center gap-0.5 px-2 py-0.5 sm:py-1 rounded-lg border border-gray-200 text-[10px] sm:text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition font-semibold shrink-0"
                             title="새 창에서 링크 열기"
                           >
                             <ExternalLink size={10} />

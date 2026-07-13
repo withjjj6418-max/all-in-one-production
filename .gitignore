@@ -40,3 +40,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# source-finder
+/source-finder/outputs
+/source-finder/downloads
