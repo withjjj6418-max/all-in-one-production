@@ -20,11 +20,19 @@ import {
   User,
   Menu,
   FileText,
+  CheckCircle,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 const mainMenuItems = [
   { label: "프로젝트", href: "/projects", icon: FolderKanban },
+  { label: "소스리서치", href: "/research", icon: Search },
+  { label: "영상 분석", href: "/analytics", icon: BarChart3 },
+];
+
+const shortsMenuItems = [
+  { label: "프로젝트", href: "/projects", icon: FolderKanban },
+  { label: "완료", href: "/completed", icon: CheckCircle },
   { label: "소스리서치", href: "/research", icon: Search },
   { label: "영상 분석", href: "/analytics", icon: BarChart3 },
 ];
@@ -149,7 +157,7 @@ export function Sidebar() {
         <div className="space-y-1">
           <h3 className="px-3 mb-2 text-[11px] font-bold tracking-wider text-muted-foreground/70">🎬 쇼츠</h3>
           
-          {mainMenuItems.map((item) => {
+          {shortsMenuItems.map((item) => {
             const isActive = pathname === item.href;
             const Icon = item.icon;
 
