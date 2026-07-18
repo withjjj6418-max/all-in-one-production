@@ -1,61 +1,71 @@
-# 영상 원본 조사 보조 도구 (source-finder)
+# Source Finder 로컬 도우미
 
-이 폴더는 영상 원본 조사를 보조하는 로컬 도구들을 모아두는 곳입니다.
-웹 애플리케이션 빌드 및 배포에 영향을 주지 않도록 구성되어 있습니다.
+`/source-finder` 화면에서 영상 파일 또는 URL을 분석하기 위한 Windows 로컬 서비스입니다. 영상 처리는 사용자의 PC에서 실행되며 결과는 `source-finder/outputs/<job-id>/`에 저장됩니다.
 
-## 🛠️ 기능 구성
-- **yt-dlp** (`source-finder/bin/yt-dlp.exe`): 다양한 플랫폼의 영상 다운로드 지원
-- **ffmpeg / ffprobe** (`source-finder/bin/ffmpeg.exe`, `ffprobe.exe`): 영상의 프레임 추출 및 바둑판식 이미지 합병(Contact Sheet), 실제 영상 영역 크롭 지원
-- **도우미 서버** (`source-finder/helper_server.mjs`): 웹앱과의 통신을 통해 원본 조사 명령을 수신하고, 대표 이미지를 클립보드에 자동 복사하는 로컬 API 서버
-- **실행기** (`source-finder/조사도우미시작.bat`): 더블클릭하여 로컬 도우미 서버를 즉시 기동하는 윈도우 배치 스크립트
+## 시작하기
 
----
+프로젝트 루트에서 터미널 두 개를 열고 각각 실행합니다.
 
-## 🚀 사용법
-
-### 방법 A. 로컬 도우미 서버 사용 (권장)
-웹앱 또는 외부 시스템과 통신하여 원본 조사를 자동화할 때 유용합니다.
-
-1. **도우미 서버 시작:** `source-finder/조사도우미시작.bat` 파일을 더블클릭하여 기동합니다.
-   * 검은 터미널 창이 뜨면서 `localhost:8787` 포트에서 대기하게 됩니다.
-   * 터미널 창을 닫으면 도우미 서버가 꺼집니다.
-2. **API 호출 방식:**
-   * **상태 체크 (GET):**
-     * URL: `http://localhost:8787/health`
-     * 응답: `{ "ok": true }`
-   * **조사 요청 (POST):**
-     * URL: `http://localhost:8787/investigate`
-     * Body (JSON): `{ "url": "여기에 영상 URL 입력" }`
-     * 응답 (JSON):
-       ```json
-       {
-         "ok": true,
-         "outputDir": "C:/Users/...",
-         "contactSheet": "C:/Users/...",
-         "reportPath": "C:/Users/...",
-         "title": "영상 제목",
-         "uploader": "업로더 계정",
-         "uploadDate": "YYYY-MM-DD",
-         "clipboard": true,
-         "message": "대표 프레임이 클립보드에 복사됐어요. 구글 렌즈에서 Ctrl+V 하세요."
-       }
-       ```
-     * *※ 조사 완료 시 해당 결과물이 담긴 윈도우 탐색기 폴더가 자동으로 열리며, 검은 여백이 제거된 대표 프레임 중 하나가 **윈도우 클립보드에 이미지로 자동 복사**됩니다. 구글 렌즈 탭에서 곧바로 `Ctrl+V`를 누르면 즉시 검색이 가능합니다.*
-
-### 방법 B. 콘솔에서 단독 실행하기
-콘솔창을 통해 단독으로 동작을 테스트하거나 수동 조사할 때 사용합니다.
-
-```bash
-node source-finder/source_finder.mjs "<영상URL>"
+```powershell
+npm run source-finder
 ```
 
----
+```powershell
+npm run dev
+```
 
-## 📁 작업 결과물 구조 (outputs)
-실행할 때마다 `outputs/<타임스탬프>/` 아래에 폴더가 고유하게 생성됩니다.
-- `reference.mp4`: 720p 상한선으로 다운로드된 영상 파일
-- `reference.info.json`: 영상 정보 메타데이터 원본 JSON 파일
-- `frames/`: 비디오에서 고르게 분할 추출된 약 30장의 개별 프레임 이미지들
-- `frames/contact_sheet.jpg`: 30장의 프레임을 5x6 격자로 모은 한 장짜리 요약 이미지
-- `frames/cropped/`: 영상 위아래 검은 영역(여백)이 자동으로 제거된 대표 프레임 4장
-- `report.md`: 영상 메타데이터, 구글 렌즈 역검색 안내, 제목 키워드 검색 링크, 업로더 SNS 프로필 확인 링크, 조사 체크리스트가 기재된 마크다운 보고서
+웹앱에서 **원본 찾기** 메뉴를 열고 도우미 상태가 `연결됨`인지 확인합니다. 이미 이전 버전의 도우미가 8787 포트에서 실행 중이라면 해당 터미널을 종료하고 다시 시작해야 새 기능이 적용됩니다.
+
+`.env.local`에는 다음 서버 전용 키가 필요합니다.
+
+```dotenv
+GEMINI_API_KEY=
+YOUTUBE_API_KEY=
+GOOGLE_CLOUD_VISION_API_KEY=
+```
+
+`GOOGLE_CLOUD_VISION_API_KEY`를 사용할 Google Cloud 프로젝트에서는 **Cloud Vision API**와 결제를 활성화하고, 키의 API 제한에 Cloud Vision API를 허용해야 합니다. 이 키는 브라우저로 전달되지 않습니다. 원본 탐색 시 검색용 대표 프레임이 최대 4장까지 Google Vision Web Detection으로 전송됩니다.
+
+## 지원 흐름
+
+1. URL 또는 최대 1GB 영상 파일 입력
+2. FFmpeg로 대표 프레임과 콘택트 시트 생성
+3. Google Vision Web Detection으로 동일·부분 일치 이미지가 게시된 웹페이지 탐색
+4. Gemini가 프레임별 워터마크·인물·장소·사건과 외국어 검색어 추출
+5. YouTube·Instagram·TikTok·샤오홍슈에서 해외 원본 후보 자동 수집
+6. 입력한 한국 재편집 URL과 한국어 재업로드 결과 제외
+7. 상위 후보 영상을 최대 480p로 직접 가져와 입력 영상과 초 단위 프레임 지문 대조
+8. 두 프레임 이상 일치하고 검증 점수 55점 이상인 후보만 결과에 표시
+9. 후보 제목·업로더·게시일과 직접 열 수 있는 링크 표시
+
+별도 후보 입력은 필요하지 않습니다. 자동 검색에 누락된 후보가 이미 알려진 경우에만 선택적으로 직접 추가할 수 있습니다.
+
+## 로컬 API
+
+- `GET /health`: 서비스 상태와 기능 목록
+- `POST /investigate`: `{ "url": "...", "openFolder": false }`
+- `POST /investigate-file`: 영상 바이너리, 파일명은 `X-File-Name` 헤더
+- `POST /candidates`: `{ "urls": ["...", "..."] }`
+- `POST /verify-candidates`: `{ "jobId": "...", "urls": ["...", "..."] }`
+- `GET /asset?jobId=...&file=...`: 생성된 대표 프레임 조회
+- `POST /api/source-finder/discover`: 웹앱의 자동 원본 탐색 API
+
+서비스는 보안을 위해 `127.0.0.1:8787`에만 바인딩되며, `/asset`은 `outputs/<job-id>` 내부 파일만 제공합니다.
+
+## 결과물
+
+- `reference.*`: 분석용 입력 영상 복사본
+- `reference.info.json`: URL 입력 시 플랫폼 메타데이터
+- `frames/frame_*.jpg`: 시간 간격별 프레임
+- `frames/cropped/representative_*.jpg`: 검색용 대표 프레임
+- `frames/contact_sheet.jpg`: 전체 프레임 요약
+- `report.md`: 메타데이터와 플랫폼별 검색 링크
+
+## 판정 범위와 주의사항
+
+- 결과는 인터넷 전체의 절대적 원본이 아니라 **현재 확인 가능한 후보 중 가장 이른 게시물**입니다.
+- 삭제·비공개·검색 미노출 게시물은 확인할 수 없습니다.
+- URL 분석은 플랫폼 정책과 로그인 상태에 따라 실패할 수 있습니다.
+- 소유하거나 분석 권한이 있는 영상만 처리하고 각 플랫폼의 이용약관을 준수하세요.
+- 상위 후보 영상은 전체 프레임 지문으로 자동 검증합니다. 플랫폼 로그인·지역 제한·삭제·비공개 영상은 검증하지 못할 수 있습니다.
+- Google Vision은 검색엔진에 노출된 공개 웹페이지만 찾을 수 있습니다. 대표 프레임은 Google Cloud로 전송되므로 비공개·민감 영상에는 사용하지 마세요.

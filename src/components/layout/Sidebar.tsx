@@ -21,12 +21,19 @@ import {
   Menu,
   FileText,
   CheckCircle,
+  ScanSearch,
+  Layers3,
+  BookOpenText,
+  WandSparkles,
+  FileAudio,
+  Upload,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 const mainMenuItems = [
   { label: "프로젝트", href: "/projects", icon: FolderKanban },
   { label: "소스리서치", href: "/research", icon: Search },
+  { label: "원본 찾기", href: "/source-finder", icon: ScanSearch },
   { label: "영상 분석", href: "/analytics", icon: BarChart3 },
 ];
 
@@ -34,6 +41,7 @@ const shortsMenuItems = [
   { label: "프로젝트", href: "/projects", icon: FolderKanban },
   { label: "완료", href: "/completed", icon: CheckCircle },
   { label: "소스리서치", href: "/research", icon: Search },
+  { label: "원본 찾기", href: "/source-finder", icon: ScanSearch },
   { label: "영상 분석", href: "/analytics", icon: BarChart3 },
 ];
 
@@ -52,6 +60,7 @@ export function Sidebar() {
 
   const [mounted, setMounted] = useState(false);
   const [currentQuery, setCurrentQuery] = useState("");
+  const [isStoryStudioOpen, setIsStoryStudioOpen] = useState(true);
 
   useEffect(() => {
     setMounted(true);
@@ -59,6 +68,15 @@ export function Sidebar() {
       setCurrentQuery(window.location.search);
     }
   }, [pathname]);
+
+  const pathStoryProjectId = pathname.match(/^\/studio\/shorts-story\/projects\/(\d+)/)?.[1] ?? null;
+  const queryStoryProjectId = mounted ? new URLSearchParams(currentQuery).get("project_id") : null;
+  const rememberedStoryProjectId = mounted && typeof window !== "undefined" ? window.localStorage.getItem("last-shorts-story-project-id") : null;
+  const storyProjectId = pathStoryProjectId || queryStoryProjectId || rememberedStoryProjectId;
+
+  useEffect(() => {
+    if (pathStoryProjectId && typeof window !== "undefined") window.localStorage.setItem("last-shorts-story-project-id", pathStoryProjectId);
+  }, [pathStoryProjectId]);
   
   const isPostProductionActive = pathname.startsWith("/post");
   const [isPostOpen, setIsPostOpen] = useState(isPostProductionActive);
@@ -153,6 +171,55 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-5 px-3 py-4 overflow-y-auto scrollbar-hide">
+        <div className="space-y-1">
+          <h3 className="px-3 mb-2 text-[11px] font-bold tracking-wider text-muted-foreground/70">제작 공간</h3>
+          <Link
+            href="/studio"
+            onClick={() => setIsMobileOpen(false)}
+            className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${pathname === "/studio"
+                ? "bg-brand-olive text-white shadow-sm"
+                : "bg-brand-cream text-brand-olive-dark hover:bg-brand-pink/20"
+              }`}
+          >
+            <Layers3 size={18} />
+            <span>제작 스튜디오</span>
+            <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[9px] font-bold ${pathname === "/studio" ? "bg-white/20 text-white" : "bg-white text-brand-olive"}`}>NEW</span>
+          </Link>
+
+          <button
+            type="button"
+            onClick={() => setIsStoryStudioOpen((current) => !current)}
+            className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${pathname.startsWith("/studio/shorts-story") || (pathname === "/scripts" && Boolean(storyProjectId)) ? "bg-rose-50 text-rose-700" : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"}`}
+          >
+            <BookOpenText size={18} className="text-rose-600" />
+            <span>숏폼(사연)</span>
+            <ChevronDown size={16} className={`ml-auto transition-transform ${isStoryStudioOpen ? "rotate-180" : ""}`} />
+          </button>
+
+          <div className={`overflow-hidden transition-all duration-200 ${isStoryStudioOpen ? "max-h-80 opacity-100" : "max-h-0 opacity-0"}`}>
+            <div className="ml-4 space-y-0.5 border-l border-sidebar-border py-1 pl-3">
+              {[
+                { key: "projects", label: "프로젝트", href: "/studio/shorts-story", icon: FolderKanban, needsProject: false },
+                { key: "story", label: "원문각색", href: storyProjectId ? `/studio/shorts-story/projects/${storyProjectId}/story` : "/studio/shorts-story", icon: WandSparkles, needsProject: true },
+                { key: "script", label: "대본수정", href: storyProjectId ? `/scripts?project_id=${storyProjectId}&tab=write` : "/studio/shorts-story", icon: PenLine, needsProject: true },
+                { key: "voice", label: "TTS", href: storyProjectId ? `/studio/shorts-story/projects/${storyProjectId}/voice/cast` : "/studio/shorts-story", icon: FileAudio, needsProject: true },
+                { key: "characters", label: "캐릭터", href: storyProjectId ? `/studio/shorts-story/projects/${storyProjectId}/characters` : "/studio/shorts-story", icon: Image, needsProject: true },
+                { key: "uploads", label: "업로드목록", href: "/studio/shorts-story/uploads", icon: Upload, needsProject: false },
+              ].map((item) => {
+                const isActive = item.key === "projects" ? pathname === "/studio/shorts-story"
+                  : item.key === "uploads" ? pathname === "/studio/shorts-story/uploads"
+                  : item.key === "story" ? pathname.endsWith("/story")
+                  : item.key === "script" ? pathname === "/scripts" && currentQuery.includes(`project_id=${storyProjectId}`)
+                  : item.key === "voice" ? pathname.endsWith("/voice/cast") || pathname.endsWith("/voice")
+                  : pathname.endsWith("/characters");
+                const Icon = item.icon;
+                const waitingForProject = item.needsProject && !storyProjectId;
+                return <Link key={item.key} href={item.href} title={waitingForProject ? "사연 프로젝트를 먼저 선택해주세요" : undefined} onClick={() => setIsMobileOpen(false)} className={`group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition ${isActive ? "bg-brand-pink/15 text-brand-olive-dark" : waitingForProject ? "text-muted-foreground/50" : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"}`}><Icon size={15} className={isActive ? "text-brand-olive" : "text-muted-foreground"} /><span>{item.label}</span>{isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-brand-pink" />}</Link>;
+              })}
+            </div>
+          </div>
+        </div>
+
         {/* 🎬 쇼츠 그룹 */}
         <div className="space-y-1">
           <h3 className="px-3 mb-2 text-[11px] font-bold tracking-wider text-muted-foreground/70">🎬 쇼츠</h3>

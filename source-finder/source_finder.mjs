@@ -1,311 +1,429 @@
-import { spawnSync, execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
+import { createHash } from 'crypto';
 import fs from 'fs';
-import path from 'url';
 import nodePath from 'path';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = nodePath.dirname(__filename);
 
-export async function runSourceFinder(videoUrl) {
-  if (!videoUrl) {
-    throw new Error("영상 URL이 제공되지 않았습니다.");
-  }
+const binDir = nodePath.join(__dirname, 'bin');
+const ytdlpPath = nodePath.join(binDir, 'yt-dlp.exe');
+const ffmpegPath = nodePath.join(binDir, 'ffmpeg.exe');
+const ffprobePath = nodePath.join(binDir, 'ffprobe.exe');
 
-  // 실행 파일 절대 경로 매핑 (Windows exe 주의)
-  const binDir = nodePath.join(__dirname, 'bin');
-  const ytdlpPath = nodePath.join(binDir, 'yt-dlp.exe');
-  const ffmpegPath = nodePath.join(binDir, 'ffmpeg.exe');
-  const ffprobePath = nodePath.join(binDir, 'ffprobe.exe');
-
-  // 실행 파일 존재 여부 검사
-  if (!fs.existsSync(ytdlpPath) || !fs.existsSync(ffmpegPath) || !fs.existsSync(ffprobePath)) {
-    throw new Error("필수 도구(yt-dlp.exe, ffmpeg.exe, ffprobe.exe)가 source-finder/bin 폴더에 없습니다.");
-  }
-
-  // 3. 작업 폴더 생성: source-finder/outputs/<timestamp>/
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const outputsDir = nodePath.join(__dirname, 'outputs');
-  const workDir = nodePath.join(outputsDir, timestamp);
-  const framesDir = nodePath.join(workDir, 'frames');
-
-  fs.mkdirSync(workDir, { recursive: true });
-  fs.mkdirSync(framesDir, { recursive: true });
-
-  console.log(`[1/5] 작업 폴더 생성 완료: ${workDir}`);
-
-  // 4. yt-dlp 로 영상 다운로드
-  console.log(`[2/5] 영상 다운로드 중... URL: ${videoUrl}`);
-
-  const ytdlpArgs = [
-    '--ffmpeg-location', binDir,
-    '-f', 'bestvideo[height<=720]+bestaudio/best[height<=720]/best',
-    '--merge-output-format', 'mp4',
-    '--write-info-json',
-    '-o', nodePath.join(workDir, 'reference.%(ext)s'),
-    videoUrl
-  ];
-
-  const ytdlpResult = spawnSync(ytdlpPath, ytdlpArgs, { encoding: 'utf-8', stdio: 'pipe' });
-
-  if (ytdlpResult.status !== 0) {
-    fs.rmSync(workDir, { recursive: true, force: true });
-    throw new Error(`영상 다운로드 실패! 상세 에러: ${ytdlpResult.stderr || ytdlpResult.stdout}`);
-  }
-
-  // 다운로드된 파일 탐색 (reference.*)
-  const filesInWorkDir = fs.readdirSync(workDir);
-  const videoFile = filesInWorkDir.find(file => file.startsWith('reference.') && !file.endsWith('.json'));
-
-  if (!videoFile) {
-    fs.rmSync(workDir, { recursive: true, force: true });
-    throw new Error("다운로드된 영상 파일을 찾을 수 없습니다.");
-  }
-
-  const videoPath = nodePath.join(workDir, videoFile);
-  const infoJsonPath = nodePath.join(workDir, 'reference.info.json');
-
-  // 메타데이터 파싱
-  let title = "알 수 없음";
-  let uploader = "알 수 없음";
-  let uploadDate = "알 수 없음";
-
-  if (fs.existsSync(infoJsonPath)) {
-    try {
-      const infoData = JSON.parse(fs.readFileSync(infoJsonPath, 'utf-8'));
-      title = infoData.title || title;
-      uploader = infoData.uploader || infoData.channel || uploader;
-      if (infoData.upload_date) {
-        const dateStr = infoData.upload_date;
-        if (dateStr.length === 8) {
-          uploadDate = `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
-        } else {
-          uploadDate = dateStr;
-        }
-      }
-    } catch (err) {
-      console.warn("⚠️ 메타데이터 JSON 파싱 실패:", err.message);
+function requireBinaries() {
+  for (const binary of [ytdlpPath, ffmpegPath, ffprobePath]) {
+    if (!fs.existsSync(binary)) {
+      throw new Error(`필수 도구를 찾을 수 없습니다: ${binary}`);
     }
   }
+}
 
-  console.log(`[2/5] 다운로드 완료: ${videoFile}`);
+function run(command, args, options = {}) {
+  const result = spawnSync(command, args, {
+    encoding: 'utf8',
+    maxBuffer: 32 * 1024 * 1024,
+    windowsHide: true,
+    ...options,
+  });
 
-  // 5. ffprobe 로 영상 길이(duration) 구하기
-  console.log("[3/5] 영상 정보 분석 및 프레임 추출 중...");
+  if (result.status !== 0) {
+    const detail = String(result.stderr || result.stdout || '').trim();
+    throw new Error(detail || `${nodePath.basename(command)} 실행에 실패했습니다.`);
+  }
 
-  let duration = 0;
+  return result;
+}
+
+function isWebUrl(value) {
   try {
-    const ffprobeArgs = [
-      '-v', 'error',
-      '-show_entries', 'format=duration',
-      '-of', 'default=noprint_wrappers=1:nokey=1',
-      videoPath
-    ];
-    const ffprobeOutput = execFileSync(ffprobePath, ffprobeArgs, { encoding: 'utf-8' });
-    duration = parseFloat(ffprobeOutput.trim());
-  } catch (err) {
-    throw new Error(`영상 분석(ffprobe) 실패: ${err.message}`);
+    return ['http:', 'https:'].includes(new URL(value).protocol);
+  } catch {
+    return false;
   }
+}
 
-  if (isNaN(duration) || duration <= 0) {
-    throw new Error("영상 길이가 유효하지 않습니다.");
-  }
+function compactTitle(value) {
+  return String(value || '')
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, ' ')
+    .replace(/[\\/:*?"<>|#[\]()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 160);
+}
 
-  // 6. ffmpeg 로 프레임 추출
-  const interval = duration / 30;
+function formatDate(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (digits.length < 8) return null;
+  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+}
 
-  const ffmpegExtractArgs = [
-    '-i', videoPath,
-    '-vf', `select='isnan(prev_selected_t)+gte(t-prev_selected_t\\,${interval})',scale=400:-1`,
-    '-vsync', 'vfr',
-    '-q:v', '2',
-    nodePath.join(framesDir, 'frame_%03d.jpg')
+function detectPlatform(url = '') {
+  const host = (() => {
+    try { return new URL(url).hostname.toLowerCase(); } catch { return ''; }
+  })();
+  if (host.includes('youtube.com') || host.includes('youtu.be')) return 'youtube';
+  if (host.includes('tiktok.com')) return 'tiktok';
+  if (host.includes('instagram.com')) return 'instagram';
+  return host ? 'web' : 'file';
+}
+
+function buildSearchLinks(title, uploader) {
+  const query = compactTitle([title, uploader].filter(Boolean).join(' '));
+  const encoded = encodeURIComponent(query);
+  const google = (site) => `https://www.google.com/search?q=${encodeURIComponent(`site:${site} ${query}`)}`;
+
+  return [
+    { platform: 'youtube', label: 'YouTube에서 찾기', url: `https://www.youtube.com/results?search_query=${encoded}` },
+    { platform: 'youtube', label: 'Google에서 YouTube Shorts 찾기', url: google('youtube.com/shorts') },
+    { platform: 'tiktok', label: 'TikTok에서 찾기', url: `https://www.tiktok.com/search?q=${encoded}` },
+    { platform: 'tiktok', label: 'Google에서 TikTok 찾기', url: google('tiktok.com') },
+    { platform: 'instagram', label: 'Google에서 Instagram Reels 찾기', url: google('instagram.com/reel') },
+    { platform: 'web', label: '웹 전체에서 찾기', url: `https://www.google.com/search?q=${encoded}` },
+    { platform: 'lens', label: 'Google Lens로 대표 프레임 찾기', url: 'https://lens.google.com/' },
   ];
+}
 
-  const ffmpegExtractResult = spawnSync(ffmpegPath, ffmpegExtractArgs, { stdio: 'pipe' });
+function readInfo(infoJsonPath, fallbackTitle, source) {
+  const fallback = {
+    title: compactTitle(fallbackTitle) || '제목 없음',
+    uploader: null,
+    uploadDate: null,
+    duration: null,
+    sourceUrl: isWebUrl(source) ? source : null,
+    platform: isWebUrl(source) ? detectPlatform(source) : 'file',
+  };
 
-  if (ffmpegExtractResult.status !== 0) {
-    throw new Error(`프레임 추출(ffmpeg) 실패: ${ffmpegExtractResult.stderr.toString()}`);
+  if (!fs.existsSync(infoJsonPath)) return fallback;
+
+  try {
+    const info = JSON.parse(fs.readFileSync(infoJsonPath, 'utf8'));
+    return {
+      title: info.title || fallback.title,
+      uploader: info.uploader || info.channel || info.creator || null,
+      uploadDate: formatDate(info.upload_date) || (info.timestamp ? new Date(info.timestamp * 1000).toISOString().slice(0, 10) : null),
+      duration: Number(info.duration) || null,
+      sourceUrl: info.webpage_url || fallback.sourceUrl,
+      platform: detectPlatform(info.webpage_url || source),
+    };
+  } catch {
+    return fallback;
   }
+}
 
-  // 7. contact sheet 생성 (ffmpeg tile 필터)
-  console.log("[4/5] Contact Sheet 생성 중...");
+function extractDuration(videoPath) {
+  const output = execFileSync(ffprobePath, [
+    '-v', 'error',
+    '-show_entries', 'format=duration',
+    '-of', 'default=noprint_wrappers=1:nokey=1',
+    videoPath,
+  ], { encoding: 'utf8', windowsHide: true });
+  const duration = Number.parseFloat(output.trim());
+  if (!Number.isFinite(duration) || duration <= 0) {
+    throw new Error('영상 길이를 확인할 수 없습니다.');
+  }
+  return duration;
+}
+
+function extractFrames(videoPath, framesDir, duration) {
+  const frameCount = Math.max(6, Math.min(30, Math.ceil(duration / 2)));
+  const interval = Math.max(0.25, duration / frameCount);
+  run(ffmpegPath, [
+    '-hide_banner', '-loglevel', 'error', '-i', videoPath,
+    '-vf', `fps=1/${interval},scale=640:-2`,
+    '-frames:v', String(frameCount), '-q:v', '2',
+    nodePath.join(framesDir, 'frame_%03d.jpg'),
+  ]);
+
+  const frameFiles = fs.readdirSync(framesDir)
+    .filter((file) => /^frame_\d+\.jpg$/i.test(file))
+    .sort();
+  if (frameFiles.length === 0) throw new Error('대표 프레임을 추출하지 못했습니다.');
 
   const contactSheetPath = nodePath.join(framesDir, 'contact_sheet.jpg');
-
-  const ffmpegTileArgs = [
+  run(ffmpegPath, [
+    '-hide_banner', '-loglevel', 'error',
     '-i', nodePath.join(framesDir, 'frame_%03d.jpg'),
-    '-vf', 'tile=5x6',
-    '-frames:v', '1',
-    '-q:v', '2',
-    contactSheetPath
-  ];
+    '-vf', 'scale=320:-2,tile=5x6:padding=6:margin=6:color=white',
+    '-frames:v', '1', '-q:v', '2', contactSheetPath,
+  ]);
 
-  const ffmpegTileResult = spawnSync(ffmpegPath, ffmpegTileArgs, { stdio: 'pipe' });
-
-  if (ffmpegTileResult.status !== 0) {
-    throw new Error(`Contact Sheet 생성(ffmpeg tile) 실패: ${ffmpegTileResult.stderr.toString()}`);
-  }
-
-  // 8. 핵심 프레임 크롭 및 원본 조사 링크 생성
-  console.log("[5/5] 원본 조사 분석 진행 중 (크롭 감지 및 보고서 생성)...");
-
-  let cropParams = null;
-  try {
-    const cropdetectArgs = [
-      '-ss', '5',
-      '-i', videoPath,
-      '-t', '10',
-      '-vf', 'cropdetect=limit=24:round=16',
-      '-f', 'null',
-      '-'
-    ];
-    const cropResult = spawnSync(ffmpegPath, cropdetectArgs, { encoding: 'utf-8', stdio: 'pipe' });
-    const stderr = cropResult.stderr || '';
-    const matches = [...stderr.matchAll(/crop=(\d+:\d+:\d+:\d+)/g)];
-    if (matches.length > 0) {
-      cropParams = matches[matches.length - 1][1];
-    }
-  } catch (err) {
-    console.warn("⚠️ cropdetect 실패 (원본 프레임 사용):", err.message);
+  const selected = [];
+  const selectedCount = Math.min(4, frameFiles.length);
+  for (let i = 0; i < selectedCount; i += 1) {
+    const index = Math.min(frameFiles.length - 1, Math.floor((i + 0.5) * frameFiles.length / selectedCount));
+    selected.push(frameFiles[index]);
   }
 
   const croppedDir = nodePath.join(framesDir, 'cropped');
   fs.mkdirSync(croppedDir, { recursive: true });
+  return selected.map((file, index) => {
+    const outputName = `representative_${index + 1}.jpg`;
+    const relativePath = nodePath.posix.join('frames', 'cropped', outputName);
+    const result = spawnSync(ffmpegPath, [
+      '-hide_banner', '-loglevel', 'error', '-i', nodePath.join(framesDir, file),
+      '-vf', 'cropdetect=24:16:0,scale=640:-2', '-frames:v', '1',
+      nodePath.join(croppedDir, outputName),
+    ], { windowsHide: true });
 
-  const frameFiles = fs.readdirSync(framesDir)
-    .filter(file => file.startsWith('frame_') && file.endsWith('.jpg'))
-    .sort();
-
-  const selectCount = 4;
-  const selectedFrames = [];
-  if (frameFiles.length >= selectCount) {
-    for (let i = 0; i < selectCount; i++) {
-      const idx = Math.floor((i + 0.5) * (frameFiles.length / selectCount));
-      selectedFrames.push(frameFiles[idx]);
+    if (result.status !== 0 || !fs.existsSync(nodePath.join(croppedDir, outputName))) {
+      fs.copyFileSync(nodePath.join(framesDir, file), nodePath.join(croppedDir, outputName));
     }
-  } else {
-    selectedFrames.push(...frameFiles);
-  }
-
-  selectedFrames.forEach((frameFile, index) => {
-    const srcPath = nodePath.join(framesDir, frameFile);
-    const destPath = nodePath.join(croppedDir, `cropped_${index + 1}.jpg`);
-    
-    if (cropParams) {
-      const cropArgs = [
-        '-i', srcPath,
-        '-vf', `crop=${cropParams}`,
-        '-y',
-        destPath
-      ];
-      const cropRun = spawnSync(ffmpegPath, cropArgs);
-      if (cropRun.status !== 0) {
-        fs.copyFileSync(srcPath, destPath);
-      }
-    } else {
-      fs.copyFileSync(srcPath, destPath);
-    }
+    return relativePath;
   });
+}
 
-  const cleanTitle = title
-    .replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDC00-\uDFFF]/g, '')
-    .replace(/[\\/:*?"<>|#\[\]()]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+function writeReport(workDir, result) {
+  const rows = result.searchLinks
+    .map((link) => `- [${link.label}](${link.url})`)
+    .join('\n');
+  const content = `# 영상 원본 조사 보고서
 
-  const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(cleanTitle)}`;
-  const youtubeSearchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(cleanTitle)}`;
-  const tiktokSearchUrl = `https://www.tiktok.com/search?q=${encodeURIComponent(cleanTitle)}`;
+## 입력 영상
+- 제목: ${result.title}
+- 플랫폼: ${result.platform}
+- 업로더: ${result.uploader || '확인되지 않음'}
+- 게시일: ${result.uploadDate || '확인되지 않음'}
+- 입력 URL: ${result.sourceUrl || '로컬 파일'}
 
-  const tiktokProfileUrl = uploader.startsWith('@') 
-    ? `https://www.tiktok.com/${encodeURIComponent(uploader)}` 
-    : `https://www.tiktok.com/@${encodeURIComponent(uploader)}`;
-  const instagramProfileUrl = `https://www.instagram.com/${encodeURIComponent(uploader.replace('@', ''))}/`;
-  const youtubeProfileUrl = uploader.startsWith('@')
-    ? `https://www.youtube.com/${encodeURIComponent(uploader)}`
-    : `https://www.youtube.com/@${encodeURIComponent(uploader)}`;
+## 검색 바로가기
+${rows}
 
-  const reportMdPath = nodePath.join(workDir, 'report.md');
-  const reportContent = `# 🔍 영상 원본 조사 보고서
-
-## 📌 영상 정보
-- **입력 URL:** [영상 링크](${videoUrl})
-- **영상 제목:** ${title}
-- **업로더:** ${uploader}
-- **업로드 날짜:** ${uploadDate}
-
-## 🖼️ 작업 결과물 경로
-- **Contact Sheet:** \`${contactSheetPath}\`
-- **크롭된 프레임 폴더:** \`${croppedDir}\`
-
----
-
-## 🔗 역검색 및 키워드 검색 링크
-
-### 1. 이미지 역검색 (Google Lens)
-- 🌐 [구글 렌즈 웹페이지 바로가기](https://lens.google.com/)
-- 💡 **안내:** 위 링크를 열고, \`frames/cropped/\` 폴더의 크롭된 대표 이미지들을 직접 드래그 앤 드롭하여 유사한 영상이나 원본 출처를 찾을 수 있습니다.
-
-### 2. 제목 키워드 검색
-제거된 특수문자/이모지를 제외한 핵심 문구: **"${cleanTitle}"**
-- 🔍 [Google 검색 링크](${googleSearchUrl})
-- 📺 [YouTube 검색 링크](${youtubeSearchUrl})
-- 🎵 [TikTok 검색 링크](${tiktokSearchUrl})
-
-### 3. 업로더 프로필 확인 링크
-- 🎵 [TikTok 프로필 확인](${tiktokProfileUrl})
-- 📸 [Instagram 프로필 확인](${instagramProfileUrl})
-- 📺 [YouTube 채널 확인](${youtubeProfileUrl})
-- *※ 업로더명이 실제 계정 아이디와 일치하지 않을 수 있으므로 참고용으로 사용하세요.*
-
----
-
-## 📋 다음 할 일 (조사 체크리스트)
-- [ ] 1. **Contact Sheet 확인:** \`contact_sheet.jpg\`를 열어 영상 곳곳에 숨겨진 워터마크나 계정 아이디(예: @아이디)가 있는지 유심히 살펴봅니다.
-- [ ] 2. **구글 렌즈 역검색:** \`frames/cropped/\` 내부의 이미지를 구글 렌즈에 올려 원본 또는 퍼온 곳이 있는지 대조해 봅니다.
-- [ ] 3. **소셜 프로필 조회:** 영상 속 워터마크나 설명란에서 찾은 아이디가 있다면, 위의 SNS 프로필 주소 규칙을 활용해 실제 원본 채널을 찾아 방문합니다.
+## 판정 원칙
+검색으로 발견한 후보 URL을 Source Finder 화면에 추가하면 게시일을 정규화해 가장 이른 후보를 표시합니다. 삭제·비공개 게시물은 확인할 수 없으므로 결과는 절대적인 최초 원본이 아니라 “현재 확인 가능한 가장 이른 게시물”입니다.
 `;
+  const reportPath = nodePath.join(workDir, 'report.md');
+  fs.writeFileSync(reportPath, content, 'utf8');
+  return reportPath;
+}
 
-  fs.writeFileSync(reportMdPath, reportContent, 'utf-8');
+export async function runSourceFinder(source, options = {}) {
+  if (!source) throw new Error('영상 URL 또는 파일 경로가 필요합니다.');
+  requireBinaries();
+
+  const jobId = new Date().toISOString().replace(/[:.]/g, '-');
+  const workDir = nodePath.join(__dirname, 'outputs', jobId);
+  const framesDir = nodePath.join(workDir, 'frames');
+  fs.mkdirSync(framesDir, { recursive: true });
+
+  let videoPath;
+  let infoJsonPath = nodePath.join(workDir, 'reference.info.json');
+  const fallbackTitle = options.originalFileName || nodePath.basename(source, nodePath.extname(source));
+
+  try {
+    if (isWebUrl(source)) {
+      run(ytdlpPath, [
+        '--ffmpeg-location', binDir,
+        '-f', 'bestvideo[height<=720]+bestaudio/best[height<=720]/best',
+        '--merge-output-format', 'mp4', '--write-info-json',
+        '-o', nodePath.join(workDir, 'reference.%(ext)s'), source,
+      ]);
+      const downloaded = fs.readdirSync(workDir)
+        .find((file) => file.startsWith('reference.') && !file.endsWith('.json'));
+      if (!downloaded) throw new Error('다운로드된 영상 파일을 찾을 수 없습니다.');
+      videoPath = nodePath.join(workDir, downloaded);
+    } else {
+      const resolved = nodePath.resolve(source);
+      if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
+        throw new Error('업로드한 영상 파일을 찾을 수 없습니다.');
+      }
+      const extension = nodePath.extname(resolved) || '.mp4';
+      videoPath = nodePath.join(workDir, `reference${extension}`);
+      fs.copyFileSync(resolved, videoPath);
+    }
+
+    const metadata = readInfo(infoJsonPath, fallbackTitle, source);
+    const duration = metadata.duration || extractDuration(videoPath);
+    const representativeFrames = extractFrames(videoPath, framesDir, duration);
+    const result = {
+      jobId,
+      outputDir: workDir,
+      title: metadata.title,
+      uploader: metadata.uploader,
+      uploadDate: metadata.uploadDate,
+      duration,
+      platform: metadata.platform,
+      sourceUrl: metadata.sourceUrl,
+      representativeFrames,
+      contactSheet: nodePath.posix.join('frames', 'contact_sheet.jpg'),
+      searchLinks: buildSearchLinks(metadata.title, metadata.uploader),
+    };
+    result.reportPath = writeReport(workDir, result);
+    return result;
+  } catch (error) {
+    fs.rmSync(workDir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+export function inspectCandidate(url) {
+  if (!isWebUrl(url)) throw new Error('올바른 후보 URL이 아닙니다.');
+  requireBinaries();
+  const output = run(ytdlpPath, ['--dump-single-json', '--skip-download', '--no-warnings', url]).stdout;
+  const info = JSON.parse(output);
+  const publishedAt = formatDate(info.upload_date)
+    || (info.timestamp ? new Date(info.timestamp * 1000).toISOString().slice(0, 10) : null)
+    || (info.release_timestamp ? new Date(info.release_timestamp * 1000).toISOString().slice(0, 10) : null);
 
   return {
-    outputDir: workDir,
-    contactSheet: contactSheetPath,
-    reportPath: reportMdPath,
-    title,
-    uploader,
-    uploadDate
+    url: info.webpage_url || url,
+    platform: detectPlatform(info.webpage_url || url),
+    title: info.title || '제목 없음',
+    uploader: info.uploader || info.channel || info.creator || null,
+    publishedAt,
+    duration: Number(info.duration) || null,
+    thumbnail: info.thumbnail || null,
   };
 }
 
-// CLI 단독 실행 감지 및 핸들링
-const isCli = process.argv[1] && (
-  process.argv[1] === fileURLToPath(import.meta.url) || 
-  nodePath.basename(process.argv[1]) === 'source_finder.mjs'
-);
-
-if (isCli) {
-  const url = process.argv[2];
-  if (!url) {
-    console.log("사용법: node source-finder/source_finder.mjs \"<영상URL>\"");
-    process.exit(1);
+function grayFrameHashes(videoPath, fps = 1) {
+  const filters = [
+    `fps=${fps},scale=32:32,format=gray`,
+    `fps=${fps},crop=iw*0.82:ih*0.82:iw*0.09:ih*0.09,scale=32:32,format=gray`,
+  ];
+  const variants = [];
+  for (const filter of filters) {
+    const result = spawnSync(ffmpegPath, [
+      '-hide_banner', '-loglevel', 'error', '-i', videoPath,
+      '-t', '600', '-vf', filter, '-f', 'rawvideo', '-pix_fmt', 'gray', 'pipe:1',
+    ], { encoding: null, maxBuffer: 256 * 1024 * 1024, windowsHide: true });
+    if (result.status !== 0) continue;
+    const buffer = Buffer.from(result.stdout || []);
+    const hashes = [];
+    for (let offset = 0; offset + 1024 <= buffer.length; offset += 1024) {
+      hashes.push(differenceHash(buffer.subarray(offset, offset + 1024)));
+    }
+    variants.push(hashes);
   }
-  
-  runSourceFinder(url)
-    .then(result => {
-      console.log("\n==================================================");
-      console.log("🎉 작업 완료!");
-      console.log(`- 작업 폴더: ${result.outputDir}`);
-      console.log(`- Contact Sheet 경로: ${result.contactSheet}`);
-      console.log(`- 조사 보고서(Markdown): ${result.reportPath}`);
-      console.log(`- 영상 제목: ${result.title}`);
-      console.log(`- 업로더: ${result.uploader}`);
-      console.log(`- 업로드 날짜: ${result.uploadDate}`);
-      console.log("==================================================");
+  return variants;
+}
+
+function differenceHash(pixels) {
+  const bits = [];
+  for (let y = 0; y < 32; y += 1) {
+    for (let x = 0; x < 31; x += 1) {
+      bits.push(pixels[y * 32 + x] > pixels[y * 32 + x + 1]);
+    }
+  }
+  return bits;
+}
+
+function hashSimilarity(left, right) {
+  const length = Math.min(left.length, right.length);
+  if (!length) return 0;
+  let equal = 0;
+  for (let index = 0; index < length; index += 1) if (left[index] === right[index]) equal += 1;
+  return equal / length;
+}
+
+function compareHashSequences(queryVariants, candidateVariants) {
+  const query = queryVariants.flatMap((variant, variantIndex) => variant.map((hash, frameIndex) => ({ hash, frameIndex, variantIndex })));
+  const candidate = candidateVariants.flatMap((variant, variantIndex) => variant.map((hash, frameIndex) => ({ hash, frameIndex, variantIndex })));
+  if (!query.length || !candidate.length) return { score: 0, matchedFrames: 0, bestSimilarity: 0 };
+
+  const bestByQueryFrame = new Map();
+  for (const queryFrame of query) {
+    let best = 0;
+    for (const candidateFrame of candidate) {
+      const similarity = hashSimilarity(queryFrame.hash, candidateFrame.hash);
+      if (similarity > best) best = similarity;
+    }
+    const previous = bestByQueryFrame.get(queryFrame.frameIndex) || 0;
+    if (best > previous) bestByQueryFrame.set(queryFrame.frameIndex, best);
+  }
+  const similarities = [...bestByQueryFrame.values()].sort((a, b) => b - a);
+  // 재편집본 안에 2~5초만 사용된 원본도 잡되, 우연히 한 프레임만 닮은 후보는 통과시키지 않는다.
+  const topCount = Math.min(5, Math.max(2, Math.ceil(similarities.length * 0.15)));
+  const topAverage = similarities.slice(0, topCount).reduce((sum, value) => sum + value, 0) / topCount;
+  const matchedFrames = similarities.filter((value) => value >= 0.78).length;
+  const coverage = matchedFrames / Math.max(1, similarities.length);
+  let score = Math.round(Math.max(0, Math.min(100, ((topAverage - 0.5) * 160) + coverage * 20)));
+  if (matchedFrames < 2) score = Math.min(score, 45);
+  return { score, matchedFrames, bestSimilarity: Math.round((similarities[0] || 0) * 100) };
+}
+
+export function compareVideoFiles(queryPath, candidatePath) {
+  requireBinaries();
+  const queryHashes = grayFrameHashes(queryPath, 1);
+  const candidateHashes = grayFrameHashes(candidatePath, 1);
+  return compareHashSequences(queryHashes, candidateHashes);
+}
+
+export function compareDownloadedCandidates(jobId) {
+  const jobDir = nodePath.resolve(__dirname, 'outputs', jobId);
+  const referenceName = fs.readdirSync(jobDir).find((file) => file.startsWith('reference.') && !file.endsWith('.json'));
+  if (!referenceName) throw new Error('Reference video not found.');
+  const queryHashes = grayFrameHashes(nodePath.join(jobDir, referenceName), 1);
+  const verificationRoot = nodePath.join(jobDir, 'verification');
+  if (!fs.existsSync(verificationRoot)) return [];
+  return fs.readdirSync(verificationRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => {
+      const candidateDir = nodePath.join(verificationRoot, entry.name);
+      const candidateName = fs.readdirSync(candidateDir).find((file) => file.startsWith('candidate.') && !file.endsWith('.part'));
+      if (!candidateName) return { candidateId: entry.name, ok: false, score: 0 };
+      return {
+        candidateId: entry.name,
+        ok: true,
+        ...compareHashSequences(queryHashes, grayFrameHashes(nodePath.join(candidateDir, candidateName), 1)),
+      };
     })
-    .catch(err => {
-      console.error("\n❌ 에러 발생:", err.message);
-      process.exit(1);
+    .sort((left, right) => right.score - left.score);
+}
+
+export async function verifyCandidates(jobId, urls) {
+  if (!/^[\w.-]+$/.test(jobId || '')) throw new Error('유효하지 않은 분석 작업입니다.');
+  requireBinaries();
+  const outputsRoot = nodePath.resolve(__dirname, 'outputs');
+  const jobDir = nodePath.resolve(outputsRoot, jobId);
+  if (!jobDir.startsWith(`${outputsRoot}${nodePath.sep}`) || !fs.existsSync(jobDir)) {
+    throw new Error('분석 작업을 찾을 수 없습니다.');
+  }
+  const referenceName = fs.readdirSync(jobDir).find((file) => file.startsWith('reference.') && !file.endsWith('.json'));
+  if (!referenceName) throw new Error('비교할 입력 영상이 없습니다.');
+  const queryHashes = grayFrameHashes(nodePath.join(jobDir, referenceName), 1);
+  if (!queryHashes.some((variant) => variant.length)) throw new Error('입력 영상 지문을 만들지 못했습니다.');
+
+  const verificationRoot = nodePath.join(jobDir, 'verification');
+  fs.mkdirSync(verificationRoot, { recursive: true });
+  const uniqueUrls = [...new Set((urls || []).map((url) => String(url).trim()).filter(isWebUrl))].slice(0, 8);
+  const results = [];
+
+  for (const url of uniqueUrls) {
+    const candidateId = createHash('sha1').update(url).digest('hex').slice(0, 12);
+    const candidateDir = nodePath.join(verificationRoot, candidateId);
+    fs.mkdirSync(candidateDir, { recursive: true });
+    try {
+      run(ytdlpPath, [
+        '--ffmpeg-location', binDir, '--no-playlist',
+        '-f', 'bestvideo[height<=480]+bestaudio/best[height<=480]/best',
+        '--merge-output-format', 'mp4',
+        '-o', nodePath.join(candidateDir, 'candidate.%(ext)s'), url,
+      ]);
+      const candidateName = fs.readdirSync(candidateDir).find((file) => file.startsWith('candidate.') && !file.endsWith('.part'));
+      if (!candidateName) throw new Error('후보 영상을 가져오지 못했습니다.');
+      const candidateHashes = grayFrameHashes(nodePath.join(candidateDir, candidateName), 1);
+      const comparison = compareHashSequences(queryHashes, candidateHashes);
+      results.push({ ok: true, url, ...comparison });
+    } catch (error) {
+      results.push({ ok: false, url, score: 0, matchedFrames: 0, bestSimilarity: 0, error: error.message });
+    }
+  }
+  fs.writeFileSync(
+    nodePath.join(verificationRoot, 'results.json'),
+    JSON.stringify({ createdAt: new Date().toISOString(), candidateCount: uniqueUrls.length, results }, null, 2),
+    'utf8',
+  );
+  return results;
+}
+
+const isCli = process.argv[1] && nodePath.resolve(process.argv[1]) === __filename;
+if (isCli) {
+  runSourceFinder(process.argv[2])
+    .then((result) => console.log(JSON.stringify(result, null, 2)))
+    .catch((error) => {
+      console.error(error.message);
+      process.exitCode = 1;
     });
 }

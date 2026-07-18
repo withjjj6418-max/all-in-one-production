@@ -11,7 +11,8 @@ import {
   Scissors, 
   Video, 
   Image as ImageIcon, 
-  FileText 
+  FileText,
+  BookOpenText,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -227,6 +228,13 @@ export default function ProjectDetailPage({
               {project.title}
             </h1>
           </div>
+          <Link
+            href={`/studio/shorts-story/projects/${projectId}`}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-brand-olive px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-brand-olive-dark"
+          >
+            <BookOpenText size={16} />
+            사연 워크벤치 열기
+          </Link>
         </div>
 
         {/* 진행률 표시 */}

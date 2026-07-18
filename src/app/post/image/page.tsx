@@ -2,55 +2,102 @@
 
 import { useState, useEffect, useRef } from "react";
 import styles from "./page.module.css";
+import { storyCharacters as characters, storyExpressions as expressions } from "@/features/story/character-options";
+import { createClient } from "@/lib/supabase/client";
+import { getProjectFolderHandle, writeBlobToFolder } from "@/lib/project-folder";
 
 // ===== 데이터: 화면에 보일 이름 (네가 정한 표 그대로) =====
-const characters = [
-  { id: "char01", name: "남자1" },
-  { id: "char02", name: "남자2" },
-  { id: "char03", name: "남자3" },
-  { id: "char04", name: "딸" },
-  { id: "char05", name: "아들" },
-  { id: "char06", name: "아저씨1" },
-  { id: "char07", name: "아저씨2" },
-  { id: "char08", name: "아줌마1" },
-  { id: "char09", name: "아줌마2" },
-  { id: "char10", name: "여자1" },
-  { id: "char11", name: "여자2" },
-  { id: "char12", name: "여자3" },
-  { id: "char13", name: "할머니1" },
-  { id: "char14", name: "할머니2" },
-  { id: "char15", name: "할아버지1" },
-  { id: "char16", name: "할아버지2" },
-];
+type Item = { readonly id: string; readonly name: string };
+type ScenePosition = "left" | "center" | "right";
 
-const expressions = [
-  { id: "expr01", name: "곤란1" },
-  { id: "expr02", name: "곤란2" },
-  { id: "expr03", name: "곤란3" },
-  { id: "expr04", name: "곤란4" },
-  { id: "expr05", name: "놀람1" },
-  { id: "expr06", name: "놀람2" },
-  { id: "expr07", name: "눈물1" },
-  { id: "expr08", name: "눈물2" },
-  { id: "expr09", name: "못마땅" },
-  { id: "expr10", name: "무표정" },
-  { id: "expr11", name: "미소" },
-  { id: "expr12", name: "분노1" },
-  { id: "expr13", name: "분노2" },
-  { id: "expr14", name: "분노3" },
-  { id: "expr15", name: "분노4" },
-  { id: "expr16", name: "분노5" },
-  { id: "expr17", name: "웃음" },
-  { id: "expr18", name: "정색" },
-];
+type PermissionDirectoryHandle = FileSystemDirectoryHandle & {
+  queryPermission?: (options: { mode: "readwrite" }) => Promise<PermissionState>;
+  requestPermission?: (options: { mode: "readwrite" }) => Promise<PermissionState>;
+};
 
-type Item = { id: string; name: string };
+function safeFileName(value: string) {
+  return value.replace(/[\\/:*?"<>|]/g, "_").trim() || "캐릭터";
+}
+
+function loadDataImage(source: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("생성된 캐릭터 이미지를 불러오지 못했습니다."));
+    image.src = source;
+  });
+}
+
+function removeWhiteBackground(image: HTMLImageElement) {
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) throw new Error("이미지 합성 화면을 만들지 못했습니다.");
+  context.drawImage(image, 0, 0);
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+  let minX = canvas.width;
+  let minY = canvas.height;
+  let maxX = 0;
+  let maxY = 0;
+  for (let y = 0; y < canvas.height; y += 1) {
+    for (let x = 0; x < canvas.width; x += 1) {
+      const offset = (y * canvas.width + x) * 4;
+      const red = pixels.data[offset];
+      const green = pixels.data[offset + 1];
+      const blue = pixels.data[offset + 2];
+      const nearWhite = red > 242 && green > 242 && blue > 242 && Math.max(red, green, blue) - Math.min(red, green, blue) < 12;
+      if (nearWhite) {
+        pixels.data[offset + 3] = 0;
+      } else if (pixels.data[offset + 3] > 0) {
+        minX = Math.min(minX, x); minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+      }
+    }
+  }
+  context.putImageData(pixels, 0, 0);
+  if (minX > maxX || minY > maxY) return { canvas, x: 0, y: 0, width: canvas.width, height: canvas.height };
+  return { canvas, x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
+}
+
+async function composeActorImages(sources: string[], positions: ScenePosition[]) {
+  const outputSize = 1024;
+  const output = document.createElement("canvas");
+  output.width = outputSize;
+  output.height = outputSize;
+  const context = output.getContext("2d");
+  if (!context) throw new Error("두 캐릭터를 합성하지 못했습니다.");
+  context.fillStyle = "#FFFFFF";
+  context.fillRect(0, 0, outputSize, outputSize);
+  const preparedActors = await Promise.all(sources.map(async (source) => removeWhiteBackground(await loadDataImage(source))));
+  const centerByPosition: Record<ScenePosition, number> = { left: 285, center: 512, right: 739 };
+  for (const [index, actor] of preparedActors.entries()) {
+    const scale = Math.min(440 / actor.width, 900 / actor.height);
+    const targetWidth = actor.width * scale;
+    const targetHeight = actor.height * scale;
+    const targetX = centerByPosition[positions[index]] - targetWidth / 2;
+    const targetY = 970 - targetHeight;
+    context.drawImage(actor.canvas, actor.x, actor.y, actor.width, actor.height, targetX, targetY, targetWidth, targetHeight);
+  }
+  return output.toDataURL("image/png");
+}
 
 export default function Home() {
   // ===== 현재 선택 상태 =====
   const [selectedChar, setSelectedChar] = useState<Item | null>(null);
   const [selectedExpr, setSelectedExpr] = useState<Item | null>(null);
   const [poseText, setPoseText] = useState("");
+  const [propImage, setPropImage] = useState<string | null>(null);
+  const [propName, setPropName] = useState("소품");
+  const [propText, setPropText] = useState("");
+  const [propPosition, setPropPosition] = useState<ScenePosition>("center");
+  const [secondEnabled, setSecondEnabled] = useState(false);
+  const [secondChar, setSecondChar] = useState<Item | null>(null);
+  const [secondExpr, setSecondExpr] = useState<Item | null>(null);
+  const [secondPoseText, setSecondPoseText] = useState("");
+  const [primaryPosition, setPrimaryPosition] = useState<ScenePosition>("left");
+  const [secondPosition, setSecondPosition] = useState<ScenePosition>("right");
+  const [sceneText, setSceneText] = useState("");
   // 포즈 참고 그림: base64 데이터 URL 한 장 (업로드 또는 붙여넣기)
   const [poseImage, setPoseImage] = useState<string | null>(null);
   // 옵션: 표정 충실도 / 모델 품질
@@ -61,8 +108,28 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<number | null>(null);
+  const [cueId, setCueId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const project = Number(params.get("project_id"));
+    const character = characters.find((item) => item.id === params.get("character"));
+    const expression = expressions.find((item) => item.id === params.get("expression"));
+    const timeout = window.setTimeout(() => {
+      if (Number.isFinite(project) && project > 0) setProjectId(project);
+      setCueId(params.get("cue_id"));
+      if (character) setSelectedChar(character);
+      if (expression) setSelectedExpr(expression);
+      if (params.get("pose")) setPoseText(params.get("pose") || "");
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, []);
 
   // ===== 파일을 base64 데이터 URL로 변환하는 공통 함수 =====
   function fileToDataUrl(file: File) {
@@ -72,6 +139,26 @@ export default function Home() {
     }
     const reader = new FileReader();
     reader.onload = () => setPoseImage(reader.result as string);
+    reader.readAsDataURL(file);
+  }
+
+  function propFileToDataUrl(file: File) {
+    if (!file.type.startsWith("image/")) {
+      setErrorMsg("소품은 이미지 파일만 올릴 수 있습니다.");
+      return;
+    }
+    if (file.size > 5_000_000) {
+      setErrorMsg("소품 이미지는 5MB 이하로 올려주세요.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const image = String(reader.result);
+      const name = file.name.replace(/\.[^.]+$/, "").trim();
+      setPropImage(image);
+      setPropName(name || "소품");
+      setErrorMsg(null);
+    };
     reader.readAsDataURL(file);
   }
 
@@ -122,6 +209,10 @@ export default function Home() {
   async function onGenerate() {
     if (!selectedChar) { alert("캐릭터를 먼저 선택해 주세요."); return; }
     if (!selectedExpr) { alert("표정을 선택해 주세요."); return; }
+    if (secondEnabled && !secondChar) { alert("두 번째 캐릭터를 선택해 주세요."); return; }
+    if (secondEnabled && !secondExpr) { alert("두 번째 표정을 선택해 주세요."); return; }
+    if (secondEnabled && selectedChar.id === secondChar?.id) { alert("두 명 장면에서는 서로 다른 캐릭터를 선택해 주세요."); return; }
+    if (secondEnabled && primaryPosition === secondPosition) { alert("두 캐릭터의 화면 위치를 다르게 선택해 주세요."); return; }
 
     setLoading(true);
     setErrorMsg(null);
@@ -136,16 +227,33 @@ export default function Home() {
           expressionId: selectedExpr.id,
           poseText: poseText.trim(),
           poseImage: poseImage, // 포즈 참고 그림 (없으면 null)
+          propImage,
+          propText: propText.trim(),
+          propPosition,
+          primaryPosition: secondEnabled ? primaryPosition : "center",
+          sceneText: secondEnabled ? sceneText.trim() : "",
+          secondCharacter: secondEnabled && secondExpr ? {
+            characterId: secondChar?.id || "",
+            expressionId: secondExpr.id,
+            poseText: secondPoseText.trim(),
+            position: secondPosition,
+          } : null,
           exprMode: exprMode,   // 표정 충실도
           quality: quality,     // 모델 품질
         }),
       });
 
-      const data = await res.json();
+      const data = await res.json() as { image?: string; actorImages?: string[]; error?: string };
       if (!res.ok) {
         throw new Error(data.error || "생성에 실패했습니다.");
       }
-      setResultUrl(data.image);
+      const generatedImage = data.actorImages?.length === 2
+        ? await composeActorImages(data.actorImages, [primaryPosition, secondPosition])
+        : data.image;
+      if (!generatedImage) throw new Error("생성된 이미지를 확인하지 못했습니다.");
+      setResultUrl(generatedImage);
+      setSaved(false);
+      setSaveNotice(null);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "알 수 없는 오류");
     } finally {
@@ -158,8 +266,73 @@ export default function Home() {
     if (!resultUrl) return;
     const a = document.createElement("a");
     a.href = resultUrl;
-    a.download = `${selectedChar?.id}_${selectedExpr?.id}.png`;
+    a.download = secondEnabled && secondExpr
+      ? `${selectedChar?.id}_${selectedExpr?.id}_${secondChar?.id}_${secondExpr.id}.png`
+      : `${selectedChar?.id}_${selectedExpr?.id}.png`;
     a.click();
+  }
+
+  async function saveToProject() {
+    if (!resultUrl || !projectId || !selectedExpr) return;
+    setSaving(true);
+    setErrorMsg(null);
+    setSaveNotice(null);
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("로그인이 필요합니다.");
+      let projectFolder: FileSystemDirectoryHandle | null = null;
+      let localFolderReason = "연결된 프로젝트 폴더가 없어 클라우드에만 저장했습니다.";
+      try {
+        const savedHandle = await getProjectFolderHandle(projectId);
+        if (savedHandle) {
+          const permissionHandle = savedHandle as PermissionDirectoryHandle;
+          let permission = await permissionHandle.queryPermission?.({ mode: "readwrite" });
+          if (permission !== "granted") permission = await permissionHandle.requestPermission?.({ mode: "readwrite" });
+          if (permission === "granted") projectFolder = savedHandle;
+          else localFolderReason = "프로젝트 폴더 권한이 없어 클라우드에만 저장했습니다. TTS 화면에서 폴더를 다시 연결해주세요.";
+        }
+      } catch {
+        localFolderReason = "프로젝트 폴더를 열지 못해 클라우드에만 저장했습니다. TTS 화면에서 폴더를 다시 연결해주세요.";
+      }
+      const blob = await fetch(resultUrl).then((response) => response.blob());
+      const path = `${user.id}/${projectId}/${crypto.randomUUID()}.png`;
+      const { error: uploadError } = await supabase.storage.from("story-images").upload(path, blob, { contentType: "image/png" });
+      if (uploadError) throw new Error("이미지 저장소 업로드에 실패했습니다. 캐릭터 SQL 마이그레이션을 확인해주세요.");
+      const { data: publicUrl } = supabase.storage.from("story-images").getPublicUrl(path);
+      const title = secondEnabled && secondExpr
+        ? `${selectedChar?.name || "캐릭터"}·${selectedExpr.name} + ${secondChar?.name || "캐릭터 2"}·${secondExpr.name}`
+        : `${selectedChar?.name || "캐릭터"} · ${selectedExpr.name}`;
+      const imageMemo = [poseText.trim(), secondEnabled ? secondPoseText.trim() : "", secondEnabled ? sceneText.trim() : "", propImage ? `${propName}: ${propText.trim() || "소품 추가"}` : ""].filter(Boolean).join(" / ");
+      const { error: imageError } = await supabase.from("post_images").insert({
+        user_id: user.id, project_id: projectId, title, url: publicUrl.publicUrl,
+        cue_id: cueId, memo: imageMemo || null,
+      });
+      if (imageError) throw new Error("프로젝트 이미지 기록 저장에 실패했습니다.");
+      let cueOrder: number | null = null;
+      if (cueId) {
+        const { data: cue } = await supabase.from("story_character_cues").update({ image_url: publicUrl.publicUrl, status: "done", updated_at: new Date().toISOString() }).eq("id", cueId).select("sort_order").maybeSingle();
+        cueOrder = typeof cue?.sort_order === "number" ? cue.sort_order : null;
+      }
+      if (projectFolder) {
+        try {
+          const characterFolder = await projectFolder.getDirectoryHandle("캐릭터", { create: true });
+          const orderPrefix = cueOrder === null ? "" : `${String(cueOrder + 1).padStart(2, "0")}_`;
+          const fileName = `${orderPrefix}${safeFileName(title)}_${crypto.randomUUID().slice(0, 8)}.png`;
+          await writeBlobToFolder(characterFolder, fileName, blob);
+          setSaveNotice(`프로젝트와 ${projectFolder.name}\\캐릭터 폴더에 함께 저장했습니다.`);
+        } catch {
+          setSaveNotice("프로젝트 저장은 완료했지만 컴퓨터의 캐릭터 폴더에는 저장하지 못했습니다. 폴더 권한을 다시 확인해주세요.");
+        }
+      } else {
+        setSaveNotice(localFolderReason);
+      }
+      setSaved(true);
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : "프로젝트 저장에 실패했습니다.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -171,9 +344,7 @@ export default function Home() {
 
       {/* 1. 캐릭터 */}
       <section className={styles.section}>
-        <p className={styles.sectionTitle}>
-          <span className={styles.num}>1</span> 캐릭터 <span className={styles.hint}>16종 중 하나를 클릭</span>
-        </p>
+        <p className={styles.sectionTitle}><span className={styles.num}>1</span> 캐릭터 <span className={styles.hint}>16종 중 하나를 클릭</span></p>
         <div className={styles.charGrid}>
           {characters.map((c) => (
             <Tile
@@ -253,10 +424,62 @@ export default function Home() {
         )}
       </section>
 
-      {/* 4. 옵션 */}
+      {/* 4. 소품 */}
+      <section className={styles.section}>
+        <p className={styles.sectionTitle}><span className={styles.num}>4</span> 소품 · 참고 이미지 <span className={styles.hint}>필요할 때만 추가</span></p>
+        <label className={styles.characterUpload}>
+          <input type="file" accept="image/png,image/jpeg,image/webp" className={styles.hiddenInput} onChange={(event) => { const file = event.target.files?.[0]; if (file) propFileToDataUrl(file); event.currentTarget.value = ""; }} />
+          {propImage ? <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={propImage} alt={propName} />
+            <span><b>{propName}</b><small>클릭해서 다른 소품으로 변경</small></span>
+          </> : <span><b>이라스토야·소품 이미지 선택</b><small>사람이 아닌 물건·가구·차량 등 · PNG, JPG, WebP · 최대 5MB</small></span>}
+        </label>
+        {propImage && <div className={styles.propFields}><select value={propPosition} onChange={(event) => setPropPosition(event.target.value as ScenePosition)}><option value="left">왼쪽 배치</option><option value="center">가운데 배치</option><option value="right">오른쪽 배치</option></select><input value={propText} onChange={(event) => setPropText(event.target.value)} placeholder="소품 사용 방법: 예) 캐릭터가 휴대폰을 들고 화면을 보고 있음" /><button type="button" className={styles.btnRemove} onClick={() => { setPropImage(null); setPropText(""); }}>소품 제거</button></div>}
+      </section>
+
+      {/* 5. 두 번째 캐릭터 */}
+      <section className={styles.section}>
+        <div className={styles.sectionHeading}>
+          <p className={styles.sectionTitle}><span className={styles.num}>5</span> 함께 나오는 캐릭터 <span className={styles.hint}>필요할 때만 추가</span></p>
+          <button type="button" className={secondEnabled ? styles.btnRemove : styles.btnSub} onClick={() => {
+            if (secondEnabled) {
+              setSecondEnabled(false); setSecondChar(null); setSecondExpr(null); setSecondPoseText(""); setSceneText("");
+            } else {
+              setSecondEnabled(true);
+              setSecondChar(characters.find((item) => item.id !== selectedChar?.id) || characters[0]);
+              setSecondExpr(expressions.find((item) => item.id === "expr10") || expressions[0]);
+            }
+          }}>{secondEnabled ? "두 번째 캐릭터 제거" : "+ 두 번째 캐릭터 추가"}</button>
+        </div>
+        {secondEnabled && <div className={styles.secondActorCard}>
+          <div className={styles.actorFields}>
+            <label><span>두 번째 캐릭터</span><select value={secondChar?.id || ""} onChange={(event) => setSecondChar(characters.find((item) => item.id === event.target.value) || null)}><option value="">선택</option>{characters.map((item) => <option key={item.id} value={item.id} disabled={item.id === selectedChar?.id}>{item.name}</option>)}</select></label>
+            <label><span>두 번째 표정</span><select value={secondExpr?.id || ""} onChange={(event) => setSecondExpr(expressions.find((item) => item.id === event.target.value) || null)}><option value="">선택</option>{expressions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+            <label><span>첫 번째 위치</span><select value={primaryPosition} onChange={(event) => setPrimaryPosition(event.target.value as ScenePosition)}><option value="left">왼쪽</option><option value="center">가운데</option><option value="right">오른쪽</option></select></label>
+            <label><span>두 번째 위치</span><select value={secondPosition} onChange={(event) => setSecondPosition(event.target.value as ScenePosition)}><option value="left">왼쪽</option><option value="center">가운데</option><option value="right">오른쪽</option></select></label>
+          </div>
+          <div className={styles.secondPreviews}>
+            {secondChar && <div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={`/images/${secondChar.id}_thumb.png`} alt={secondChar.name} />
+              <span>{secondChar.name}</span>
+            </div>}
+            {secondExpr && <div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={`/images/${secondExpr.id}.png`} alt={secondExpr.name} />
+              <span>{secondExpr.name}</span>
+            </div>}
+          </div>
+          <textarea className={styles.textarea} placeholder="두 번째 캐릭터 포즈: 예) 첫 번째 인물을 가리키며 화내는 자세" value={secondPoseText} onChange={(event) => setSecondPoseText(event.target.value)} />
+          <textarea className={styles.textarea} placeholder="두 사람의 상황: 예) 부부가 서로 마주 보고 말다툼하는 장면" value={sceneText} onChange={(event) => setSceneText(event.target.value)} />
+        </div>}
+      </section>
+
+      {/* 6. 옵션 */}
       <section className={styles.section}>
         <p className={styles.sectionTitle}>
-          <span className={styles.num}>4</span> 옵션 <span className={styles.hint}>결과가 마음에 안 들면 바꿔보세요</span>
+          <span className={styles.num}>6</span> 옵션 <span className={styles.hint}>결과가 마음에 안 들면 바꿔보세요</span>
         </p>
 
         <div className={styles.optionRow}>
@@ -316,10 +539,12 @@ export default function Home() {
           <p className={styles.summary}>
             {selectedChar ? <b>{selectedChar.name}</b> : "(캐릭터 미선택)"} 캐릭터 ·{" "}
             {selectedExpr ? <b>{selectedExpr.name}</b> : "(표정 미선택)"} 표정
+            {secondEnabled && secondExpr ? <> · <b>{secondChar?.name || "두 번째 캐릭터"}</b> + <b>{secondExpr.name}</b></> : ""}
+            {propImage ? <> · 소품 <b>{propName}</b></> : ""}
             {poseImage ? " · 포즈 그림 있음" : ""}
           </p>
           <button className={styles.btnGenerate} onClick={onGenerate} disabled={loading}>
-            {loading ? "생성 중… (10~30초)" : "생성하기"}
+            {loading ? secondEnabled ? "두 캐릭터 생성 중… (20~60초)" : "생성 중… (10~30초)" : "생성하기"}
           </button>
           {errorMsg && <p className={styles.error}>오류: {errorMsg}</p>}
         </div>
@@ -336,6 +561,12 @@ export default function Home() {
           <button className={styles.btnDownload} onClick={onDownload} disabled={!resultUrl}>
             PNG 다운로드
           </button>
+          {projectId && (
+            <button className={styles.btnDownload} onClick={saveToProject} disabled={!resultUrl || saving || saved}>
+              {saving ? "프로젝트에 저장 중…" : saved ? "프로젝트에 저장됨" : "프로젝트에 저장"}
+            </button>
+          )}
+          {saveNotice && <p className={styles.saveNotice}>{saveNotice}</p>}
         </div>
       </div>
     </div>

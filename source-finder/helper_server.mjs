@@ -1,250 +1,258 @@
 import http from 'http';
-import { runSourceFinder } from './source_finder.mjs';
-import { spawn, spawnSync } from 'child_process';
-import path from 'path';
 import fs from 'fs';
+import path from 'path';
+import { spawn, spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
+import { inspectCandidate, runSourceFinder, verifyCandidates } from './source_finder.mjs';
 
-const PORT = 8787;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const PORT = Number(process.env.SOURCE_FINDER_PORT || 8787);
+const MAX_UPLOAD_BYTES = 1024 * 1024 * 1024;
 
-// 이미지를 윈도우 클립보드에 복사하는 PowerShell 헬퍼 함수
+function corsHeaders(contentType = 'application/json; charset=utf-8') {
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, X-File-Name',
+    'Access-Control-Allow-Private-Network': 'true',
+    'Content-Type': contentType,
+  };
+}
+
+function sendJson(res, status, payload) {
+  res.writeHead(status, corsHeaders());
+  res.end(JSON.stringify(payload));
+}
+
+function readJson(req, maxBytes = 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > maxBytes) {
+        reject(new Error('요청 데이터가 너무 큽니다.'));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'));
+      } catch {
+        reject(new Error('JSON 형식이 올바르지 않습니다.'));
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+function openOutputFolder(outputDir) {
+  try {
+    const child = spawn('explorer.exe', [outputDir], { detached: true, stdio: 'ignore', windowsHide: true });
+    child.unref();
+  } catch (error) {
+    console.warn(`결과 폴더를 열지 못했습니다: ${error.message}`);
+  }
+}
+
 function copyImageToClipboard(imagePath) {
   try {
-    const winPath = path.resolve(imagePath).replace(/\//g, '\\');
-    
-    // Windows Forms 및 Drawing 라이브러리를 사용해 클립보드 복사 실행
-    const psCommand = `Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; [Windows.Forms.Clipboard]::SetImage([System.Drawing.Image]::FromFile('${winPath}'))`;
-    
-    const psArgs = [
-      '-STA',
-      '-NoProfile',
-      '-ExecutionPolicy', 'Bypass',
-      '-Command', psCommand
-    ];
-    
-    const result = spawnSync('powershell.exe', psArgs, { encoding: 'utf-8' });
-    
-    if (result.status === 0) {
-      console.log(`[Helper Server] 대표 이미지가 클립보드에 복사되었습니다: ${winPath}`);
-      return true;
-    } else {
-      console.error(`[Helper Server] 클립보드 복사 실패 (PowerShell): ${result.stderr || result.stdout}`);
-      return false;
-    }
-  } catch (err) {
-    console.error(`[Helper Server] 클립보드 복사 중 예외 발생: ${err.message}`);
+    const escaped = path.resolve(imagePath).replace(/'/g, "''");
+    const command = `Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $image=[System.Drawing.Image]::FromFile('${escaped}'); [Windows.Forms.Clipboard]::SetImage($image); $image.Dispose()`;
+    const result = spawnSync('powershell.exe', [
+      '-STA', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command,
+    ], { encoding: 'utf8', windowsHide: true });
+    return result.status === 0;
+  } catch {
     return false;
   }
 }
 
-const server = http.createServer((req, res) => {
-  // CORS 헤더 설정
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Content-Type': 'application/json'
+function decorateResult(result, req) {
+  const origin = `http://${req.headers.host || `localhost:${PORT}`}`;
+  const assetUrl = (relativePath) => `${origin}/asset?jobId=${encodeURIComponent(result.jobId)}&file=${encodeURIComponent(relativePath)}`;
+  return {
+    ...result,
+    contactSheetUrl: assetUrl(result.contactSheet),
+    representativeFrameUrls: result.representativeFrames.map(assetUrl),
+  };
+}
+
+function finishInvestigation(result, req, payload = {}) {
+  const firstFrame = result.representativeFrames[0]
+    ? path.join(result.outputDir, ...result.representativeFrames[0].split('/'))
+    : null;
+  const clipboard = firstFrame ? copyImageToClipboard(firstFrame) : false;
+  if (payload.openFolder !== false) openOutputFolder(result.outputDir);
+  return { ok: true, ...decorateResult(result, req), clipboard };
+}
+
+function resolveAsset(jobId, relativeFile) {
+  if (!/^[\w.-]+$/.test(jobId || '')) return null;
+  const jobDir = path.resolve(__dirname, 'outputs', jobId);
+  const assetPath = path.resolve(jobDir, relativeFile || '');
+  if (assetPath !== jobDir && !assetPath.startsWith(`${jobDir}${path.sep}`)) return null;
+  if (!fs.existsSync(assetPath) || !fs.statSync(assetPath).isFile()) return null;
+  return assetPath;
+}
+
+async function handleFileUpload(req, res) {
+  const encodedName = String(req.headers['x-file-name'] || 'uploaded-video.mp4');
+  let originalFileName = 'uploaded-video.mp4';
+  try { originalFileName = decodeURIComponent(encodedName); } catch { originalFileName = encodedName; }
+  originalFileName = path.basename(originalFileName).replace(/[<>:"/\\|?*]/g, '_');
+
+  const uploadDir = path.join(__dirname, 'uploads');
+  fs.mkdirSync(uploadDir, { recursive: true });
+  const tempPath = path.join(uploadDir, `${Date.now()}-${originalFileName}`);
+  const stream = fs.createWriteStream(tempPath, { flags: 'wx' });
+  let size = 0;
+  let settled = false;
+
+  const fail = (status, message) => {
+    if (settled) return;
+    settled = true;
+    stream.destroy();
+    fs.rmSync(tempPath, { force: true });
+    sendJson(res, status, { ok: false, error: message });
   };
 
-  // OPTIONS 프리플라이트 요청 처리
+  req.on('data', (chunk) => {
+    size += chunk.length;
+    if (size > MAX_UPLOAD_BYTES) {
+      fail(413, '파일은 최대 1GB까지 업로드할 수 있습니다.');
+      req.destroy();
+    }
+  });
+  req.on('error', (error) => fail(500, error.message));
+  stream.on('error', (error) => fail(500, error.message));
+
+  req.pipe(stream);
+  stream.on('finish', async () => {
+    if (settled) return;
+    try {
+      const result = await runSourceFinder(tempPath, { originalFileName });
+      settled = true;
+      fs.rmSync(tempPath, { force: true });
+      sendJson(res, 200, finishInvestigation(result, req, { openFolder: false }));
+    } catch (error) {
+      fail(500, error.message);
+    }
+  });
+}
+
+const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
-    res.writeHead(204, headers);
+    res.writeHead(204, corsHeaders());
     res.end();
     return;
   }
 
-  // GET /health
-  if (req.method === 'GET' && req.url === '/health') {
-    res.writeHead(200, headers);
-    res.end(JSON.stringify({ ok: true }));
+  const requestUrl = new URL(req.url || '/', `http://${req.headers.host || `localhost:${PORT}`}`);
+
+  if (req.method === 'GET' && requestUrl.pathname === '/health') {
+    sendJson(res, 200, {
+      ok: true,
+      service: 'source-finder-helper',
+      version: 2,
+      capabilities: ['url-analysis', 'file-analysis', 'candidate-metadata', 'candidate-video-verification', 'asset-preview'],
+    });
     return;
   }
 
-  // POST /investigate
-  if (req.method === 'POST' && req.url === '/investigate') {
-    let body = '';
-    req.on('data', (chunk) => {
-      body += chunk.toString();
-    });
+  if (req.method === 'GET' && requestUrl.pathname === '/asset') {
+    const assetPath = resolveAsset(requestUrl.searchParams.get('jobId'), requestUrl.searchParams.get('file'));
+    if (!assetPath) {
+      sendJson(res, 404, { ok: false, error: '이미지를 찾을 수 없습니다.' });
+      return;
+    }
+    const extension = path.extname(assetPath).toLowerCase();
+    const contentType = extension === '.png' ? 'image/png' : 'image/jpeg';
+    res.writeHead(200, { ...corsHeaders(contentType), 'Cache-Control': 'private, max-age=3600' });
+    fs.createReadStream(assetPath).pipe(res);
+    return;
+  }
 
-    req.on('end', async () => {
-      try {
-        const payload = JSON.parse(body);
-        const videoUrl = payload.url;
+  if (req.method === 'POST' && requestUrl.pathname === '/investigate-file') {
+    await handleFileUpload(req, res);
+    return;
+  }
 
-        if (!videoUrl) {
-          res.writeHead(400, headers);
-          res.end(JSON.stringify({ ok: false, error: "url 필드가 필요합니다." }));
-          return;
-        }
-
-        console.log(`\n[Helper Server] 조사 요청 수신: ${videoUrl}`);
-        const result = await runSourceFinder(videoUrl);
-
-        // 윈도우 탐색기로 작업 폴더 열기
-        try {
-          spawn('explorer.exe', [result.outputDir]);
-          console.log(`[Helper Server] 윈도우 탐색기 실행 완료: ${result.outputDir}`);
-        } catch (explorerErr) {
-          console.error(`[Helper Server] 탐색기 실행 실패: ${explorerErr.message}`);
-        }
-
-        // 대표 프레임 이미지 선택 로직 (cropped 우선, 없으면 일반 frames)
-        let targetImage = null;
-        const croppedDir = path.join(result.outputDir, 'frames', 'cropped');
-        const framesDir = path.join(result.outputDir, 'frames');
-
-        if (fs.existsSync(croppedDir)) {
-          const croppedFiles = fs.readdirSync(croppedDir)
-            .filter(file => file.endsWith('.jpg'))
-            .sort();
-          if (croppedFiles.length > 0) {
-            const midIdx = Math.floor(croppedFiles.length / 2);
-            targetImage = path.join(croppedDir, croppedFiles[midIdx]);
-          }
-        }
-
-        if (!targetImage && fs.existsSync(framesDir)) {
-          const frameFiles = fs.readdirSync(framesDir)
-            .filter(file => file.startsWith('frame_') && file.endsWith('.jpg'))
-            .sort();
-          if (frameFiles.length > 0) {
-            const midIdx = Math.floor(frameFiles.length / 2);
-            targetImage = path.join(framesDir, frameFiles[midIdx]);
-          }
-        }
-
-        // 클립보드 이미지 복사 실행
-        let clipboardSuccess = false;
-        if (targetImage && fs.existsSync(targetImage)) {
-          clipboardSuccess = copyImageToClipboard(targetImage);
-        } else {
-          console.warn("[Helper Server] 클립보드에 복사할 대표 이미지를 찾지 못했습니다.");
-        }
-
-        if (clipboardSuccess) {
-          console.log("👉 대표 프레임이 클립보드에 복사됐어요. 구글 렌즈에서 Ctrl+V 하세요.");
-        }
-
-        res.writeHead(200, headers);
-        res.end(JSON.stringify({
-          ok: true,
-          ...result,
-          clipboard: clipboardSuccess,
-          message: clipboardSuccess 
-            ? "대표 프레임이 클립보드에 복사됐어요. 구글 렌즈에서 Ctrl+V 하세요." 
-            : "대표 프레임 클립보드 복사에 실패하였습니다. 직접 드래그 앤 드롭해 주세요."
-        }));
-      } catch (err) {
-        console.error(`[Helper Server] 처리 중 오류 발생:`, err.message);
-        res.writeHead(500, headers);
-        res.end(JSON.stringify({ ok: false, error: err.message }));
+  if (req.method === 'POST' && requestUrl.pathname === '/investigate') {
+    try {
+      const payload = await readJson(req);
+      if (!payload.url) {
+        sendJson(res, 400, { ok: false, error: 'url 필드가 필요합니다.' });
+        return;
       }
-    });
+      const result = await runSourceFinder(payload.url);
+      sendJson(res, 200, finishInvestigation(result, req, payload));
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error.message });
+    }
     return;
   }
 
-  // POST /download
-  if (req.method === 'POST' && req.url === '/download') {
-    let body = '';
-    req.on('data', (chunk) => {
-      body += chunk.toString();
-    });
-
-    req.on('end', async () => {
-      try {
-        const payload = JSON.parse(body);
-        const videoUrl = payload.url;
-
-        if (!videoUrl) {
-          res.writeHead(400, headers);
-          res.end(JSON.stringify({ ok: false, error: "url 필드가 필요합니다." }));
-          return;
-        }
-
-        console.log(`\n[Helper Server] 원본 다운로드 요청 수신: ${videoUrl}`);
-
-        const __filename = fileURLToPath(import.meta.url);
-        const __dirname = path.dirname(__filename);
-        const binDir = path.join(__dirname, 'bin');
-        const ytdlpPath = path.join(binDir, 'yt-dlp.exe');
-
-        if (!fs.existsSync(ytdlpPath)) {
-          res.writeHead(500, headers);
-          res.end(JSON.stringify({ ok: false, error: "yt-dlp.exe 도구가 bin 폴더에 없습니다." }));
-          return;
-        }
-
-        // 다운로드 폴더 생성
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const downloadsDir = path.join(__dirname, 'downloads');
-        const workDir = path.join(downloadsDir, timestamp);
-        fs.mkdirSync(workDir, { recursive: true });
-
-        // yt-dlp 최고 화질 다운로드 설정 (원본 다운로드 목적이므로 화질 제한 없음)
-        const ytdlpArgs = [
-          '--ffmpeg-location', binDir,
-          '--write-info-json',
-          '-o', path.join(workDir, '%(title)s.%(ext)s'),
-          videoUrl
-        ];
-
-        const ytdlpResult = spawnSync(ytdlpPath, ytdlpArgs, { encoding: 'utf-8', stdio: 'pipe' });
-
-        if (ytdlpResult.status !== 0) {
-          fs.rmSync(workDir, { recursive: true, force: true });
-          res.writeHead(500, headers);
-          res.end(JSON.stringify({ ok: false, error: `다운로드 실패: ${ytdlpResult.stderr || ytdlpResult.stdout}` }));
-          return;
-        }
-
-        // 다운로드된 파일 탐색
-        const files = fs.readdirSync(workDir);
-        const videoFile = files.find(file => !file.endsWith('.json'));
-        const infoJsonFile = files.find(file => file.endsWith('.json'));
-
-        let title = "알 수 없음";
-        if (infoJsonFile) {
-          try {
-            const infoData = JSON.parse(fs.readFileSync(path.join(workDir, infoJsonFile), 'utf-8'));
-            title = infoData.title || title;
-          } catch (e) {
-            console.error("메타데이터 파싱 실패:", e.message);
-          }
-        }
-
-        // 탐색기로 폴더 열기
-        try {
-          spawn('explorer.exe', [workDir]);
-          console.log(`[Helper Server] 윈도우 탐색기 실행 완료 (다운로드): ${workDir}`);
-        } catch (explorerErr) {
-          console.error(`[Helper Server] 탐색기 실행 실패: ${explorerErr.message}`);
-        }
-
-        res.writeHead(200, headers);
-        res.end(JSON.stringify({
-          ok: true,
-          dir: workDir,
-          filename: videoFile || "알 수 없음",
-          title: title
-        }));
-      } catch (err) {
-        console.error(`[Helper Server] 다운로드 중 오류 발생:`, err.message);
-        res.writeHead(500, headers);
-        res.end(JSON.stringify({ ok: false, error: err.message }));
+  if (req.method === 'POST' && requestUrl.pathname === '/candidates') {
+    try {
+      const payload = await readJson(req);
+      const urls = [...new Set((Array.isArray(payload.urls) ? payload.urls : [])
+        .map((value) => String(value).trim()).filter(Boolean))].slice(0, 20);
+      if (urls.length === 0) {
+        sendJson(res, 400, { ok: false, error: '후보 URL을 한 개 이상 입력하세요.' });
+        return;
       }
-    });
+
+      const candidates = urls.map((url) => {
+        try {
+          return { ok: true, ...inspectCandidate(url) };
+        } catch (error) {
+          return { ok: false, url, platform: 'unknown', error: error.message };
+        }
+      });
+      const dated = candidates.filter((candidate) => candidate.ok && candidate.publishedAt)
+        .sort((a, b) => a.publishedAt.localeCompare(b.publishedAt));
+      sendJson(res, 200, {
+        ok: true,
+        candidates,
+        earliestUrl: dated[0]?.url || null,
+        earliestPublishedAt: dated[0]?.publishedAt || null,
+        notice: '삭제·비공개 게시물은 확인할 수 없어 현재 확인 가능한 후보만 비교합니다.',
+      });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error.message });
+    }
     return;
   }
 
-  // 그 외의 경로 404
-  res.writeHead(404, headers);
-  res.end(JSON.stringify({ error: "Not Found" }));
+  if (req.method === 'POST' && requestUrl.pathname === '/verify-candidates') {
+    try {
+      const payload = await readJson(req);
+      if (!payload.jobId || !Array.isArray(payload.urls) || payload.urls.length === 0) {
+        sendJson(res, 400, { ok: false, error: 'jobId와 후보 URL이 필요합니다.' });
+        return;
+      }
+      const results = await verifyCandidates(payload.jobId, payload.urls);
+      sendJson(res, 200, {
+        ok: true,
+        results,
+        verifiedCount: results.filter((result) => result.ok && result.score >= 55).length,
+      });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error.message });
+    }
+    return;
+  }
+
+  sendJson(res, 404, { ok: false, error: 'Not Found' });
 });
 
-server.listen(PORT, 'localhost', () => {
-  console.log("==================================================================");
-  console.log(`원본 조사 도우미가 켜졌어요 (포트 ${PORT}).`);
-  console.log("이 창을 닫으면 조사 기능이 꺼집니다.");
-  console.log("==================================================================");
+server.listen(PORT, '127.0.0.1', () => {
+  console.log('============================================================');
+  console.log(`Source Finder 도우미가 http://localhost:${PORT} 에서 실행 중입니다.`);
+  console.log('이 창을 닫으면 URL/파일 분석 기능이 중지됩니다.');
+  console.log('============================================================');
 });

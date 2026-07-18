@@ -27,6 +27,14 @@
   align-items: center;
   gap: 8px;
 }
+.sectionHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.sectionHeading .sectionTitle { margin-bottom: 0; }
 .num {
   display: inline-flex;
   align-items: center;
@@ -120,6 +128,80 @@
   background: #fff;
 }
 .textarea:focus { outline: none; border-color: #3a6ea5; }
+.textarea + .textarea { margin-top: 9px; }
+.hiddenInput { display: none; }
+.characterUpload {
+  min-height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 18px;
+  border: 2px dashed #c9c5ba;
+  border-radius: 12px;
+  background: #fbfaf7;
+  cursor: pointer;
+  text-align: center;
+}
+.characterUpload:hover { border-color: #3a6ea5; background: #f4f8fc; }
+.characterUpload img { width: 120px; height: 120px; object-fit: contain; border-radius: 9px; background: #fff; }
+.characterUpload span { display: grid; gap: 4px; color: #2b2a27; font-size: 13px; }
+.characterUpload small { color: #9a978d; font-size: 11px; font-weight: 400; }
+.propFields {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-top: 10px;
+}
+.propFields select,
+.propFields input {
+  height: 40px;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid #d8d4cb;
+  border-radius: 8px;
+  background: #fff;
+  color: #2b2a27;
+  font-size: 12px;
+}
+.propFields .btnRemove { height: 40px; }
+.secondActorCard {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #e3e0d8;
+  border-radius: 12px;
+  background: #fbfaf7;
+}
+.actorFields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.actorFields label { display: grid; gap: 5px; }
+.actorFields label > span { color: #6c6a63; font-size: 11px; font-weight: 600; }
+.actorFields select {
+  width: 100%;
+  height: 38px;
+  padding: 0 9px;
+  border: 1px solid #d8d4cb;
+  border-radius: 8px;
+  background: #fff;
+  color: #2b2a27;
+  font-size: 13px;
+}
+.secondPreviews { display: flex; gap: 10px; }
+.secondPreviews > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border-radius: 9px;
+  background: #fff;
+  color: #6c6a63;
+  font-size: 12px;
+}
+.secondPreviews img { width: 42px; height: 42px; object-fit: contain; }
 
 .bottom {
   display: flex;
@@ -196,6 +278,13 @@
 }
 .btnDownload:hover { background: #f1efe9; }
 .btnDownload:disabled { color: #c9c5ba; cursor: not-allowed; }
+.saveNotice {
+  margin: 9px 0 0;
+  color: #65733d;
+  font-size: 11px;
+  line-height: 1.5;
+  word-break: keep-all;
+}
 
 @media (max-width: 720px) {
   .charGrid { grid-template-columns: repeat(4, 1fr); }
@@ -203,6 +292,9 @@
   .bottom { flex-direction: column; }
   .resultCol { width: 100%; }
   .resultBox { max-width: 240px; margin: 0 auto; }
+  .sectionHeading { align-items: flex-start; flex-direction: column; }
+  .actorFields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .propFields { grid-template-columns: 1fr; }
 }
 
 .poseRow {

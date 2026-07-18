@@ -16,7 +16,27 @@ const pageTitles: Record<string, string> = {
 
 export function Header() {
   const pathname = usePathname();
-  const title = pageTitles[pathname] ?? "대시보드";
+  const title = pathname === "/studio/shorts-story/uploads"
+    ? "사연 업로드 목록"
+    : pathname.endsWith("/publish")
+    ? "검수 · 업로드 완료"
+    : pathname.endsWith("/voice/cast")
+    ? "캐릭터별 목소리"
+    : pathname.endsWith("/editing")
+    ? "Premiere 편집 패키지"
+    : pathname.endsWith("/characters")
+    ? "캐릭터 작업 목록"
+    : pathname.endsWith("/voice")
+    ? "TTS · 자동 자막"
+    : pathname.endsWith("/story")
+    ? "원문 수집 · AI 각색"
+    : pathname.startsWith("/studio/shorts-story/projects/")
+    ? "사연 제작 워크벤치"
+    : pathname.startsWith("/studio/shorts-story")
+      ? "숏폼(사연)"
+      : pathname === "/studio"
+        ? "제작 스튜디오"
+        : pageTitles[pathname] ?? "대시보드";
 
   return (
     <header className="hidden lg:flex sticky top-0 z-20 h-[60px] items-center border-b border-border bg-white/80 px-8 backdrop-blur-sm">
