@@ -5,7 +5,7 @@ export async function GET() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
-  const apiKey = process.env.TYPECAST_API_KEY;
+  const apiKey = process.env.TYPECAST_API_KEY?.trim();
   if (!apiKey) return NextResponse.json({ error: "TYPECAST_API_KEY가 설정되지 않았습니다.", code: "KEY_MISSING" }, { status: 503 });
 
   try {

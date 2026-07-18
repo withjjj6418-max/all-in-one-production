@@ -32,7 +32,7 @@ export async function POST(request: Request) {
 
     const { data: project } = await supabase.from("projects").select("id").eq("id", projectId).eq("user_id", user.id).maybeSingle();
     if (!project) return NextResponse.json({ error: "프로젝트 접근 권한이 없습니다." }, { status: 403 });
-    const apiKey = process.env.TYPECAST_API_KEY;
+    const apiKey = process.env.TYPECAST_API_KEY?.trim();
     if (!apiKey) return NextResponse.json({ error: "TYPECAST_API_KEY가 설정되지 않았습니다.", code: "KEY_MISSING" }, { status: 503 });
 
     const response = await fetch("https://api.typecast.ai/v1/text-to-speech/with-timestamps?granularity=word", {
