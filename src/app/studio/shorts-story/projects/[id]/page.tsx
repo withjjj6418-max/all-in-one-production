@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { storyWorkflow, type StoryWorkflowKey } from "@/features/studios/config";
+import { getStoryWorkflowState } from "@/lib/project-workflows";
 
 type Project = {
   id: number;
@@ -103,7 +104,7 @@ export default function StoryProjectWorkbenchPage() {
     );
   }
 
-  const complete: Record<StoryWorkflowKey, boolean> = {
+  const workflowState = getStoryWorkflowState({
     source: data.sources.length > 0,
     adapt: data.adaptations.length > 0,
     script: Boolean(data.script?.content),
@@ -111,9 +112,8 @@ export default function StoryProjectWorkbenchPage() {
     character: data.images.length > 0,
     premiere: data.editPackage?.status === "ready" || data.editPackage?.status === "done",
     upload: data.project.uploaded === true,
-  };
-  const furthestCompletedStep = storyWorkflow.reduce((furthest, stage) => complete[stage.key] ? Math.max(furthest, stage.step) : furthest, 0);
-  const progress = Math.round((furthestCompletedStep / storyWorkflow.length) * 100);
+  });
+  const { complete, furthestCompletedStep, progress } = workflowState;
   const hrefFor = (key: StoryWorkflowKey, fallback?: string) => {
     if (key === "source" || key === "adapt") return `/studio/shorts-story/projects/${projectId}/story`;
     if (key === "script") return `/scripts?project_id=${projectId}`;

@@ -21,6 +21,7 @@ import {
   AlertCircle
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { getStoryProjectProgress, storyStatusProgressMap, storyWorkflowStages } from "@/lib/project-workflows";
 
 /* ─── 타입 정의 ─── */
 type Project = {
@@ -36,18 +37,8 @@ type Project = {
 
 const bgColors = ["bg-amber-100", "bg-sky-100", "bg-rose-100", "bg-violet-100", "bg-emerald-100", "bg-orange-100"];
 
-const statusOptions = ["시작 전", "리서치", "대본 작성", "대본 완성", "녹음 중", "편집 중", "검토 중", "업로드 완료"];
-
-const statusProgressMap: Record<string, number> = {
-  "시작 전": 0,
-  "리서치": 15,
-  "대본 작성": 30,
-  "대본 완성": 40,
-  "녹음 중": 55,
-  "편집 중": 70,
-  "검토 중": 85,
-  "업로드 완료": 100,
-};
+const statusOptions = storyWorkflowStages.map((stage) => stage.status);
+const statusProgressMap = storyStatusProgressMap;
 
 export default function CompletedProjectsPage() {
   const supabase = createClient();
@@ -229,7 +220,7 @@ export default function CompletedProjectsPage() {
     setNewCategoryName("");
     setFormTitle(project.title || "");
     setFormStatus(project.status || "시작 전");
-    setFormProgress(project.progress || 0);
+    setFormProgress(getStoryProjectProgress(project));
     setFormMemo(project.memo || "");
     setFormUploaded(project.uploaded || false);
     setIsModalOpen(true);
@@ -385,7 +376,7 @@ export default function CompletedProjectsPage() {
         const bTime = b.updated_at ? new Date(b.updated_at).getTime() : 0;
         comparison = aTime - bTime;
       } else if (projectSort.key === "progress") {
-        comparison = a.progress - b.progress;
+        comparison = getStoryProjectProgress(a) - getStoryProjectProgress(b);
       }
       return projectSort.dir === "asc" ? comparison : -comparison;
     });
@@ -827,20 +818,15 @@ export default function CompletedProjectsPage() {
                 </select>
               </div>
 
-              {/* 진행률 슬라이더 */}
+              {/* 진행률은 사연 워크플로의 최종 단계 기준으로 자동 계산 */}
               <div>
                 <div className="mb-1.5 flex justify-between text-xs font-bold text-gray-500">
                   <span className="uppercase tracking-wider">진행률</span>
                   <span className="text-[#7C8C4E]">{formProgress}%</span>
                 </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={formProgress}
-                  onChange={(e) => setFormProgress(parseInt(e.target.value))}
-                  className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-100 accent-[#7C8C4E]"
-                />
+                <div className="h-2 overflow-hidden rounded-lg bg-gray-100">
+                  <div className="h-full rounded-lg bg-[#7C8C4E] transition-all" style={{ width: `${formProgress}%` }} />
+                </div>
               </div>
 
               {/* 메모 입력 */}
@@ -933,7 +919,7 @@ function ListCard({
           {/* 태그 (상태 및 진행도) */}
           <div className="flex items-center gap-1 shrink-0">
             <Tag color="olive">{project.status ?? "대본"}</Tag>
-            <Tag color="muted">{project.progress}%</Tag>
+            <Tag color="muted">{getStoryProjectProgress(project)}%</Tag>
           </div>
         </div>
       </div>
