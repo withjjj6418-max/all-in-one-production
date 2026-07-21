@@ -14,6 +14,8 @@ pnpm dev
 bun dev
 ```
 
+`npm run dev` starts both the Next.js development server and the local Source Finder helper. Use `Ctrl+C` to stop both. To run only the web server for debugging, use `npm run dev:web`.
+
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.

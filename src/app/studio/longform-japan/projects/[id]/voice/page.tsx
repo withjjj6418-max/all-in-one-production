@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, Download, FileAudio, FolderOpen, Loader2, Play, Plus, RefreshCw, Save, Search, Sparkles, Trash2, Volume2, WandSparkles } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, Download, FileAudio, FolderOpen, Loader2, Pause, Play, Plus, RefreshCw, Save, Search, Sparkles, Trash2, Volume2, WandSparkles } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getProjectFolderHandle, saveProjectFolderHandle, writeBlobToFolder } from "@/lib/project-folder";
 
@@ -150,14 +150,18 @@ export default function JapanLongformVoicePage() {
   const [analyzing, setAnalyzing] = useState(false);
   const [generatingSegmentId, setGeneratingSegmentId] = useState("");
   const [finalizing, setFinalizing] = useState(false);
+  const [continuousIndex, setContinuousIndex] = useState(0);
+  const [continuousPlaying, setContinuousPlaying] = useState(false);
   const [generationProgress, setGenerationProgress] = useState(0);
   const [savingToFolder, setSavingToFolder] = useState(false);
   const [message, setMessage] = useState<{ kind: "error" | "notice"; text: string } | null>(null);
+  const continuousAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const normalizedScript = script.replace(/\s/g, "");
   const normalizedSections = segments.map((segment) => segment.text).join("").replace(/\s/g, "");
   const sectionsMatchScript = Boolean(segments.length && normalizedScript === (scriptSnapshot ? scriptSnapshot.replace(/\s/g, "") : normalizedSections));
   const pendingGenerationCount = segments.filter((segment) => segment.status !== "generated" || !segment.audio_url).length;
+  const continuousAudioUrl = segments[continuousIndex]?.audio_url || "";
   const listedSelectedVoice = voices.find((voice) => voice.voice_id === voiceId) || null;
   const selectedVoice: Voice | null = listedSelectedVoice || (voiceId ? {
     voice_id: voiceId,
@@ -222,7 +226,20 @@ export default function JapanLongformVoicePage() {
     return () => { active = false; };
   }, [projectId, supabase]);
 
+  useEffect(() => {
+    if (!continuousPlaying || !continuousAudioUrl) return;
+    const audio = continuousAudioRef.current;
+    if (!audio) return;
+    audio.src = continuousAudioUrl;
+    audio.currentTime = 0;
+    audio.play().catch(() => {
+      setContinuousPlaying(false);
+      setMessage({ kind: "error", text: "전체 이어듣기를 시작하지 못했습니다." });
+    });
+  }, [continuousAudioUrl, continuousPlaying]);
+
   async function clearPreviousResults() {
+    stopContinuousPreview();
     const paths = [...segments.map((segment) => segment.storage_path), latestRun?.combined_storage_path].filter(Boolean) as string[];
     if (paths.length) await supabase.storage.from(AUDIO_BUCKET).remove(paths);
     await Promise.all([
@@ -282,6 +299,7 @@ export default function JapanLongformVoicePage() {
   }
 
   async function updateSection(segment: Segment, values: Partial<Pick<Segment, "section_kind" | "section_title" | "text">>) {
+    if (typeof values.text === "string") stopContinuousPreview();
     const textChanged = typeof values.text === "string" && (segment.status === "todo" || values.text !== segment.text);
     const next = { ...segment, ...values, ...(textChanged ? { status: "todo" as const } : {}) };
     setSegments((current) => current.map((item) => item.id === segment.id ? next : item));
@@ -295,6 +313,7 @@ export default function JapanLongformVoicePage() {
   }
 
   async function persistSectionOrder(next: Segment[]) {
+    stopContinuousPreview();
     setSegments(next.map((segment, index) => ({ ...segment, sort_order: index })));
     const results = await Promise.all(next.map((segment, index) => supabase.from("japan_longform_voice_segments").update({ sort_order: index, updated_at: new Date().toISOString() }).eq("id", segment.id)));
     if (results.some((result) => result.error)) setMessage({ kind: "error", text: "구간 순서를 저장하지 못했습니다." });
@@ -361,6 +380,7 @@ export default function JapanLongformVoicePage() {
 
   async function regenerateSection(segment: Segment) {
     if (generating || generatingSegmentId) return;
+    stopContinuousPreview();
     setGeneratingSegmentId(segment.id);
     setMessage(null);
     try {
@@ -372,6 +392,26 @@ export default function JapanLongformVoicePage() {
       setMessage({ kind: "error", text: error instanceof Error ? error.message : "구간 생성에 실패했습니다." });
     } finally {
       setGeneratingSegmentId("");
+    }
+  }
+
+  function startContinuousPreview() {
+    if (!segments.length) return setMessage({ kind: "error", text: "재생할 구간이 없습니다." });
+    if (pendingGenerationCount > 0) return setMessage({ kind: "error", text: `이어듣기 전에 ${pendingGenerationCount}개 구간을 생성하거나 재생성해주세요.` });
+    setContinuousIndex(0);
+    setContinuousPlaying(true);
+  }
+
+  function stopContinuousPreview() {
+    continuousAudioRef.current?.pause();
+    setContinuousPlaying(false);
+  }
+
+  function handleContinuousEnded() {
+    if (continuousIndex < segments.length - 1) setContinuousIndex((current) => current + 1);
+    else {
+      setContinuousPlaying(false);
+      setContinuousIndex(0);
     }
   }
 
@@ -534,6 +574,17 @@ export default function JapanLongformVoicePage() {
           return <div key={segment.id}><article className={`rounded-xl border p-4 ${generated ? "border-emerald-200" : "border-amber-200"}`}><div className="flex items-start gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky-50 text-xs font-bold text-sky-700">{index + 1}</span><div className="min-w-0 flex-1"><div className="grid gap-2 sm:grid-cols-[120px_1fr_auto]"><select value={segment.section_kind} onChange={(event) => updateSection(segment, { section_kind: event.target.value as Segment["section_kind"] })} className="h-10 rounded-lg border border-border bg-white px-2 text-xs font-bold"><option value="opening">오프닝</option><option value="body">본문</option><option value="outro">아웃트로</option></select><input value={segment.section_title} onChange={(event) => setSegments((current) => current.map((item) => item.id === segment.id ? { ...item, section_title: event.target.value } : item))} onBlur={(event) => updateSection(segment, { section_title: event.target.value })} placeholder="구간 제목" className="h-10 min-w-0 rounded-lg border border-border px-3 text-sm font-bold outline-none focus:border-sky-600" /><span className={`self-center text-xs font-bold ${generated ? "text-emerald-700" : "text-amber-700"}`}>{kindLabel} · {generated ? "생성 완료" : "생성 필요"}</span></div><textarea value={segment.text} onChange={(event) => setSegments((current) => current.map((item) => item.id === segment.id ? { ...item, text: event.target.value, status: "todo" } : item))} onBlur={(event) => updateSection(segment, { text: event.target.value })} className={`mt-3 min-h-36 w-full resize-y rounded-xl border bg-stone-50 p-3 text-sm leading-7 outline-none focus:border-sky-600 ${tooLong ? "border-red-400" : "border-border"}`} />
           <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-center"><p className={`text-xs font-semibold ${tooLong ? "text-red-600" : "text-muted-foreground"}`}>{segment.text.length.toLocaleString()}자{tooLong ? " · 4,500자를 넘었습니다. 구간을 나눠주세요." : generated ? ` · ${formatDuration(Number(segment.audio_duration || 0))}` : ""}</p>{segment.audio_url && <audio controls src={segment.audio_url} className="h-9 min-w-0 flex-1" />}<button onClick={() => regenerateSection(segment)} disabled={generating || Boolean(generatingSegmentId) || !segment.text.trim() || tooLong} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">{generatingSegmentId === segment.id ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} {generated ? "이 구간 재생성" : "이 구간 생성"}</button></div></div><div className="flex flex-col gap-1"><button onClick={() => moveSection(index, -1)} disabled={index === 0 || generating} className="rounded-lg p-2 text-muted-foreground hover:bg-muted disabled:opacity-25"><ArrowUp size={14} /></button><button onClick={() => moveSection(index, 1)} disabled={index === segments.length - 1 || generating} className="rounded-lg p-2 text-muted-foreground hover:bg-muted disabled:opacity-25"><ArrowDown size={14} /></button><button onClick={() => deleteSection(segment)} disabled={generating} className="rounded-lg p-2 text-muted-foreground hover:bg-red-50 hover:text-red-600"><Trash2 size={14} /></button></div></div></article><div className="flex items-center gap-2 py-2"><div className="h-px flex-1 bg-border" /><button onClick={() => addSection(index)} disabled={generating} className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-3 py-1 text-[11px] font-bold text-muted-foreground"><Plus size={11} /> 여기에 구간 추가</button><div className="h-px flex-1 bg-border" /></div></div>;
         })}</div> : <div className="mt-5 rounded-xl border border-dashed border-border p-10 text-center"><p className="text-sm text-muted-foreground">AI가 이야기 전환점을 찾아 오프닝·본문·아웃트로 구간을 만들 수 있습니다.</p><button onClick={analyzeScriptSections} disabled={analyzing} className="mt-4 inline-flex items-center gap-2 rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-bold text-white">{analyzing ? <Loader2 size={15} className="animate-spin" /> : <WandSparkles size={15} />} AI로 구간 나누기</button></div>}
+      </section>
+
+      <section className="rounded-2xl border border-border bg-white p-5 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-sky-50 text-sky-700"><Play size={19} /></div>
+          <div className="min-w-0 flex-1"><h2 className="font-bold">전체 이어듣기</h2><p className="mt-1 text-xs text-muted-foreground">파일을 합치지 않고 오프닝부터 아웃트로까지 현재 구간 순서대로 이어서 재생합니다.</p></div>
+          <button onClick={continuousPlaying ? stopContinuousPreview : startContinuousPreview} disabled={!segments.length || pendingGenerationCount > 0 || generating || Boolean(generatingSegmentId)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-sky-100 px-4 py-2.5 text-sm font-bold text-sky-800 disabled:opacity-40">{continuousPlaying ? <Pause size={15} /> : <Play size={15} />}{continuousPlaying ? "재생 중지" : "처음부터 이어듣기"}</button>
+        </div>
+        <audio ref={continuousAudioRef} onEnded={handleContinuousEnded} className="hidden" />
+        {continuousPlaying && segments[continuousIndex] && <div className="mt-4 rounded-xl bg-stone-50 p-4"><div className="flex items-center justify-between gap-3"><p className="shrink-0 text-xs font-bold text-sky-700">재생 중 {continuousIndex + 1} / {segments.length}</p><p className="truncate text-xs text-muted-foreground">{segments[continuousIndex].section_title} · {segments[continuousIndex].text}</p></div><div className="mt-3 flex gap-1">{segments.map((segment, index) => <button type="button" key={segment.id} onClick={() => setContinuousIndex(index)} aria-label={`${index + 1}번 구간 재생`} className={`h-1.5 flex-1 rounded-full transition-colors ${index <= continuousIndex ? "bg-sky-700" : "bg-border"}`} />)}</div></div>}
+        {!continuousPlaying && pendingGenerationCount > 0 && segments.length > 0 && <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">생성 또는 재생성이 필요한 {pendingGenerationCount}개 구간을 완료하면 이어듣기가 활성화됩니다.</p>}
       </section>
 
       <section className={`rounded-2xl border p-5 shadow-sm sm:p-6 ${latestRun ? "border-emerald-200 bg-emerald-50" : "border-border bg-white"}`}><div className="flex flex-col gap-4 lg:flex-row lg:items-center"><div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${latestRun ? "bg-white text-emerald-700" : "bg-sky-50 text-sky-700"}`}>{latestRun ? <Check size={20} /> : <Play size={20} />}</div><div className="min-w-0 flex-1"><h2 className="font-bold">최종 통합 TTS · SRT</h2><p className="mt-1 text-xs text-muted-foreground">{latestRun ? `${latestRun.segment_count}개 구간 · ${formatDuration(Number(latestRun.total_duration))} · 프로젝트 사운드 폴더 저장 완료` : pendingGenerationCount ? `${pendingGenerationCount}개 구간을 생성하거나 재생성해야 합니다.` : segments.length ? "모든 구간 검수가 끝났다면 프로젝트 사운드 폴더에 최종 MP3와 SRT를 저장하세요." : "먼저 내용 구간과 음성을 생성해주세요."}</p></div>{!latestRun && segments.length > 0 && <button onClick={retryFinalization} disabled={finalizing || generating || !projectFolder || pendingGenerationCount > 0 || !sectionsMatchScript} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40">{finalizing ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} 최종 MP3 · SRT 저장</button>}{latestRun && <div className="flex flex-wrap gap-2"><button onClick={downloadFinalAudio} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-bold text-emerald-800"><Download size={13} /> MP3</button><button onClick={() => downloadBlob(`${safeFileName(projectTitle)}_자막.srt`, new Blob(["\ufeff", latestRun.combined_subtitle_srt], { type: "text/plain;charset=utf-8" }))} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white"><Download size={13} /> SRT</button></div>}</div>{(finalAudioUrl || latestRun?.combined_audio_url) && <audio controls src={finalAudioUrl || latestRun?.combined_audio_url || undefined} className="mt-4 h-10 w-full" />}
