@@ -151,6 +151,7 @@ export default function JapanLongformVoicePage() {
   const [voices, setVoices] = useState<Voice[]>([]);
   const [voiceSearch, setVoiceSearch] = useState("");
   const [voiceId, setVoiceId] = useState("");
+  const [savedVoiceName, setSavedVoiceName] = useState("");
   const [settings, setSettings] = useState<VoiceSettings>({ stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true, speed: 1 });
   const [segments, setSegments] = useState<Segment[]>([]);
   const [latestRun, setLatestRun] = useState<VoiceRun | null>(null);
@@ -165,7 +166,16 @@ export default function JapanLongformVoicePage() {
   const [message, setMessage] = useState<{ kind: "error" | "notice"; text: string } | null>(null);
 
   const chunks = useMemo(() => splitScript(script), [script]);
-  const selectedVoice = voices.find((voice) => voice.voice_id === voiceId) || null;
+  const listedSelectedVoice = voices.find((voice) => voice.voice_id === voiceId) || null;
+  const selectedVoice: Voice | null = listedSelectedVoice || (voiceId ? {
+    voice_id: voiceId,
+    name: savedVoiceName || "저장된 목소리",
+    category: "saved",
+    description: "이 프로젝트에 저장된 ElevenLabs 목소리",
+    preview_url: "",
+    labels: {},
+    verified_languages: [],
+  } : null);
   const filteredVoices = useMemo(() => {
     const query = voiceSearch.trim().toLocaleLowerCase();
     return voices.filter((voice) => {
@@ -184,7 +194,7 @@ export default function JapanLongformVoicePage() {
       const [projectResult, scriptResult, settingsResult, segmentResult, runResult] = await Promise.all([
         supabase.from("projects").select("title").eq("id", projectId).eq("production_type", "longform_japan").maybeSingle(),
         supabase.from("japan_longform_scripts").select("verified_japanese").eq("project_id", projectId).maybeSingle(),
-        supabase.from("japan_longform_voice_settings").select("voice_id, voice_settings").eq("project_id", projectId).maybeSingle(),
+        supabase.from("japan_longform_voice_settings").select("voice_id, voice_name, voice_settings").eq("project_id", projectId).maybeSingle(),
         supabase.from("japan_longform_voice_segments").select("id, sort_order, text, audio_url, storage_path, audio_duration, alignment, subtitle_srt, status").eq("project_id", projectId).order("sort_order"),
         supabase.from("japan_longform_voice_runs").select("id, segment_count, total_duration, combined_audio_url, combined_storage_path, combined_subtitle_srt, created_at").eq("project_id", projectId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
       ]);
@@ -193,6 +203,7 @@ export default function JapanLongformVoicePage() {
       setScript(scriptResult.data?.verified_japanese || "");
       const savedVoiceSettings = settingsResult.data?.voice_settings as Partial<VoiceSettings> | null | undefined;
       setVoiceId(settingsResult.data?.voice_id || "");
+      setSavedVoiceName(settingsResult.data?.voice_name || "");
       if (savedVoiceSettings) setSettings((current) => ({ ...current, ...savedVoiceSettings }));
       setSegments((segmentResult.data || []) as Segment[]);
       setLatestRun((runResult.data as VoiceRun | null) || null);
@@ -278,6 +289,7 @@ export default function JapanLongformVoicePage() {
   async function generateAll() {
     if (!script.trim()) return setMessage({ kind: "error", text: "먼저 최종 일본어 대본을 저장해주세요." });
     if (!selectedVoice) return setMessage({ kind: "error", text: "사용할 목소리를 선택해주세요." });
+    if (!projectFolder) return setMessage({ kind: "error", text: "최종 결과를 저장할 프로젝트 폴더를 먼저 연결해주세요." });
     if ((segments.length || latestRun) && !window.confirm("기존 TTS 결과를 지우고 현재 대본과 설정으로 다시 만들까요?")) return;
     setGenerating(true);
     setGenerationProgress(0);
@@ -360,12 +372,12 @@ export default function JapanLongformVoicePage() {
 
   return <div className="mx-auto max-w-7xl space-y-5">
     <Link href={`/studio/longform-japan/projects/${projectId}`} className="inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-sky-700"><ArrowLeft size={16} /> 워크벤치</Link>
-    <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><p className="text-sm font-bold text-sky-700">{projectTitle}</p><h1 className="mt-1 flex items-center gap-2 text-3xl font-bold"><FileAudio className="text-sky-700" /> 일본어 TTS · SRT</h1><p className="mt-2 text-sm text-muted-foreground">최종 일본어 대본을 한 목소리로 생성하고 MP3와 자막을 프로젝트 폴더에 저장합니다.</p></div><button onClick={generateAll} disabled={generating || !script.trim() || !selectedVoice || !projectFolder} title={!projectFolder ? "먼저 아래에서 프로젝트 폴더를 연결해주세요." : undefined} className="inline-flex min-w-52 items-center justify-center gap-2 rounded-xl bg-sky-700 px-5 py-3 text-sm font-bold text-white disabled:opacity-40">{generating ? <><Loader2 size={16} className="animate-spin" /> {generationProgress}/{chunks.length} 생성 중</> : <><Sparkles size={16} /> 전체 TTS · SRT 만들기</>}</button></header>
+    <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><p className="text-sm font-bold text-sky-700">{projectTitle}</p><h1 className="mt-1 flex items-center gap-2 text-3xl font-bold"><FileAudio className="text-sky-700" /> 일본어 TTS · SRT</h1><p className="mt-2 text-sm text-muted-foreground">최종 일본어 대본을 한 목소리로 생성하고 MP3와 자막을 프로젝트 폴더에 저장합니다.</p></div><button onClick={generateAll} disabled={generating || !script.trim() || !selectedVoice} className="inline-flex min-w-52 items-center justify-center gap-2 rounded-xl bg-sky-700 px-5 py-3 text-sm font-bold text-white disabled:opacity-40">{generating ? <><Loader2 size={16} className="animate-spin" /> {generationProgress}/{chunks.length} 생성 중</> : <><Sparkles size={16} /> 전체 TTS · SRT 만들기</>}</button></header>
     {message && <div className={`rounded-xl border px-4 py-3 text-sm font-semibold ${message.kind === "error" ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>{message.text}</div>}
 
     {!script.trim() ? <section className="rounded-2xl border border-border bg-white p-8 text-center shadow-sm"><p className="font-bold">저장된 최종 일본어 대본이 없습니다.</p><Link href={`/studio/longform-japan/projects/${projectId}/translate`} className="mt-4 inline-flex h-10 items-center rounded-xl bg-sky-700 px-4 text-sm font-bold text-white">대본 번역으로 이동</Link></section> : <>
       <section className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-        <article className="rounded-2xl border border-border bg-white p-5 shadow-sm sm:p-6"><div className="flex items-center gap-2"><Volume2 size={19} className="text-sky-700" /><div><h2 className="font-bold">목소리 선택</h2><p className="mt-0.5 text-xs text-muted-foreground">ElevenLabs 계정에 저장된 목소리에서 선택합니다.</p></div></div><label className="mt-4 flex h-11 items-center gap-2 rounded-xl border border-border px-3 focus-within:border-sky-600"><Search size={15} className="text-muted-foreground" /><input value={voiceSearch} onChange={(event) => setVoiceSearch(event.target.value)} placeholder="이름, 성별, 억양, 언어 검색" className="min-w-0 flex-1 outline-none" /><span className="text-xs text-muted-foreground">{filteredVoices.length}</span></label><select value={voiceId} onChange={(event) => setVoiceId(event.target.value)} className="mt-3 h-12 w-full rounded-xl border border-border bg-white px-3 text-sm font-semibold"><option value="">목소리를 선택하세요</option>{filteredVoices.map((voice) => <option key={voice.voice_id} value={voice.voice_id}>{voice.name}{voice.labels?.gender ? ` · ${voice.labels.gender}` : ""}{voice.labels?.accent ? ` · ${voice.labels.accent}` : ""}</option>)}</select>{selectedVoice && <div className="mt-3 rounded-xl bg-sky-50 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-bold text-sky-900">{selectedVoice.name}</p><p className="mt-1 text-xs leading-5 text-sky-800">{selectedVoice.description || Object.values(selectedVoice.labels || {}).join(" · ") || "목소리 설명 없음"}</p></div>{selectedVoice.preview_url && <audio controls src={selectedVoice.preview_url} className="h-9 max-w-full" />}</div></div>}</article>
+        <article className="rounded-2xl border border-border bg-white p-5 shadow-sm sm:p-6"><div className="flex items-center gap-2"><Volume2 size={19} className="text-sky-700" /><div><h2 className="font-bold">목소리 선택</h2><p className="mt-0.5 text-xs text-muted-foreground">ElevenLabs 계정에 저장된 목소리에서 선택합니다.</p></div></div><label className="mt-4 flex h-11 items-center gap-2 rounded-xl border border-border px-3 focus-within:border-sky-600"><Search size={15} className="text-muted-foreground" /><input value={voiceSearch} onChange={(event) => setVoiceSearch(event.target.value)} placeholder="이름, 성별, 억양, 언어 검색" className="min-w-0 flex-1 outline-none" /><span className="text-xs text-muted-foreground">{filteredVoices.length}</span></label><select value={voiceId} onChange={(event) => { const nextId = event.target.value; setVoiceId(nextId); setSavedVoiceName(voices.find((voice) => voice.voice_id === nextId)?.name || ""); }} className="mt-3 h-12 w-full rounded-xl border border-border bg-white px-3 text-sm font-semibold"><option value="">목소리를 선택하세요</option>{selectedVoice && !filteredVoices.some((voice) => voice.voice_id === selectedVoice.voice_id) && <option value={selectedVoice.voice_id}>{selectedVoice.name} · 프로젝트 저장 목소리</option>}{filteredVoices.map((voice) => <option key={voice.voice_id} value={voice.voice_id}>{voice.name}{voice.labels?.gender ? ` · ${voice.labels.gender}` : ""}{voice.labels?.accent ? ` · ${voice.labels.accent}` : ""}</option>)}</select>{selectedVoice && <div className="mt-3 rounded-xl bg-sky-50 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-bold text-sky-900">{selectedVoice.name}</p><p className="mt-1 text-xs leading-5 text-sky-800">{selectedVoice.description || Object.values(selectedVoice.labels || {}).join(" · ") || "목소리 설명 없음"}</p></div>{selectedVoice.preview_url && <audio controls src={selectedVoice.preview_url} className="h-9 max-w-full" />}</div></div>}</article>
 
         <article className="rounded-2xl border border-border bg-white p-5 shadow-sm sm:p-6"><h2 className="font-bold">음성 세부 설정</h2><p className="mt-1 text-xs text-muted-foreground">롱폼에 안정적인 Multilingual v2 모델을 사용합니다.</p><div className="mt-5 space-y-4">
           <SettingSlider label="안정성" value={settings.stability} minimum={0} maximum={1} step={0.05} onChange={(value) => setSettings((current) => ({ ...current, stability: value }))} />
