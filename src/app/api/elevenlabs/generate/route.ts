@@ -12,10 +12,13 @@ type Alignment = {
 
 type GenerateBody = {
   projectId?: number;
+  segmentId?: string;
   text?: string;
   voiceId?: string;
   voiceName?: string;
   sortOrder?: number;
+  previousText?: string;
+  nextText?: string;
   settings?: {
     stability?: number;
     similarity_boost?: number;
@@ -70,14 +73,15 @@ export async function POST(request: Request) {
     const body = await request.json() as GenerateBody;
     const projectId = Number(body.projectId);
     const text = body.text?.trim() || "";
+    const segmentId = body.segmentId?.trim() || "";
     const voiceId = body.voiceId?.trim() || "";
     const voiceName = body.voiceName?.trim() || "선택한 목소리";
     const sortOrder = Math.max(0, Math.round(Number(body.sortOrder) || 0));
     if (!Number.isInteger(projectId) || !voiceId || !text) {
       return NextResponse.json({ error: "프로젝트, 대본, 목소리가 필요합니다." }, { status: 400 });
     }
-    if (text.length > 9000) {
-      return NextResponse.json({ error: "한 구간은 9,000자 이하여야 합니다." }, { status: 413 });
+    if (text.length > 4500) {
+      return NextResponse.json({ error: "한 구간은 4,500자 이하여야 합니다." }, { status: 413 });
     }
 
     const { data: project } = await supabase.from("projects").select("id").eq("id", projectId).eq("user_id", user.id).eq("production_type", "longform_japan").maybeSingle();
@@ -92,10 +96,21 @@ export async function POST(request: Request) {
       use_speaker_boost: body.settings?.use_speaker_boost !== false,
       speed: clamp(body.settings?.speed, 0.7, 1.2, 1),
     };
+    const { data: existingSegment } = segmentId
+      ? await supabase.from("japan_longform_voice_segments").select("id, storage_path").eq("id", segmentId).eq("project_id", projectId).eq("user_id", user.id).maybeSingle()
+      : { data: null };
+    if (segmentId && !existingSegment) return NextResponse.json({ error: "재생성할 구간을 찾지 못했습니다." }, { status: 404 });
+
     const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}/with-timestamps?output_format=mp3_44100_128`, {
       method: "POST",
       headers: { "content-type": "application/json", "xi-api-key": apiKey },
-      body: JSON.stringify({ text, model_id: "eleven_multilingual_v2", voice_settings: voiceSettings }),
+      body: JSON.stringify({
+        text,
+        model_id: "eleven_multilingual_v2",
+        voice_settings: voiceSettings,
+        ...(body.previousText?.trim() ? { previous_text: body.previousText.trim().slice(-1200) } : {}),
+        ...(body.nextText?.trim() ? { next_text: body.nextText.trim().slice(0, 1200) } : {}),
+      }),
       cache: "no-store",
     });
     const payload = await response.json().catch(() => ({})) as {
@@ -128,10 +143,7 @@ export async function POST(request: Request) {
     }
     const { data: publicUrl } = supabase.storage.from("japan-longform-audio").getPublicUrl(storagePath);
     const subtitleSrt = alignmentToSrt(alignment);
-    const { data: segment, error: insertError } = await supabase.from("japan_longform_voice_segments").insert({
-      project_id: projectId,
-      user_id: user.id,
-      sort_order: sortOrder,
+    const generatedValues = {
       text,
       audio_url: publicUrl.publicUrl,
       storage_path: storagePath,
@@ -139,12 +151,19 @@ export async function POST(request: Request) {
       alignment,
       subtitle_srt: subtitleSrt,
       status: "generated",
-    }).select("id, sort_order, text, audio_url, storage_path, audio_duration, alignment, subtitle_srt, status").single();
+      updated_at: new Date().toISOString(),
+    };
+    const segmentQuery = existingSegment
+      ? supabase.from("japan_longform_voice_segments").update(generatedValues).eq("id", existingSegment.id).eq("user_id", user.id)
+      : supabase.from("japan_longform_voice_segments").insert({ project_id: projectId, user_id: user.id, sort_order: sortOrder, ...generatedValues });
+    const { data: segment, error: insertError } = await segmentQuery
+      .select("id, sort_order, section_kind, section_title, text, audio_url, storage_path, audio_duration, alignment, subtitle_srt, status").single();
     if (insertError) {
       await supabase.storage.from("japan-longform-audio").remove([storagePath]);
       console.error("Japan longform segment insert failed:", insertError);
       return NextResponse.json({ error: "생성 기록을 저장하지 못했습니다." }, { status: 500 });
     }
+    if (existingSegment?.storage_path) await supabase.storage.from("japan-longform-audio").remove([existingSegment.storage_path]);
 
     await supabase.from("japan_longform_voice_settings").upsert({
       project_id: projectId,
