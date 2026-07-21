@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import fs from 'fs';
 import nodePath from 'path';
@@ -10,10 +10,9 @@ const __dirname = nodePath.dirname(__filename);
 const binDir = nodePath.join(__dirname, 'bin');
 const ytdlpPath = nodePath.join(binDir, 'yt-dlp.exe');
 const ffmpegPath = nodePath.join(binDir, 'ffmpeg.exe');
-const ffprobePath = nodePath.join(binDir, 'ffprobe.exe');
 
 function requireBinaries() {
-  for (const binary of [ytdlpPath, ffmpegPath, ffprobePath]) {
+  for (const binary of [ytdlpPath, ffmpegPath]) {
     if (!fs.existsSync(binary)) {
       throw new Error(`필수 도구를 찾을 수 없습니다: ${binary}`);
     }
@@ -113,13 +112,17 @@ function readInfo(infoJsonPath, fallbackTitle, source) {
 }
 
 function extractDuration(videoPath) {
-  const output = execFileSync(ffprobePath, [
-    '-v', 'error',
-    '-show_entries', 'format=duration',
-    '-of', 'default=noprint_wrappers=1:nokey=1',
-    videoPath,
-  ], { encoding: 'utf8', windowsHide: true });
-  const duration = Number.parseFloat(output.trim());
+  // 일부 Windows Smart App Control 환경은 배포본의 ffprobe.exe만 차단한다.
+  // FFmpeg가 입력 헤더를 읽을 때 출력하는 Duration 값을 사용하면 별도 probe 바이너리가 필요 없다.
+  const result = spawnSync(ffmpegPath, ['-hide_banner', '-i', videoPath], {
+    encoding: 'utf8',
+    maxBuffer: 4 * 1024 * 1024,
+    windowsHide: true,
+  });
+  const match = String(result.stderr || result.stdout || '').match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/i);
+  const duration = match
+    ? Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3])
+    : Number.NaN;
   if (!Number.isFinite(duration) || duration <= 0) {
     throw new Error('영상 길이를 확인할 수 없습니다.');
   }
@@ -161,9 +164,28 @@ function extractFrames(videoPath, framesDir, duration) {
   return selected.map((file, index) => {
     const outputName = `representative_${index + 1}.jpg`;
     const relativePath = nodePath.posix.join('frames', 'cropped', outputName);
+    const inputFrame = nodePath.join(framesDir, file);
+    const detection = spawnSync(ffmpegPath, [
+      '-hide_banner', '-loglevel', 'verbose', '-loop', '1', '-i', inputFrame,
+      '-t', '0.2', '-vf', 'cropdetect=limit=24:round=2:reset=0', '-f', 'null', 'NUL',
+    ], { encoding: 'utf8', windowsHide: true, maxBuffer: 4 * 1024 * 1024 });
+    const detectedCrops = [...String(detection.stderr || '').matchAll(/crop=(\d+:\d+:\d+:\d+)/g)];
+    const crop = detectedCrops.at(-1)?.[1];
+    let searchCrop = crop;
+    if (crop) {
+      const [width, height, x, y] = crop.split(':').map(Number);
+      // 위쪽 검은 설명 영역이 발견된 재편집본은 실제 장면 내부의 상단 자막까지 제외한다.
+      // Vision이 장면 대신 "screenshot" 같은 재편집 문구를 검색하는 오탐을 막기 위한 검색용 crop이다.
+      if (y >= 20 && height >= 240) {
+        const trimTop = Math.floor((height * 0.32) / 2) * 2;
+        const trimBottom = Math.floor((height * 0.05) / 2) * 2;
+        searchCrop = `${width}:${height - trimTop - trimBottom}:${x}:${y + trimTop}`;
+      }
+    }
+    const filter = searchCrop ? `crop=${searchCrop},scale=640:-2` : 'scale=640:-2';
     const result = spawnSync(ffmpegPath, [
-      '-hide_banner', '-loglevel', 'error', '-i', nodePath.join(framesDir, file),
-      '-vf', 'cropdetect=24:16:0,scale=640:-2', '-frames:v', '1',
+      '-hide_banner', '-loglevel', 'error', '-i', inputFrame,
+      '-vf', filter, '-frames:v', '1',
       nodePath.join(croppedDir, outputName),
     ], { windowsHide: true });
 
@@ -281,6 +303,10 @@ function grayFrameHashes(videoPath, fps = 1) {
   const filters = [
     `fps=${fps},scale=32:32,format=gray`,
     `fps=${fps},crop=iw*0.82:ih*0.82:iw*0.09:ih*0.09,scale=32:32,format=gray`,
+    // 재편집 자막·검은 상하 여백을 제거한 장면 중심 변형들이다.
+    `fps=${fps},crop=iw:ih*0.62:0:ih*0.19,scale=32:32,format=gray`,
+    `fps=${fps},crop=iw:ih*0.46:0:ih*0.32,scale=32:32,format=gray`,
+    `fps=${fps},crop=iw*0.76:ih*0.62:iw*0.12:ih*0.19,scale=32:32,format=gray`,
   ];
   const variants = [];
   for (const filter of filters) {
@@ -292,7 +318,8 @@ function grayFrameHashes(videoPath, fps = 1) {
     const buffer = Buffer.from(result.stdout || []);
     const hashes = [];
     for (let offset = 0; offset + 1024 <= buffer.length; offset += 1024) {
-      hashes.push(differenceHash(buffer.subarray(offset, offset + 1024)));
+      const pixels = buffer.subarray(offset, offset + 1024);
+      hashes.push({ difference: differenceHash(pixels), perceptual: perceptualHash(pixels) });
     }
     variants.push(hashes);
   }
@@ -309,12 +336,38 @@ function differenceHash(pixels) {
   return bits;
 }
 
+function perceptualHash(pixels) {
+  const coefficients = [];
+  for (let u = 0; u < 8; u += 1) {
+    for (let v = 0; v < 8; v += 1) {
+      let sum = 0;
+      for (let x = 0; x < 32; x += 1) {
+        for (let y = 0; y < 32; y += 1) {
+          sum += pixels[y * 32 + x]
+            * Math.cos(((2 * x + 1) * u * Math.PI) / 64)
+            * Math.cos(((2 * y + 1) * v * Math.PI) / 64);
+        }
+      }
+      coefficients.push(sum);
+    }
+  }
+  const values = coefficients.slice(1);
+  const sorted = [...values].sort((left, right) => left - right);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  return values.map((value) => value > median);
+}
+
 function hashSimilarity(left, right) {
-  const length = Math.min(left.length, right.length);
-  if (!length) return 0;
-  let equal = 0;
-  for (let index = 0; index < length; index += 1) if (left[index] === right[index]) equal += 1;
-  return equal / length;
+  const bitSimilarity = (leftBits, rightBits) => {
+    const length = Math.min(leftBits.length, rightBits.length);
+    if (!length) return 0;
+    let equal = 0;
+    for (let index = 0; index < length; index += 1) if (leftBits[index] === rightBits[index]) equal += 1;
+    return equal / length;
+  };
+  const perceptual = bitSimilarity(left.perceptual, right.perceptual);
+  const difference = bitSimilarity(left.difference, right.difference);
+  return perceptual * 0.75 + difference * 0.25;
 }
 
 function compareHashSequences(queryVariants, candidateVariants) {
@@ -340,7 +393,41 @@ function compareHashSequences(queryVariants, candidateVariants) {
   const coverage = matchedFrames / Math.max(1, similarities.length);
   let score = Math.round(Math.max(0, Math.min(100, ((topAverage - 0.5) * 160) + coverage * 20)));
   if (matchedFrames < 2) score = Math.min(score, 45);
-  return { score, matchedFrames, bestSimilarity: Math.round((similarities[0] || 0) * 100) };
+  const alignment = bestSequenceAlignment(queryVariants, candidateVariants);
+  return {
+    score,
+    matchedFrames,
+    bestSimilarity: Math.round((similarities[0] || 0) * 100),
+    alignedFrames: alignment.frames,
+    alignedSimilarity: Math.round(alignment.similarity * 100),
+  };
+}
+
+function bestSequenceAlignment(queryVariants, candidateVariants) {
+  let best = { quality: 0, similarity: 0, frames: 0 };
+  for (const query of queryVariants) {
+    for (const candidate of candidateVariants) {
+      for (let offset = -query.length + 1; offset < candidate.length; offset += 1) {
+        const similarities = [];
+        for (let queryIndex = 0; queryIndex < query.length; queryIndex += 1) {
+          const candidateIndex = queryIndex + offset;
+          if (candidateIndex >= 0 && candidateIndex < candidate.length) {
+            similarities.push(hashSimilarity(query[queryIndex], candidate[candidateIndex]));
+          }
+        }
+        for (let windowSize = 3; windowSize <= Math.min(8, similarities.length); windowSize += 1) {
+          let sum = similarities.slice(0, windowSize).reduce((total, value) => total + value, 0);
+          for (let start = 0; start + windowSize <= similarities.length; start += 1) {
+            if (start > 0) sum += similarities[start + windowSize - 1] - similarities[start - 1];
+            const average = sum / windowSize;
+            const quality = average + Math.min(0.025, (windowSize - 3) * 0.005);
+            if (quality > best.quality) best = { quality, similarity: average, frames: windowSize };
+          }
+        }
+      }
+    }
+  }
+  return best;
 }
 
 export function compareVideoFiles(queryPath, candidatePath) {
@@ -387,7 +474,7 @@ export async function verifyCandidates(jobId, urls) {
 
   const verificationRoot = nodePath.join(jobDir, 'verification');
   fs.mkdirSync(verificationRoot, { recursive: true });
-  const uniqueUrls = [...new Set((urls || []).map((url) => String(url).trim()).filter(isWebUrl))].slice(0, 8);
+  const uniqueUrls = [...new Set((urls || []).map((url) => String(url).trim()).filter(isWebUrl))].slice(0, 12);
   const results = [];
 
   for (const url of uniqueUrls) {

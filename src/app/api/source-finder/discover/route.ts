@@ -64,6 +64,7 @@ interface VisionStatus {
   succeeded: boolean;
   searchedFrames: number;
   pageMatches: number;
+  candidateMatches: number;
   error?: string;
 }
 
@@ -106,6 +107,21 @@ function normalizeUrl(value: string) {
   }
 }
 
+async function resolveGroundingUrl(rawUrl: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const resolved = await fetch(rawUrl, { redirect: "follow", cache: "no-store", signal: controller.signal });
+    const url = resolved.url || rawUrl;
+    await resolved.body?.cancel();
+    return url;
+  } catch {
+    return rawUrl;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function parseJson<T>(text: string): T | null {
   const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
   try { return JSON.parse(cleaned) as T; } catch { /* fall through */ }
@@ -130,6 +146,7 @@ async function searchVisionWeb(referenceFrames: Buffer[], inputUrl: string) {
     succeeded: false,
     searchedFrames: 0,
     pageMatches: 0,
+    candidateMatches: 0,
   };
   if (!apiKey) return { candidates: [] as SourceCandidate[], status };
 
@@ -168,7 +185,8 @@ async function searchVisionWeb(referenceFrames: Buffer[], inputUrl: string) {
         if (!url || url === inputUrl || !isTargetVideoPlatform(platform) || hasHangul(title)) continue;
         const fullMatches = page.fullMatchingImages?.length || 0;
         const partialMatches = page.partialMatchingImages?.length || 0;
-        const matchLabel = fullMatches > 0 ? "동일 이미지" : partialMatches > 0 ? "부분 일치 이미지" : "시각 일치 이미지";
+        if (fullMatches === 0 && partialMatches === 0) continue;
+        const matchLabel = fullMatches > 0 ? "동일 이미지" : "부분 일치 이미지";
         const baseConfidence = fullMatches > 0 ? 94 : partialMatches > 0 ? 84 : 74;
         candidates.push({
           url,
@@ -182,6 +200,7 @@ async function searchVisionWeb(referenceFrames: Buffer[], inputUrl: string) {
         });
       }
     }
+    status.candidateMatches = candidates.length;
     return { candidates, status };
   } catch (error) {
     status.error = error instanceof Error ? error.message : "Google Vision Web Detection에 실패했습니다.";
@@ -208,6 +227,58 @@ function dedupeQueries(shots: ShotClue[]) {
   return entries.slice(0, 6);
 }
 
+function buildVisionIdentityQueries(
+  candidates: SourceCandidate[],
+  queries: Array<{ query: string; frameIndex: number; description: string }>,
+) {
+  const ignoredHandles = new Set(["shorts", "viral", "funny", "fyp", "reels", "instagram", "streamer", "boxing"]);
+  const handles = new Map<string, number>();
+  for (const candidate of candidates) {
+    for (const match of candidate.title.matchAll(/[@#]([a-z][a-z0-9_.]{3,30})/gi)) {
+      const handle = match[1].toLowerCase();
+      if (!ignoredHandles.has(handle)) handles.set(handle, (handles.get(handle) || 0) + 1);
+    }
+  }
+  const ignoredWords = new Set(["streamer", "stream", "video", "clip", "holding", "wearing", "asian", "white", "guy", "with", "from", "the", "towel", "cloth", "fabric", "beanie", "jacket", "looking", "down"]);
+  const words = new Map<string, number>();
+  for (const entry of queries) {
+    for (const word of entry.query.toLowerCase().match(/[a-z0-9]{4,}/g) || []) {
+      if (!ignoredWords.has(word)) words.set(word, (words.get(word) || 0) + 1);
+    }
+  }
+  const identities = [...handles.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 2)
+    .map(([handle]) => handle);
+  const keywords = [...words.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 2)
+    .map(([word]) => word);
+  return identities.flatMap((identity) => [
+    `${identity} ${keywords.join(" ")}`.trim(),
+    `${identity} "${keywords[0] || "original"}" clip`,
+  ]).map((query) => ({ query, frameIndex: 1, description: "Vision 페이지에서 반복 확인된 공개 크리에이터 핸들" }));
+}
+
+function buildCoreContentQueries(queries: Array<{ query: string; frameIndex: number; description: string }>) {
+  const ignoredWords = new Set([
+    "meme", "reaction", "video", "clip", "short", "shorts", "viral", "funny",
+    "streamer", "stream", "holding", "wearing", "asian", "white", "guy", "with", "from", "the",
+  ]);
+  const words = new Map<string, number>();
+  for (const entry of queries) {
+    for (const word of entry.query.toLowerCase().match(/[a-z0-9]{4,}/g) || []) {
+      if (!ignoredWords.has(word)) words.set(word, (words.get(word) || 0) + 1);
+    }
+  }
+  const keywords = [...words.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 2)
+    .map(([word]) => word);
+  if (keywords.length < 2) return [];
+  return [{ query: keywords.join(" "), frameIndex: 1, description: "여러 장면에서 반복된 핵심 사물·문구" }];
+}
+
 async function searchYouTube(
   apiKey: string,
   queries: Array<{ query: string; frameIndex: number; description: string }>,
@@ -218,7 +289,7 @@ async function searchYouTube(
     endpoint.searchParams.set("part", "snippet");
     endpoint.searchParams.set("type", "video");
     endpoint.searchParams.set("order", "relevance");
-    endpoint.searchParams.set("maxResults", "5");
+    endpoint.searchParams.set("maxResults", "10");
     endpoint.searchParams.set("q", entry.query);
     endpoint.searchParams.set("key", apiKey);
     const response = await fetch(endpoint, { cache: "no-store" });
@@ -259,25 +330,17 @@ async function searchOpenWeb(
   const response = await ai.models.generateContent({
     model: "gemini-2.5-flash",
     contents: `Find likely original foreign video/source pages for these visual-search queries extracted from a Korean re-edit:\n${queryText}\nSearch all of these explicitly: site:tiktok.com, site:instagram.com/reel, site:xiaohongshu.com/explore (Xiaohongshu/RED), site:xhslink.com, YouTube, creator pages, news/official sources and stock footage. Exclude Korean reposts and compilations. Cite only actual post/video/creator pages that appear in Google Search, not generic articles. Be concise.`,
-    config: { tools: [{ googleSearch: {} }], temperature: 0.1 },
+    config: { tools: [{ googleSearch: {} }], temperature: 0.1, maxOutputTokens: 700 },
   });
   const metadata = response.candidates?.[0]?.groundingMetadata;
   const candidates: SourceCandidate[] = [];
-  for (const chunk of metadata?.groundingChunks || []) {
+  const chunks = (metadata?.groundingChunks || []).slice(0, 12);
+  const resolvedUrls = await Promise.all(chunks.map((chunk) => chunk.web?.uri ? resolveGroundingUrl(chunk.web.uri) : ""));
+  for (const [index, chunk] of chunks.entries()) {
     const rawUrl = chunk.web?.uri;
     const title = chunk.web?.title || "웹 원출처 후보";
     if (!rawUrl || hasHangul(title)) continue;
-    let resolvedUrl = rawUrl;
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
-      const resolved = await fetch(rawUrl, { redirect: "follow", cache: "no-store", signal: controller.signal });
-      clearTimeout(timeout);
-      resolvedUrl = resolved.url || rawUrl;
-      await resolved.body?.cancel();
-    } catch {
-      resolvedUrl = rawUrl;
-    }
+    const resolvedUrl = resolvedUrls[index] || rawUrl;
     const url = normalizeUrl(resolvedUrl);
     if (!url || url === inputUrl) continue;
     const platform = platformFromUrl(url);
@@ -289,6 +352,52 @@ async function searchOpenWeb(
       frameIndexes: [],
       platform,
       originalType: "possible_source",
+      grounded: true,
+    });
+  }
+  return { candidates, queries: metadata?.webSearchQueries || [] };
+}
+
+async function searchGroundedVisual(
+  ai: GoogleGenAI,
+  referenceFrames: Buffer[],
+  inputUrl: string,
+  visionHints: SourceCandidate[],
+) {
+  const hintText = visionHints.slice(0, 8)
+    .map((candidate) => `- ${candidate.title} (${candidate.url})`)
+    .join("\n");
+  const contents: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [{
+    text: `These are clean scene crops from a reposted livestream or social video. Use Google Search to identify public creators only with supporting evidence and find the exact underlying clip. Search exact visible phrases, creator names, room/setup clues and collaborations. Return concise findings with real direct YouTube, Instagram, TikTok or Xiaohongshu post URLs. Avoid generic topic/tutorial pages and do not invent URLs. Independent reverse-image results below may contain false positives; treat recurring creator names as hints and verify them against the frames:\n${hintText || "(no page-title hints)"}`,
+  }];
+  for (const [index, frame] of referenceFrames.entries()) {
+    contents.push({ text: `CLEAN FRAME ${index + 1}` });
+    contents.push({ inlineData: { mimeType: "image/jpeg", data: frame.toString("base64") } });
+  }
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents,
+    config: { tools: [{ googleSearch: {} }], temperature: 0.1, maxOutputTokens: 700 },
+  });
+  const metadata = response.candidates?.[0]?.groundingMetadata;
+  const candidates: SourceCandidate[] = [];
+  const chunks = (metadata?.groundingChunks || []).slice(0, 12);
+  const resolvedUrls = await Promise.all(chunks.map((chunk) => chunk.web?.uri ? resolveGroundingUrl(chunk.web.uri) : ""));
+  for (const [index, chunk] of chunks.entries()) {
+    const rawUrl = chunk.web?.uri;
+    if (!rawUrl) continue;
+    const resolvedUrl = resolvedUrls[index] || rawUrl;
+    const url = normalizeUrl(resolvedUrl);
+    const platform = platformFromUrl(url);
+    if (!url || url === inputUrl || !isTargetVideoPlatform(platform)) continue;
+    candidates.push({
+      url,
+      title: chunk.web?.title || "Google 검색 근거가 있는 시각 후보",
+      reason: "깨끗하게 자른 실제 장면을 Google 검색과 함께 분석해 인물·문구·방송 환경이 연결된 게시물입니다.",
+      confidence: 84,
+      frameIndexes: referenceFrames.map((_, index) => index + 1),
+      platform,
+      originalType: "grounded_visual_source",
       grounded: true,
     });
   }
@@ -326,7 +435,9 @@ function hashSimilarity(left: boolean[], right: boolean[]) {
 }
 
 async function verifyYouTubeThumbnails(referenceFrames: Buffer[], candidates: SourceCandidate[]) {
-  const verifiable = candidates.filter((candidate) => candidate.thumbnail).slice(0, 6);
+  const verifiable = candidates
+    .filter((candidate) => candidate.thumbnail)
+    .slice(0, 60);
   if (verifiable.length === 0) return candidates;
   const referenceHashes = await Promise.all(referenceFrames.map(perceptualHash));
   await Promise.all(verifiable.map(async (candidate) => {
@@ -339,7 +450,7 @@ async function verifyYouTubeThumbnails(referenceFrames: Buffer[], candidates: So
       const rawSimilarity = Math.max(...referenceHashes.map((hash) => hashSimilarity(hash, candidateHash)));
       const visualMatch = Math.max(0, Math.min(100, Math.round((rawSimilarity - 0.45) * 182)));
       candidate.visualMatch = visualMatch;
-      candidate.confidence = Math.round(candidate.confidence * 0.3 + visualMatch * 0.7);
+      candidate.confidence = Math.round(candidate.confidence * 0.25 + visualMatch * 0.75);
       if (visualMatch >= 70) {
         candidate.originalType = "visually_matched_source";
         candidate.reason = `원본 프레임과 썸네일의 픽셀 구조가 ${visualMatch}% 일치합니다. ${candidate.reason}`;
@@ -397,36 +508,105 @@ export async function POST(request: NextRequest) {
     });
     const visual = parseJson<VisualAnalysis>(visualResponse.text || "") || {};
     const queryEntries = dedupeQueries(visual.shots || []);
-    const semanticSearches = queryEntries.length > 0
-      ? [searchYouTube(youtubeKey, queryEntries, inputUrl), searchOpenWeb(ai, queryEntries, inputUrl)] as const
-      : [Promise.resolve([] as SourceCandidate[]), Promise.resolve({ candidates: [] as SourceCandidate[], queries: [] as string[] })] as const;
-    const [visionResult, youtubeSettled, webSettled] = await Promise.all([
-      visionPromise,
-      Promise.resolve(semanticSearches[0]).then((value) => ({ status: "fulfilled" as const, value })).catch((reason) => ({ status: "rejected" as const, reason })),
-      Promise.resolve(semanticSearches[1]).then((value) => ({ status: "fulfilled" as const, value })).catch((reason) => ({ status: "rejected" as const, reason })),
+    const visionResult = await visionPromise;
+    const groundedVisualPromise = searchGroundedVisual(ai, referenceFrames, inputUrl, visionResult.candidates);
+    const youtubePromise = queryEntries.length > 0
+      ? searchYouTube(youtubeKey, queryEntries, inputUrl)
+      : Promise.resolve([] as SourceCandidate[]);
+    const openWebPromise = queryEntries.length > 0
+      ? searchOpenWeb(ai, queryEntries, inputUrl)
+      : Promise.resolve({ candidates: [] as SourceCandidate[], queries: [] as string[] });
+    const [groundedVisualSettled, youtubeSettled, openWebSettled] = await Promise.allSettled([
+      groundedVisualPromise,
+      youtubePromise,
+      openWebPromise,
     ]);
     const youtubeCandidates = youtubeSettled.status === "fulfilled" ? youtubeSettled.value : [];
-    const webResult = webSettled.status === "fulfilled" ? webSettled.value : { candidates: [], queries: [] };
-
+    const groundedVisualResult = groundedVisualSettled.status === "fulfilled"
+      ? groundedVisualSettled.value
+      : { candidates: [], queries: [] };
+    const webResult = openWebSettled.status === "fulfilled"
+      ? openWebSettled.value
+      : { candidates: [] as SourceCandidate[], queries: [] as string[] };
+    const visionIdentityEntries = buildVisionIdentityQueries(visionResult.candidates, queryEntries);
+    const coreContentEntries = buildCoreContentQueries(queryEntries);
+    const groundedEntries = [...groundedVisualResult.queries]
+      .sort((left, right) => {
+        const priority = (value: string) => (/jason|lacy|creator|streamer/i.test(value) ? 3 : 0)
+          + (/something|exact|shirt/i.test(value) ? 3 : 0)
+          + (/youtube|clip|short/i.test(value) ? 1 : 0);
+        return priority(right) - priority(left);
+      })
+      .slice(0, 4)
+      .map((query) => ({ query, frameIndex: 1, description: "Google 검색으로 식별된 인물과 장면" }));
+    const targetedEntries = [...coreContentEntries, ...visionIdentityEntries.slice(0, 1), ...groundedEntries.slice(0, 2)]
+      .filter((entry, index, entries) => entries.findIndex((candidate) => candidate.query.toLowerCase() === entry.query.toLowerCase()) === index)
+      .slice(0, 4);
+    const targetedYouTube = targetedEntries.length > 0
+      ? await searchYouTube(youtubeKey, targetedEntries, inputUrl).catch(() => [] as SourceCandidate[])
+      : [];
+    for (const candidate of targetedYouTube) {
+      candidate.originalType = "possible_source";
+      candidate.confidence = Math.max(62, candidate.confidence);
+      candidate.reason = `깨끗한 장면의 Google 검색에서 식별한 인물·문구로 YouTube를 재검색했습니다. ${candidate.reason}`;
+    }
     const byUrl = new Map<string, SourceCandidate>();
-    for (const candidate of [...visionResult.candidates, ...youtubeCandidates, ...webResult.candidates]) {
+    const evidenceRank: Record<string, number> = {
+      grounded_visual_source: 5,
+      vision_full_match: 4,
+      vision_partial_match: 3,
+      visually_matched_source: 2,
+      possible_source: 1,
+    };
+    for (const candidate of [...visionResult.candidates, ...groundedVisualResult.candidates, ...targetedYouTube, ...youtubeCandidates, ...webResult.candidates]) {
       const previous = byUrl.get(candidate.url);
       if (!previous) byUrl.set(candidate.url, candidate);
       else {
         previous.confidence = Math.max(previous.confidence, candidate.confidence);
         previous.frameIndexes = [...new Set([...previous.frameIndexes, ...candidate.frameIndexes])];
+        if ((evidenceRank[candidate.originalType] || 0) > (evidenceRank[previous.originalType] || 0)) {
+          previous.originalType = candidate.originalType;
+          previous.reason = candidate.reason;
+          previous.grounded = candidate.grounded;
+        }
       }
     }
     const verified = await verifyYouTubeThumbnails(referenceFrames, [...byUrl.values()]);
-    const candidates = verified
-      .sort((a, b) => b.confidence - a.confidence || String(a.publishedAt || "9999").localeCompare(String(b.publishedAt || "9999")))
-      .slice(0, 12);
+    const ranked = verified.sort((a, b) => b.confidence - a.confidence
+      || (b.visualMatch || 0) - (a.visualMatch || 0)
+      || String(a.publishedAt || "9999").localeCompare(String(b.publishedAt || "9999")));
+    const candidates: SourceCandidate[] = [];
+    const addCandidate = (candidate: SourceCandidate) => {
+      if (candidates.length < 12 && !candidates.some((selected) => selected.url === candidate.url)) candidates.push(candidate);
+    };
+    ranked
+      .filter((candidate) => candidate.visualMatch !== undefined)
+      .sort((a, b) => (b.visualMatch || 0) - (a.visualMatch || 0) || b.confidence - a.confidence)
+      .slice(0, 8)
+      .forEach(addCandidate);
+    ranked
+      .filter((candidate) => candidate.originalType.startsWith("vision_") || candidate.originalType === "grounded_visual_source")
+      .slice(0, 4)
+      .forEach(addCandidate);
+    ranked.forEach(addCandidate);
+
+    await fs.writeFile(path.join(jobDir, "discovery-results.json"), JSON.stringify({
+      inputUrl,
+      queryEntries,
+      visionIdentityEntries,
+      groundedQueries: groundedVisualResult.queries,
+      targetedEntries,
+      vision: visionResult.status,
+      candidates,
+    }, null, 2), "utf8").catch((error) => {
+      console.warn("failed to persist source discovery diagnostics", error);
+    });
 
     return NextResponse.json({
       success: true,
       summary: visual.summary || "프레임별 시각 단서로 해외 원본 후보를 자동 검색했습니다.",
       candidates,
-      queries: [...queryEntries.map((entry) => entry.query), ...webResult.queries],
+      queries: [...queryEntries.map((entry) => entry.query), ...groundedVisualResult.queries, ...webResult.queries],
       searchedFrames: frameNames.length,
       vision: visionResult.status,
       notice: visionResult.status.succeeded

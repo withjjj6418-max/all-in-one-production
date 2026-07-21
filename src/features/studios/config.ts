@@ -50,7 +50,7 @@ export const studios: StudioConfig[] = [
     label: "롱폼(일본)",
     description: "일본 롱폼 리서치와 번역, 내레이션 흐름을 구성할 예정입니다.",
     icon: Languages,
-    available: false,
+    available: true,
     accent: "bg-sky-100 text-sky-700",
   },
   {
@@ -75,6 +75,20 @@ export const storyWorkflow = [
 ] as const;
 
 export type StoryWorkflowKey = (typeof storyWorkflow)[number]["key"];
+
+export const japanLongformWorkflow = [
+  { key: "source", step: 1, label: "원문 수집", shortLabel: "원문" },
+  { key: "adapt", step: 2, label: "한국어 각색", shortLabel: "각색" },
+  { key: "script", step: 3, label: "한국어 대본", shortLabel: "대본" },
+  { key: "translate", step: 4, label: "일본어 번역", shortLabel: "번역" },
+  { key: "voice", step: 5, label: "TTS · SRT", shortLabel: "음성" },
+  { key: "image", step: 6, label: "썸네일 · 배경", shortLabel: "이미지" },
+  { key: "motion", step: 7, label: "루프 영상", shortLabel: "영상" },
+  { key: "premiere", step: 8, label: "Premiere", shortLabel: "편집" },
+  { key: "upload", step: 9, label: "업로드", shortLabel: "완료" },
+] as const;
+
+export type JapanLongformWorkflowKey = (typeof japanLongformWorkflow)[number]["key"];
 
 export function getStudioBySlug(slug: string) {
   return studios.find((studio) => studio.slug === slug);

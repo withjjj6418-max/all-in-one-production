@@ -73,6 +73,7 @@ type SearchSummary = {
   visionConfigured: boolean;
   visionSucceeded: boolean;
   visionPageMatches: number;
+  visionCandidateMatches: number;
   visionError?: string;
 };
 
@@ -174,7 +175,8 @@ export default function SourceFinderPage() {
       setHelperOnline(true);
       await discoverSources(result);
     } catch (error) {
-      setHelperOnline(false);
+      // 다운로드·플랫폼 오류를 도우미 연결 끊김으로 잘못 표시하지 않는다.
+      void checkHelper();
       setMessage(error instanceof Error ? error.message : "로컬 도우미와 통신하지 못했습니다.");
     } finally {
       setIsAnalyzing(false);
@@ -236,12 +238,13 @@ export default function SourceFinderPage() {
         visionConfigured: Boolean(discovery.vision?.configured),
         visionSucceeded: Boolean(discovery.vision?.succeeded),
         visionPageMatches: Number(discovery.vision?.pageMatches) || 0,
+        visionCandidateMatches: Number(discovery.vision?.candidateMatches) || 0,
         visionError: discovery.vision?.error ? String(discovery.vision.error) : undefined,
       };
       setSearchSummary({ discovered: discovered.length, compared: 0, passed: 0, bestScore: 0, bestSimilarity: 0, ...visionSummary });
 
       if (discovered.length > 0) {
-        setMessage(`후보 ${Math.min(discovered.length, 8)}개 영상을 직접 가져와 입력 영상과 프레임 단위로 검증하고 있습니다. 잠시 기다려 주세요.`);
+        setMessage(`후보 ${Math.min(discovered.length, 12)}개 영상을 직접 가져와 입력 영상과 프레임 단위로 검증하고 있습니다. 잠시 기다려 주세요.`);
         const verificationResponse = await fetch(`${HELPER_URL}/verify-candidates`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -267,11 +270,17 @@ export default function SourceFinderPage() {
         discovered = discovered.map((candidate) => {
           const verified = verifiedByUrl.get(candidate.url);
           if (!verified?.ok) return { ...candidate, videoMatch: 0 };
+          const groundedVisualMatch = candidate.originalType === "grounded_visual_source"
+            && verified.score >= 35
+            && verified.bestSimilarity >= 76;
+          const verifiedScore = groundedVisualMatch ? Math.max(65, verified.score) : verified.score;
           return {
             ...candidate,
-            videoMatch: verified.score,
-            confidence: verified.score,
-            reason: `후보 영상 전체를 직접 비교한 결과 ${verified.matchedFrames}개 프레임이 일치했습니다(최고 유사도 ${verified.bestSimilarity}%). ${candidate.reason || ""}`,
+            videoMatch: verifiedScore,
+            confidence: verifiedScore,
+            reason: groundedVisualMatch
+              ? `Google 검색 근거와 프레임 최고 유사도 ${verified.bestSimilarity}%가 함께 확인되어 원본 후보로 통과했습니다. ${candidate.reason || ""}`
+              : `후보 영상 전체를 직접 비교한 결과 ${verified.matchedFrames}개 프레임이 일치했습니다(최고 유사도 ${verified.bestSimilarity}%). ${candidate.reason || ""}`,
           };
         }).filter((candidate) => (candidate.videoMatch || 0) >= 55)
           .sort((a, b) => (b.videoMatch || 0) - (a.videoMatch || 0));
@@ -435,7 +444,7 @@ export default function SourceFinderPage() {
               {isDiscovering ? (
                 <div className="flex flex-col items-center justify-center rounded-xl border border-brand-olive/20 bg-brand-cream/50 py-12 text-center"><Loader2 size={28} className="mb-3 animate-spin text-brand-olive" /><p className="text-sm font-bold">장면별 원출처를 검색하고 있습니다.</p><p className="mt-1 text-xs text-muted-foreground">워터마크·인물·장소·자막을 분석해 해외 원본 링크를 찾는 중입니다.</p></div>
               ) : candidates.length === 0 ? (
-                <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border px-4 py-10 text-center"><Film size={28} className="mb-2 text-muted-foreground/40" /><p className="text-sm font-semibold text-muted-foreground">일치가 확인된 원본 후보가 없습니다.</p>{searchSummary && <><div className="mt-3 flex flex-wrap justify-center gap-2 text-[11px]"><span className="rounded-full bg-muted px-2.5 py-1">검색 후보 {searchSummary.discovered}개</span><span className="rounded-full bg-muted px-2.5 py-1">영상 비교 {searchSummary.compared}개</span><span className="rounded-full bg-muted px-2.5 py-1">통과 {searchSummary.passed}개</span><span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700">최고 점수 {searchSummary.bestScore}%</span><span className={`rounded-full px-2.5 py-1 ${searchSummary.visionSucceeded ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>{searchSummary.visionSucceeded ? `Vision 일치 페이지 ${searchSummary.visionPageMatches}개` : "Vision 연결 안 됨"}</span></div>{searchSummary.visionError && <p className="mt-3 max-w-xl text-xs leading-5 text-red-600">Google Vision: {searchSummary.visionError}</p>}</>}<p className="mt-3 max-w-xl text-xs leading-5 text-muted-foreground">Google Vision의 동일 장면 검색과 플랫폼 검색을 모두 수행했지만, 전체 영상 검증을 통과한 링크가 없었습니다.</p></div>
+                <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border px-4 py-10 text-center"><Film size={28} className="mb-2 text-muted-foreground/40" /><p className="text-sm font-semibold text-muted-foreground">일치가 확인된 원본 후보가 없습니다.</p>{searchSummary && <><div className="mt-3 flex flex-wrap justify-center gap-2 text-[11px]"><span className="rounded-full bg-muted px-2.5 py-1">검색 후보 {searchSummary.discovered}개</span><span className="rounded-full bg-muted px-2.5 py-1">영상 비교 {searchSummary.compared}개</span><span className="rounded-full bg-muted px-2.5 py-1">통과 {searchSummary.passed}개</span><span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700">최고 점수 {searchSummary.bestScore}%</span><span className={`rounded-full px-2.5 py-1 ${searchSummary.visionSucceeded ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>{searchSummary.visionSucceeded ? `Vision 플랫폼 후보 ${searchSummary.visionCandidateMatches}개` : "Vision 연결 안 됨"}</span></div>{searchSummary.visionError && <p className="mt-3 max-w-xl text-xs leading-5 text-red-600">Google Vision: {searchSummary.visionError}</p>}</>}<p className="mt-3 max-w-xl text-xs leading-5 text-muted-foreground">Google Vision의 동일 장면 검색과 플랫폼 검색을 모두 수행했지만, 전체 영상 검증을 통과한 링크가 없었습니다.</p></div>
               ) : (
                 <div className="space-y-2">{candidates.map((candidate) => {
                   const isEarliest = earliestCandidate?.id === candidate.id;

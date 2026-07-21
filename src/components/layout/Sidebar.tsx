@@ -19,13 +19,12 @@ import {
   WandSparkles,
   FileAudio,
   Upload,
+  Languages,
+  ScanText,
+  Video,
+  Film,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-
-const mainMenuItems = [
-  { label: "영상소스모음", href: "/research", icon: Search },
-  { label: "영상 분석", href: "/analytics", icon: BarChart3 },
-];
 
 const shortsMenuItems = [
   { label: "완료", href: "/completed", icon: CheckCircle },
@@ -43,6 +42,7 @@ export function Sidebar() {
   const [mounted, setMounted] = useState(false);
   const [currentQuery, setCurrentQuery] = useState("");
   const [isStoryStudioOpen, setIsStoryStudioOpen] = useState(true);
+  const [isJapanStudioOpen, setIsJapanStudioOpen] = useState(true);
 
   useEffect(() => {
     // 클라이언트에서만 현재 쿼리와 마지막 프로젝트를 읽어 SSR 결과와 맞춘다.
@@ -57,10 +57,17 @@ export function Sidebar() {
   const queryStoryProjectId = mounted ? new URLSearchParams(currentQuery).get("project_id") : null;
   const rememberedStoryProjectId = mounted && typeof window !== "undefined" ? window.localStorage.getItem("last-shorts-story-project-id") : null;
   const storyProjectId = pathStoryProjectId || queryStoryProjectId || rememberedStoryProjectId;
+  const pathJapanProjectId = pathname.match(/^\/studio\/longform-japan\/projects\/(\d+)/)?.[1] ?? null;
+  const rememberedJapanProjectId = mounted && typeof window !== "undefined" ? window.localStorage.getItem("last-longform-japan-project-id") : null;
+  const japanProjectId = pathJapanProjectId || rememberedJapanProjectId;
 
   useEffect(() => {
     if (pathStoryProjectId && typeof window !== "undefined") window.localStorage.setItem("last-shorts-story-project-id", pathStoryProjectId);
   }, [pathStoryProjectId]);
+
+  useEffect(() => {
+    if (pathJapanProjectId && typeof window !== "undefined") window.localStorage.setItem("last-longform-japan-project-id", pathJapanProjectId);
+  }, [pathJapanProjectId]);
   
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
@@ -237,23 +244,34 @@ export function Sidebar() {
         <div className="mx-2 border-t border-sidebar-border" />
 
         {/* 🎥 롱폼 그룹 */}
-        <div className="space-y-1 opacity-40 grayscale-[50%]">
+        <div className="space-y-1">
           <h3 className="px-3 mb-2 text-[11px] font-bold tracking-wider text-muted-foreground/70">🎥 롱폼</h3>
-          
-          {mainMenuItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={`longform-${item.href}`}
-                onClick={() => alert("🚧 롱폼 기능은 추후 제작 예정입니다.")}
-                className="group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-all duration-200 hover:bg-brand-cream"
-              >
-                <Icon size={18} className="text-muted-foreground" />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
 
+          <button type="button" onClick={() => setIsJapanStudioOpen((current) => !current)} className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${pathname.startsWith("/studio/longform-japan") ? "bg-sky-50 text-sky-700" : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"}`}>
+            <Languages size={18} className="text-sky-700" /><span>롱폼(일본)</span><ChevronDown size={16} className={`ml-auto transition-transform ${isJapanStudioOpen ? "rotate-180" : ""}`} />
+          </button>
+
+          <div className={`overflow-hidden transition-all duration-200 ${isJapanStudioOpen ? "max-h-[32rem] opacity-100" : "max-h-0 opacity-0"}`}>
+            <div className="ml-4 space-y-0.5 border-l border-sidebar-border py-1 pl-3">
+              {[
+                { key: "projects", label: "프로젝트", icon: FolderKanban, href: "/studio/longform-japan", needsProject: false },
+                { key: "source", label: "원문수집", icon: ScanText, href: japanProjectId ? `/studio/longform-japan/projects/${japanProjectId}/source` : "/studio/longform-japan", needsProject: true },
+                { key: "adapt", label: "각색", icon: WandSparkles, href: japanProjectId ? `/studio/longform-japan/projects/${japanProjectId}/adapt` : "/studio/longform-japan", needsProject: true },
+                { key: "script", label: "대본수정", icon: PenLine, href: japanProjectId ? `/studio/longform-japan/projects/${japanProjectId}/script` : "/studio/longform-japan", needsProject: true },
+                { key: "translate", label: "대본번역", icon: Languages, href: japanProjectId ? `/studio/longform-japan/projects/${japanProjectId}/translate` : "/studio/longform-japan", needsProject: true },
+                { key: "voice", label: "TTS · SRT", icon: FileAudio, href: japanProjectId ? `/studio/longform-japan/projects/${japanProjectId}/voice` : "/studio/longform-japan", needsProject: true },
+                { key: "image", label: "이미지", icon: Image, href: japanProjectId ? `/studio/longform-japan/projects/${japanProjectId}/image` : "/studio/longform-japan", needsProject: true },
+                { key: "motion", label: "루프영상", icon: Video, href: japanProjectId ? `/studio/longform-japan/projects/${japanProjectId}/motion` : "/studio/longform-japan", needsProject: true },
+                { key: "premiere", label: "프리미어", icon: Film, href: japanProjectId ? `/studio/longform-japan/projects/${japanProjectId}/premiere` : "/studio/longform-japan", needsProject: true },
+                { key: "uploads", label: "업로드목록", icon: Upload, href: "/studio/longform-japan/uploads", needsProject: false },
+              ].map((item) => {
+                const isActive = item.key === "projects" ? pathname === "/studio/longform-japan" : item.key === "uploads" ? pathname === "/studio/longform-japan/uploads" : pathname.endsWith(`/${item.key}`);
+                const waitingForProject = item.needsProject && !japanProjectId;
+                const Icon = item.icon;
+                return <Link key={item.key} href={item.href} title={waitingForProject ? "일본 롱폼 프로젝트를 먼저 선택해주세요" : undefined} onClick={() => setIsMobileOpen(false)} className={`group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition ${isActive ? "bg-sky-50 text-sky-700" : waitingForProject ? "text-muted-foreground/50" : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"}`}><Icon size={15} /><span>{item.label}</span>{isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-sky-600" />}</Link>;
+              })}
+            </div>
+          </div>
         </div>
       </nav>
 

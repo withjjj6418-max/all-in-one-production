@@ -16,7 +16,13 @@ const pageTitles: Record<string, string> = {
 
 export function Header() {
   const pathname = usePathname();
-  const title = pathname === "/studio/shorts-story/uploads"
+  const title = pathname === "/studio/longform-japan/uploads"
+    ? "일본 롱폼 업로드 목록"
+    : pathname.startsWith("/studio/longform-japan/projects/")
+    ? "일본 롱폼 제작 워크벤치"
+    : pathname === "/studio/longform-japan"
+    ? "롱폼(일본)"
+    : pathname === "/studio/shorts-story/uploads"
     ? "사연 업로드 목록"
     : pathname.endsWith("/publish")
     ? "검수 · 업로드 완료"
