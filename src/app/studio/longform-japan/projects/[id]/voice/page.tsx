@@ -146,7 +146,6 @@ export default function JapanLongformVoicePage() {
   const { id } = useParams<{ id: string }>();
   const projectId = Number(id);
   const supabase = useMemo(() => createClient(), []);
-  const [userId, setUserId] = useState("");
   const [projectTitle, setProjectTitle] = useState("");
   const [script, setScript] = useState("");
   const [voices, setVoices] = useState<Voice[]>([]);
@@ -180,7 +179,6 @@ export default function JapanLongformVoicePage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!active) return;
       if (!user) { setMessage({ kind: "error", text: "로그인이 필요합니다." }); setLoading(false); return; }
-      setUserId(user.id);
       const [projectResult, scriptResult, settingsResult, segmentResult, runResult] = await Promise.all([
         supabase.from("projects").select("title").eq("id", projectId).eq("production_type", "longform_japan").maybeSingle(),
         supabase.from("japan_longform_scripts").select("verified_japanese").eq("project_id", projectId).maybeSingle(),
@@ -240,14 +238,13 @@ export default function JapanLongformVoicePage() {
     const combinedAudio = new Blob(audioParts, { type: "audio/mpeg" });
     const combinedSrt = buildCombinedSrt(sourceSegments);
     const totalDuration = sourceSegments.reduce((sum, segment) => sum + Number(segment.audio_duration || 0), 0);
-    const storagePath = `${userId}/${projectId}/final/${Date.now()}_final.mp3`;
-    await supabase.auth.refreshSession();
-    let { error: uploadError } = await supabase.storage.from(AUDIO_BUCKET).upload(storagePath, combinedAudio, { contentType: "audio/mpeg", upsert: true });
-    if (uploadError) {
-      await supabase.auth.refreshSession();
-      ({ error: uploadError } = await supabase.storage.from(AUDIO_BUCKET).upload(storagePath, combinedAudio, { contentType: "audio/mpeg", upsert: true }));
-    }
-    if (uploadError) {
+    const response = await fetch("/api/elevenlabs/finalize", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectId }),
+    });
+    const payload = await response.json() as { run?: VoiceRun; error?: string };
+    if (!response.ok || !payload.run) {
       let folderSaved = false;
       if (projectFolder) {
         try {
@@ -256,25 +253,9 @@ export default function JapanLongformVoicePage() {
         } catch { /* 아래 오류에 저장 실패 내용을 함께 표시 */ }
       }
       const size = `${(combinedAudio.size / 1024 / 1024).toFixed(1)}MB`;
-      throw new Error(`최종 통합 음성을 클라우드에 저장하지 못했습니다. (${uploadError.message}, ${size})${folderSaved ? " 다만 연결한 사운드 폴더에는 MP3와 SRT를 저장했습니다." : ""}`);
+      throw new Error(`${payload.error || "최종 통합 음성을 클라우드에 저장하지 못했습니다."} (${size})${folderSaved ? " 다만 연결한 사운드 폴더에는 MP3와 SRT를 저장했습니다." : ""}`);
     }
-
-    const { data: publicUrl } = supabase.storage.from(AUDIO_BUCKET).getPublicUrl(storagePath);
-    const { data: run, error: runError } = await supabase.from("japan_longform_voice_runs").insert({
-      project_id: projectId,
-      user_id: userId,
-      segment_count: sourceSegments.length,
-      total_duration: totalDuration,
-      combined_audio_url: publicUrl.publicUrl,
-      combined_storage_path: storagePath,
-      combined_subtitle_srt: combinedSrt,
-    }).select("id, segment_count, total_duration, combined_audio_url, combined_storage_path, combined_subtitle_srt, created_at").single();
-    if (runError || !run) {
-      await supabase.storage.from(AUDIO_BUCKET).remove([storagePath]);
-      throw new Error(`최종 TTS 기록을 저장하지 못했습니다.${runError?.message ? ` (${runError.message})` : ""}`);
-    }
-
-    setLatestRun(run as VoiceRun);
+    setLatestRun(payload.run);
     setMessage({ kind: "notice", text: `전체 TTS와 SRT를 만들었습니다. 총 길이 ${formatDuration(totalDuration)}` });
     if (projectFolder) {
       try {
