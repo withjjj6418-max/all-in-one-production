@@ -4,8 +4,6 @@ import { createClient } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const AUDIO_BUCKET = "japan-longform-audio";
-
 type Alignment = {
   characters?: string[];
   character_start_times_seconds?: number[];
@@ -14,7 +12,6 @@ type Alignment = {
 
 type Segment = {
   sort_order: number;
-  storage_path: string | null;
   audio_duration: number | null;
   alignment: Alignment;
 };
@@ -75,7 +72,7 @@ export async function POST(request: Request) {
     if (!project) return NextResponse.json({ error: "프로젝트 접근 권한이 없습니다." }, { status: 403 });
 
     const { data, error: segmentError } = await supabase.from("japan_longform_voice_segments")
-      .select("sort_order, storage_path, audio_duration, alignment")
+      .select("sort_order, audio_duration, alignment")
       .eq("project_id", projectId)
       .eq("user_id", user.id)
       .eq("status", "generated")
@@ -83,39 +80,18 @@ export async function POST(request: Request) {
     const segments = (data || []) as Segment[];
     if (segmentError || !segments.length) return NextResponse.json({ error: "통합할 구간 음성이 없습니다." }, { status: 400 });
 
-    const audioBuffers: Buffer[] = [];
-    for (const segment of segments) {
-      if (!segment.storage_path) return NextResponse.json({ error: `${segment.sort_order + 1}번 구간 파일이 없습니다.` }, { status: 400 });
-      const { data: audio, error } = await supabase.storage.from(AUDIO_BUCKET).download(segment.storage_path);
-      if (error || !audio) {
-        console.error("Japan longform final segment download failed:", error);
-        return NextResponse.json({ error: `${segment.sort_order + 1}번 구간 음성을 불러오지 못했습니다.` }, { status: 500 });
-      }
-      audioBuffers.push(Buffer.from(await audio.arrayBuffer()));
-    }
-
-    const combinedAudio = Buffer.concat(audioBuffers);
     const combinedSrt = buildCombinedSrt(segments);
     const totalDuration = segments.reduce((sum, segment) => sum + Number(segment.audio_duration || 0), 0);
-    const storagePath = `${user.id}/${projectId}/final/${Date.now()}_final.mp3`;
-    const { error: uploadError } = await supabase.storage.from(AUDIO_BUCKET).upload(storagePath, combinedAudio, { contentType: "audio/mpeg", upsert: false });
-    if (uploadError) {
-      console.error("Japan longform final upload failed:", uploadError);
-      return NextResponse.json({ error: `최종 통합 음성을 저장하지 못했습니다. (${uploadError.message})` }, { status: 500 });
-    }
-
-    const { data: publicUrl } = supabase.storage.from(AUDIO_BUCKET).getPublicUrl(storagePath);
     const { data: run, error: runError } = await supabase.from("japan_longform_voice_runs").insert({
       project_id: projectId,
       user_id: user.id,
       segment_count: segments.length,
       total_duration: totalDuration,
-      combined_audio_url: publicUrl.publicUrl,
-      combined_storage_path: storagePath,
+      combined_audio_url: null,
+      combined_storage_path: null,
       combined_subtitle_srt: combinedSrt,
     }).select("id, segment_count, total_duration, combined_audio_url, combined_storage_path, combined_subtitle_srt, created_at").single();
     if (runError || !run) {
-      await supabase.storage.from(AUDIO_BUCKET).remove([storagePath]);
       console.error("Japan longform final run insert failed:", runError);
       return NextResponse.json({ error: `최종 TTS 기록을 저장하지 못했습니다.${runError?.message ? ` (${runError.message})` : ""}` }, { status: 500 });
     }

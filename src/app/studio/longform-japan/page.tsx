@@ -79,7 +79,7 @@ export default function LongformJapanStudioPage() {
       const [sourcesRes, scriptsRes, voiceRunsRes, visualsRes, editPackagesRes] = await Promise.all([
         supabase.from("japan_longform_sources").select("project_id").in("project_id", ids),
         supabase.from("japan_longform_scripts").select("project_id, adapted_korean, final_korean, verified_japanese").in("project_id", ids),
-        supabase.from("japan_longform_voice_runs").select("project_id").in("project_id", ids).not("combined_audio_url", "is", null),
+        supabase.from("japan_longform_voice_runs").select("project_id").in("project_id", ids),
         supabase.from("japan_longform_visual_assets").select("project_id, asset_kind").in("project_id", ids),
         supabase.from("japan_longform_edit_packages").select("project_id, status").in("project_id", ids),
       ]);

@@ -63,7 +63,7 @@ export default function LongformJapanWorkbenchPage() {
       const [sourcesRes, scriptRes, voiceRunRes, visualsRes, editRes] = await Promise.all([
         supabase.from("japan_longform_sources").select("id").eq("project_id", projectId),
         supabase.from("japan_longform_scripts").select("adapted_korean, final_korean, verified_japanese").eq("project_id", projectId).maybeSingle(),
-        supabase.from("japan_longform_voice_runs").select("id").eq("project_id", projectId).not("combined_audio_url", "is", null).limit(1).maybeSingle(),
+        supabase.from("japan_longform_voice_runs").select("id").eq("project_id", projectId).limit(1).maybeSingle(),
         supabase.from("japan_longform_visual_assets").select("asset_kind").eq("project_id", projectId),
         supabase.from("japan_longform_edit_packages").select("status").eq("project_id", projectId).maybeSingle(),
       ]);
