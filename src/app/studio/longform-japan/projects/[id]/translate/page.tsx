@@ -16,6 +16,15 @@ type ScriptRecord = {
   verification_model: string;
 };
 
+type VerificationPayload = {
+  pending?: boolean;
+  responseId?: string;
+  finalJapanese?: string;
+  reviewNotes?: string;
+  model?: string;
+  error?: string;
+};
+
 export default function JapanLongformTranslatePage() {
   const { id } = useParams<{ id: string }>();
   const projectId = Number(id);
@@ -30,6 +39,7 @@ export default function JapanLongformTranslatePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [verificationSeconds, setVerificationSeconds] = useState(0);
   const [message, setMessage] = useState<{ kind: "error" | "notice"; text: string } | null>(null);
 
   useEffect(() => {
@@ -99,6 +109,7 @@ export default function JapanLongformTranslatePage() {
   async function verifyWithGpt() {
     if (!record?.final_korean || !claudeJapanese.trim()) return setMessage({ kind: "error", text: "한국어 최종 대본과 Claude 번역본이 모두 필요합니다." });
     setVerifying(true);
+    setVerificationSeconds(0);
     setMessage(null);
     try {
       const response = await fetch("/api/longform-japan/verify-translation", {
@@ -106,9 +117,45 @@ export default function JapanLongformTranslatePage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ projectId, koreanScript: record.final_korean, japaneseTranslation: claudeJapanese.trim() }),
       });
-      const payload = await response.json() as { finalJapanese?: string; reviewNotes?: string; model?: string; error?: string };
-      if (!response.ok || !payload.finalJapanese) throw new Error(payload.error || "GPT 번역 검수에 실패했습니다.");
-      const nextVerified = payload.finalJapanese;
+      const payload = await readPayload(response);
+      if (!response.ok) throw new Error(payload.error || `GPT 요청에 실패했습니다. (${response.status})`);
+      let completed = payload;
+      if (payload.pending && payload.responseId) {
+        setMessage({ kind: "notice", text: "GPT가 긴 대본을 백그라운드에서 검수하고 있습니다. 이 화면을 열어두세요." });
+        completed = await pollVerification(payload.responseId);
+      }
+      if (!completed.finalJapanese) throw new Error(completed.error || "GPT 최종 대본을 받지 못했습니다.");
+      await applyVerificationResult(completed);
+    } catch (reason) {
+      setMessage({ kind: "error", text: reason instanceof Error ? reason.message : "GPT 번역 검수에 실패했습니다." });
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  async function readPayload(response: Response) {
+    const raw = await response.text();
+    try {
+      return JSON.parse(raw) as VerificationPayload;
+    } catch {
+      throw new Error(`서버 응답을 읽지 못했습니다. (${response.status}) Vercel 함수 로그를 확인해주세요.`);
+    }
+  }
+
+  async function pollVerification(responseId: string) {
+    for (let attempt = 1; attempt <= 200; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 3_000));
+      setVerificationSeconds(attempt * 3);
+      const response = await fetch(`/api/longform-japan/verify-translation?projectId=${projectId}&responseId=${encodeURIComponent(responseId)}`, { cache: "no-store" });
+      const payload = await readPayload(response);
+      if (!response.ok) throw new Error(payload.error || `GPT 상태 확인에 실패했습니다. (${response.status})`);
+      if (!payload.pending) return payload;
+    }
+    throw new Error("GPT 검수가 10분 안에 완료되지 않았습니다. 잠시 후 다시 시도해주세요.");
+  }
+
+  async function applyVerificationResult(payload: VerificationPayload) {
+      const nextVerified = payload.finalJapanese!;
       const nextNotes = payload.reviewNotes || "";
       const nextModel = payload.model || "gpt";
       setVerifiedJapanese(nextVerified);
@@ -119,11 +166,6 @@ export default function JapanLongformTranslatePage() {
       }), { onConflict: "project_id" });
       if (saveError) throw new Error("검수는 완료됐지만 결과 저장에 실패했습니다.");
       setMessage({ kind: "notice", text: "GPT 2차 검수와 최종 일본어 대본 저장을 완료했습니다." });
-    } catch (reason) {
-      setMessage({ kind: "error", text: reason instanceof Error ? reason.message : "GPT 번역 검수에 실패했습니다." });
-    } finally {
-      setVerifying(false);
-    }
   }
 
   async function copyPromptAndOpenChatGpt() {
@@ -162,6 +204,7 @@ export default function JapanLongformTranslatePage() {
       </section>
 
       <section className="rounded-2xl border border-sky-200 bg-white p-5 shadow-sm sm:p-6"><div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div><span className="rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-bold text-violet-700">2차 검수</span><h2 className="mt-3 text-xl font-bold">GPT 교차 검수</h2><p className="mt-1 text-sm leading-6 text-muted-foreground">한국어 원문과 Claude 번역을 비교해 누락·오역·부자연스러운 표현을 수정합니다.</p></div><div className="flex flex-wrap gap-2"><button onClick={copyPromptAndOpenChatGpt} disabled={!claudeJapanese.trim()} className="inline-flex h-10 items-center gap-2 rounded-xl border border-border px-4 text-sm font-bold disabled:opacity-40"><Copy size={15} /> 수동 GPT 열기</button><button onClick={verifyWithGpt} disabled={verifying || !claudeJapanese.trim()} className="inline-flex h-10 min-w-40 items-center justify-center gap-2 rounded-xl bg-violet-700 px-4 text-sm font-bold text-white disabled:opacity-40">{verifying ? <><Loader2 size={15} className="animate-spin" /> 검수 중</> : <><Sparkles size={15} /> GPT API로 검수</>}</button></div></div>
+        {verifying && <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-semibold text-violet-700"><Loader2 size={15} className="mr-2 inline animate-spin" />긴 대본을 검수하고 있습니다 · {verificationSeconds}초 경과 · 완료될 때까지 화면을 열어두세요.</div>}
         <div className="mt-5 grid gap-5 xl:grid-cols-[1.6fr_1fr]"><label className="block text-sm font-semibold">최종 일본어 대본<textarea value={verifiedJapanese} onChange={(event) => setVerifiedJapanese(event.target.value)} placeholder="GPT API 결과가 여기에 표시됩니다. 수동 GPT 결과를 직접 붙여넣어도 됩니다." className="mt-2 min-h-[520px] w-full resize-y rounded-xl border border-border p-4 leading-7 outline-none focus:border-violet-500" /></label><label className="block text-sm font-semibold">검수 메모<textarea value={reviewNotes} onChange={(event) => setReviewNotes(event.target.value)} placeholder="주요 교정 내용 또는 작업 메모" className="mt-2 min-h-48 w-full resize-y rounded-xl border border-border p-4 text-sm leading-6 outline-none focus:border-violet-500" />{verificationModel && <span className="mt-2 block text-xs text-muted-foreground">검수 모델: {verificationModel}</span>}</label></div>
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><span className="text-xs text-muted-foreground">최종 일본어 {verifiedJapanese.length.toLocaleString()}자</span><button onClick={saveFinal} disabled={saving || !verifiedJapanese.trim()} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-brand-olive px-5 text-sm font-bold text-white disabled:opacity-40">{saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} 최종 일본어 대본 확정</button></div>
         {verifiedJapanese.trim() && <Link href={`/studio/longform-japan/projects/${projectId}/voice`} className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-sky-700 text-sm font-bold text-white">ElevenLabs TTS로 <ArrowRight size={16} /></Link>}

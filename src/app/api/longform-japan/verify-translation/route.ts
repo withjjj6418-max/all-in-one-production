@@ -11,6 +11,7 @@ type VerifyRequest = {
 };
 
 type OpenAIResponse = {
+  id?: string;
   status?: string;
   model?: string;
   output?: Array<{
@@ -18,6 +19,7 @@ type OpenAIResponse = {
     content?: Array<{ type?: string; text?: string }>;
   }>;
   error?: { message?: string };
+  incomplete_details?: { reason?: string } | null;
 };
 
 const MAX_SCRIPT_LENGTH = 100_000;
@@ -31,12 +33,70 @@ function extractOutputText(payload: OpenAIResponse) {
     .trim();
 }
 
+function responseResult(payload: OpenAIResponse, fallbackModel: string) {
+  if (payload.status === "queued" || payload.status === "in_progress") {
+    if (!payload.id) return NextResponse.json({ error: "GPT 작업 번호를 받지 못했습니다." }, { status: 502 });
+    return NextResponse.json({ pending: true, responseId: payload.id, model: payload.model || fallbackModel }, { status: 202 });
+  }
+  if (payload.status === "failed" || payload.status === "cancelled") {
+    return NextResponse.json({ error: payload.error?.message || `GPT 작업이 ${payload.status} 상태로 종료되었습니다.` }, { status: 502 });
+  }
+  if (payload.status === "incomplete") {
+    return NextResponse.json({ error: `GPT 응답이 완료되지 않았습니다${payload.incomplete_details?.reason ? `: ${payload.incomplete_details.reason}` : "."}` }, { status: 502 });
+  }
+  const outputText = extractOutputText(payload);
+  if (!outputText) return NextResponse.json({ error: `GPT 결과가 비어 있습니다. 응답 상태: ${payload.status || "알 수 없음"}` }, { status: 502 });
+  let parsed: { final_japanese?: string; review_notes?: string };
+  try {
+    parsed = JSON.parse(outputText) as typeof parsed;
+  } catch {
+    return NextResponse.json({ error: "GPT 검수 결과를 읽을 수 없습니다. 다시 시도해주세요." }, { status: 502 });
+  }
+  if (!parsed.final_japanese?.trim()) return NextResponse.json({ error: "GPT 최종 일본어 대본이 비어 있습니다." }, { status: 502 });
+  return NextResponse.json({
+    finalJapanese: parsed.final_japanese.trim(),
+    reviewNotes: parsed.review_notes?.trim() || "",
+    model: payload.model || fallbackModel,
+  });
+}
+
+async function authorizeProject(projectId: number) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 }) };
+  const { data: project } = await supabase.from("projects").select("id").eq("id", projectId).eq("user_id", user.id).eq("production_type", productionTypes.longformJapan).maybeSingle();
+  if (!project) return { error: NextResponse.json({ error: "프로젝트 접근 권한이 없습니다." }, { status: 403 }) };
+  return { user };
+}
+
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const projectId = Number(searchParams.get("projectId"));
+    const responseId = searchParams.get("responseId")?.trim() || "";
+    if (!Number.isInteger(projectId) || projectId <= 0 || !/^resp_[A-Za-z0-9_-]+$/.test(responseId)) {
+      return NextResponse.json({ error: "검수 작업 정보가 올바르지 않습니다." }, { status: 400 });
+    }
+    const authorization = await authorizeProject(projectId);
+    if (authorization.error) return authorization.error;
+    const apiKey = process.env.OPENAI_API_KEY?.trim();
+    if (!apiKey) return NextResponse.json({ error: "OPENAI_API_KEY가 설정되지 않았습니다.", code: "KEY_MISSING" }, { status: 503 });
+    const model = process.env.OPENAI_TRANSLATION_MODEL?.trim() || "gpt-5.6-sol";
+    const response = await fetch(`https://api.openai.com/v1/responses/${encodeURIComponent(responseId)}`, {
+      headers: { authorization: `Bearer ${apiKey}` },
+      cache: "no-store",
+    });
+    const payload = await response.json() as OpenAIResponse;
+    if (!response.ok) return NextResponse.json({ error: payload.error?.message || "GPT 작업 상태를 확인하지 못했습니다." }, { status: response.status });
+    return responseResult(payload, model);
+  } catch (error) {
+    console.error("Japan longform translation polling error:", error);
+    return NextResponse.json({ error: "GPT 작업 상태 확인 중 오류가 발생했습니다." }, { status: 500 });
+  }
+}
+
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
-
     const body = await request.json() as VerifyRequest;
     const projectId = Number(body.projectId);
     const koreanScript = body.koreanScript?.trim() ?? "";
@@ -45,22 +105,20 @@ export async function POST(request: Request) {
     if (!koreanScript || !japaneseTranslation) return NextResponse.json({ error: "한국어 최종 대본과 Claude 일본어 번역본이 모두 필요합니다." }, { status: 400 });
     if (koreanScript.length > MAX_SCRIPT_LENGTH || japaneseTranslation.length > MAX_SCRIPT_LENGTH) return NextResponse.json({ error: "검수 가능한 대본 길이를 초과했습니다." }, { status: 413 });
 
-    const { data: project } = await supabase.from("projects").select("id").eq("id", projectId).eq("user_id", user.id).eq("production_type", productionTypes.longformJapan).maybeSingle();
-    if (!project) return NextResponse.json({ error: "프로젝트 접근 권한이 없습니다." }, { status: 403 });
+    const authorization = await authorizeProject(projectId);
+    if (authorization.error) return authorization.error;
 
     const apiKey = process.env.OPENAI_API_KEY?.trim();
     if (!apiKey) return NextResponse.json({ error: "OPENAI_API_KEY가 설정되지 않았습니다. Vercel과 .env.local에 키를 추가해주세요.", code: "KEY_MISSING" }, { status: 503 });
 
     const model = process.env.OPENAI_TRANSLATION_MODEL?.trim() || "gpt-5.6-sol";
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 180_000);
-    let response: Response;
-    try {
-      response = await fetch("https://api.openai.com/v1/responses", {
+    const response = await fetch("https://api.openai.com/v1/responses", {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
           model,
+          background: true,
+          store: true,
           reasoning: { effort: "low" },
           max_output_tokens: 24_000,
           instructions: [
@@ -87,34 +145,16 @@ export async function POST(request: Request) {
             },
           },
         }),
-        signal: controller.signal,
         cache: "no-store",
       });
-    } finally {
-      clearTimeout(timeout);
-    }
 
     const payload = await response.json() as OpenAIResponse;
     if (!response.ok) {
       console.error("OpenAI translation verification failed:", response.status, payload.error?.message);
       return NextResponse.json({ error: payload.error?.message || "GPT 번역 검수에 실패했습니다." }, { status: 502 });
     }
-    const outputText = extractOutputText(payload);
-    if (!outputText) return NextResponse.json({ error: "GPT가 빈 검수 결과를 반환했습니다." }, { status: 502 });
-    let parsed: { final_japanese?: string; review_notes?: string };
-    try {
-      parsed = JSON.parse(outputText) as typeof parsed;
-    } catch {
-      return NextResponse.json({ error: "GPT 검수 결과를 읽을 수 없습니다. 다시 시도해주세요." }, { status: 502 });
-    }
-    if (!parsed.final_japanese?.trim()) return NextResponse.json({ error: "GPT 최종 일본어 대본이 비어 있습니다." }, { status: 502 });
-    return NextResponse.json({
-      finalJapanese: parsed.final_japanese.trim(),
-      reviewNotes: parsed.review_notes?.trim() || "",
-      model: payload.model || model,
-    });
+    return responseResult(payload, model);
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") return NextResponse.json({ error: "GPT 검수 시간이 초과되었습니다. 다시 시도해주세요." }, { status: 504 });
     console.error("Japan longform translation verification error:", error);
     return NextResponse.json({ error: "번역 검수 중 오류가 발생했습니다." }, { status: 500 });
   }
