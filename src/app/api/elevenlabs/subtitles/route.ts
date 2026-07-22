@@ -56,8 +56,13 @@ ${segments.map((segment) => `<section id="${segment.id}">\n${segment.text}\n</se
     catch { return NextResponse.json({ error: "AI 자막 줄바꿈 결과를 읽지 못했습니다." }, { status: 502 }); }
     const byId = new Map((parsed.sections || []).map((section) => [section.id, section.lines]));
     const linesBySegment = segments.map((segment) => {
-      const lines = (byId.get(segment.id) || []).map(String).map((line) => line.trim()).filter(Boolean);
+      const lines = (byId.get(segment.id) || [])
+        .flatMap((value) => String(value).split(/\r?\n/))
+        .map((line) => line.trim())
+        .filter(Boolean);
       if (!lines.length || compact(lines.join("")) !== compact(segment.text)) throw new Error(`${segment.sort_order + 1}번 구간에서 AI가 원문을 변경했습니다. 다시 시도해주세요.`);
+      const overlyLongLine = lines.find((line) => compact(line).length > 30);
+      if (overlyLongLine) throw new Error(`${segment.sort_order + 1}번 구간에 30자가 넘는 자막 줄이 있습니다. AI SRT를 다시 생성해주세요.`);
       return lines;
     });
     const combinedSrt = buildJapaneseCombinedSrtFromLines(segments, linesBySegment);

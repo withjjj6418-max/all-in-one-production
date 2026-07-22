@@ -129,6 +129,10 @@ function downloadBlob(fileName: string, blob: Blob) {
   URL.revokeObjectURL(url);
 }
 
+function asWindowsSrt(srt: string) {
+  return srt.replace(/\r?\n/g, "\r\n");
+}
+
 function encodeWav(buffers: AudioBuffer[]) {
   if (!buffers.length) throw new Error("WAV로 합칠 음성 구간이 없습니다.");
   const sampleRate = buffers[0].sampleRate;
@@ -517,8 +521,9 @@ export default function JapanLongformVoicePage() {
   async function downloadAiJapaneseSrt() {
     try {
       const japaneseSrt = await requestAiJapaneseSrt();
-      downloadBlob(`${safeFileName(projectTitle)}_자막.srt`, new Blob(["\ufeff", japaneseSrt], { type: "text/plain;charset=utf-8" }));
-      setMessage({ kind: "notice", text: "최종 일본어 대본을 의미 기준 약 20자씩 나눈 SRT를 저장했습니다." });
+      const cueCount = japaneseSrt.split(/\n\n+/).filter(Boolean).length;
+      downloadBlob(`${safeFileName(projectTitle)}_AI3-4줄_자막.srt`, new Blob(["\ufeff", asWindowsSrt(japaneseSrt)], { type: "text/plain;charset=utf-8" }));
+      setMessage({ kind: "notice", text: `긴 쉼을 기준으로 3~4줄씩 묶은 일본어 자막 ${cueCount}개를 저장했습니다.` });
     } catch (error) {
       setMessage({ kind: "error", text: error instanceof Error ? error.message : "AI 일본어 SRT 생성에 실패했습니다." });
     }
@@ -590,7 +595,7 @@ export default function JapanLongformVoicePage() {
     const name = safeFileName(projectTitle);
     await Promise.all([
       writeBlobToFolder(soundFolder, `${name}_최종TTS.wav`, audio),
-      writeBlobToFolder(soundFolder, `${name}_자막.srt`, new Blob(["\ufeff", srt], { type: "text/plain;charset=utf-8" })),
+      writeBlobToFolder(soundFolder, `${name}_AI3-4줄_자막.srt`, new Blob(["\ufeff", asWindowsSrt(srt)], { type: "text/plain;charset=utf-8" })),
     ]);
     if (showSuccess) setMessage({ kind: "notice", text: `사운드 폴더에 Premiere용 ${name}_최종TTS.wav와 SRT를 저장했습니다.` });
   }

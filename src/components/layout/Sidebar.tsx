@@ -4,8 +4,6 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  FolderKanban,
-  BarChart3,
   PenLine,
   ChevronDown,
   Image,
@@ -26,12 +24,6 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
-const shortsMenuItems = [
-  { label: "완료", href: "/completed", icon: CheckCircle },
-  { label: "영상소스모음", href: "/research", icon: Search },
-  { label: "영상 분석", href: "/analytics", icon: BarChart3 },
-];
-
 // 클라이언트 싱글톤 인스턴스 생성
 const supabase = createClient();
 
@@ -41,8 +33,8 @@ export function Sidebar() {
 
   const [mounted, setMounted] = useState(false);
   const [currentQuery, setCurrentQuery] = useState("");
-  const [isStoryStudioOpen, setIsStoryStudioOpen] = useState(true);
-  const [isJapanStudioOpen, setIsJapanStudioOpen] = useState(true);
+  const [isStoryStudioOpen, setIsStoryStudioOpen] = useState(false);
+  const [isJapanStudioOpen, setIsJapanStudioOpen] = useState(false);
 
   useEffect(() => {
     // 클라이언트에서만 현재 쿼리와 마지막 프로젝트를 읽어 SSR 결과와 맞춘다.
@@ -155,9 +147,21 @@ export function Sidebar() {
 
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-5 px-3 py-4 overflow-y-auto scrollbar-hide">
+      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4 scrollbar-hide">
+        <Link
+          href="/research"
+          onClick={() => setIsMobileOpen(false)}
+          className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${pathname === "/research"
+              ? "bg-brand-pink/20 text-brand-olive-dark"
+              : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"
+            }`}
+        >
+          <Search size={18} className={pathname === "/research" ? "text-brand-olive" : "text-muted-foreground group-hover:text-brand-olive-light"} />
+          <span>영상소스모음</span>
+          {pathname === "/research" && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-brand-pink" />}
+        </Link>
+
         <div className="space-y-1">
-          <h3 className="px-3 mb-2 text-[11px] font-bold tracking-wider text-muted-foreground/70">제작 공간</h3>
           <Link
             href="/studio"
             onClick={() => setIsMobileOpen(false)}
@@ -171,31 +175,31 @@ export function Sidebar() {
             <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[9px] font-bold ${pathname === "/studio" ? "bg-white/20 text-white" : "bg-white text-brand-olive"}`}>NEW</span>
           </Link>
 
-          <button
-            type="button"
-            onClick={() => setIsStoryStudioOpen((current) => !current)}
-            className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${pathname.startsWith("/studio/shorts-story") || (pathname === "/scripts" && Boolean(storyProjectId)) ? "bg-rose-50 text-rose-700" : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"}`}
-          >
-            <BookOpenText size={18} className="text-rose-600" />
-            <span>숏폼(사연)</span>
-            <ChevronDown size={16} className={`ml-auto transition-transform ${isStoryStudioOpen ? "rotate-180" : ""}`} />
-          </button>
+          <div className={`flex items-center rounded-lg transition-all duration-200 ${pathname.startsWith("/studio/shorts-story") || (pathname === "/scripts" && Boolean(storyProjectId)) ? "bg-rose-50 text-rose-700" : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"}`}>
+            <Link href="/studio/shorts-story" onClick={() => setIsMobileOpen(false)} className="group flex min-w-0 flex-1 items-center gap-3 rounded-l-lg px-3 py-2.5 text-sm font-medium">
+              <BookOpenText size={18} className="shrink-0 text-rose-600" />
+              <span>숏폼(사연)</span>
+            </Link>
+            <button type="button" onClick={() => setIsStoryStudioOpen((current) => !current)} aria-label={isStoryStudioOpen ? "숏폼(사연) 메뉴 접기" : "숏폼(사연) 메뉴 펼치기"} aria-expanded={isStoryStudioOpen} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-r-lg hover:bg-rose-100/70">
+              <ChevronDown size={16} className={`transition-transform ${isStoryStudioOpen ? "rotate-180" : ""}`} />
+            </button>
+          </div>
 
           <div className={`overflow-hidden transition-all duration-200 ${isStoryStudioOpen ? "max-h-80 opacity-100" : "max-h-0 opacity-0"}`}>
             <div className="ml-4 space-y-0.5 border-l border-sidebar-border py-1 pl-3">
               {[
-                { key: "projects", label: "프로젝트", href: "/studio/shorts-story", icon: FolderKanban, needsProject: false },
                 { key: "story", label: "원문각색", href: storyProjectId ? `/studio/shorts-story/projects/${storyProjectId}/story` : "/studio/shorts-story", icon: WandSparkles, needsProject: true },
                 { key: "script", label: "대본수정", href: storyProjectId ? `/scripts?project_id=${storyProjectId}&tab=write` : "/studio/shorts-story", icon: PenLine, needsProject: true },
                 { key: "voice", label: "TTS", href: storyProjectId ? `/studio/shorts-story/projects/${storyProjectId}/voice/cast` : "/studio/shorts-story", icon: FileAudio, needsProject: true },
                 { key: "characters", label: "캐릭터", href: storyProjectId ? `/studio/shorts-story/projects/${storyProjectId}/characters` : "/studio/shorts-story", icon: Image, needsProject: true },
+                { key: "editing", label: "프리미어", href: storyProjectId ? `/studio/shorts-story/projects/${storyProjectId}/editing` : "/studio/shorts-story", icon: Film, needsProject: true },
                 { key: "uploads", label: "업로드목록", href: "/studio/shorts-story/uploads", icon: Upload, needsProject: false },
               ].map((item) => {
-                const isActive = item.key === "projects" ? pathname === "/studio/shorts-story"
-                  : item.key === "uploads" ? pathname === "/studio/shorts-story/uploads"
+                const isActive = item.key === "uploads" ? pathname === "/studio/shorts-story/uploads"
                   : item.key === "story" ? pathname.endsWith("/story")
                   : item.key === "script" ? pathname === "/scripts" && currentQuery.includes(`project_id=${storyProjectId}`)
                   : item.key === "voice" ? pathname.endsWith("/voice/cast") || pathname.endsWith("/voice")
+                  : item.key === "editing" ? pathname.endsWith("/editing")
                   : pathname.endsWith("/characters");
                 const Icon = item.icon;
                 const waitingForProject = item.needsProject && !storyProjectId;
@@ -203,58 +207,20 @@ export function Sidebar() {
               })}
             </div>
           </div>
-        </div>
 
-        {/* 🎬 쇼츠 그룹 */}
-        <div className="space-y-1">
-          <h3 className="px-3 mb-2 text-[11px] font-bold tracking-wider text-muted-foreground/70">🎬 쇼츠</h3>
-          
-          {shortsMenuItems.map((item) => {
-            const isActive = pathname === item.href;
-            const Icon = item.icon;
-
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setIsMobileOpen(false)}
-                className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${isActive
-                    ? "bg-brand-pink/20 text-brand-olive-dark"
-                    : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"
-                  }`}
-              >
-                <Icon
-                  size={18}
-                  className={`transition-colors duration-200 ${isActive
-                      ? "text-brand-olive"
-                      : "text-muted-foreground group-hover:text-brand-olive-light"
-                    }`}
-                />
-                <span>{item.label}</span>
-                {isActive && (
-                  <div className="ml-auto h-1.5 w-1.5 rounded-full bg-brand-pink" />
-                )}
-              </Link>
-            );
-          })}
-
-        </div>
-
-        {/* 구분선 */}
-        <div className="mx-2 border-t border-sidebar-border" />
-
-        {/* 🎥 롱폼 그룹 */}
-        <div className="space-y-1">
-          <h3 className="px-3 mb-2 text-[11px] font-bold tracking-wider text-muted-foreground/70">🎥 롱폼</h3>
-
-          <button type="button" onClick={() => setIsJapanStudioOpen((current) => !current)} className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${pathname.startsWith("/studio/longform-japan") ? "bg-sky-50 text-sky-700" : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"}`}>
-            <Languages size={18} className="text-sky-700" /><span>롱폼(일본)</span><ChevronDown size={16} className={`ml-auto transition-transform ${isJapanStudioOpen ? "rotate-180" : ""}`} />
-          </button>
+          <div className={`flex items-center rounded-lg transition-all duration-200 ${pathname.startsWith("/studio/longform-japan") ? "bg-sky-50 text-sky-700" : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"}`}>
+            <Link href="/studio/longform-japan" onClick={() => setIsMobileOpen(false)} className="group flex min-w-0 flex-1 items-center gap-3 rounded-l-lg px-3 py-2.5 text-sm font-medium">
+              <Languages size={18} className="shrink-0 text-sky-700" />
+              <span>롱폼(일본)</span>
+            </Link>
+            <button type="button" onClick={() => setIsJapanStudioOpen((current) => !current)} aria-label={isJapanStudioOpen ? "롱폼(일본) 메뉴 접기" : "롱폼(일본) 메뉴 펼치기"} aria-expanded={isJapanStudioOpen} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-r-lg hover:bg-sky-100/70">
+              <ChevronDown size={16} className={`transition-transform ${isJapanStudioOpen ? "rotate-180" : ""}`} />
+            </button>
+          </div>
 
           <div className={`overflow-hidden transition-all duration-200 ${isJapanStudioOpen ? "max-h-[32rem] opacity-100" : "max-h-0 opacity-0"}`}>
             <div className="ml-4 space-y-0.5 border-l border-sidebar-border py-1 pl-3">
               {[
-                { key: "projects", label: "프로젝트", icon: FolderKanban, href: "/studio/longform-japan", needsProject: false },
                 { key: "source", label: "원문수집", icon: ScanText, href: japanProjectId ? `/studio/longform-japan/projects/${japanProjectId}/source` : "/studio/longform-japan", needsProject: true },
                 { key: "adapt", label: "각색", icon: WandSparkles, href: japanProjectId ? `/studio/longform-japan/projects/${japanProjectId}/adapt` : "/studio/longform-japan", needsProject: true },
                 { key: "script", label: "대본수정", icon: PenLine, href: japanProjectId ? `/studio/longform-japan/projects/${japanProjectId}/script` : "/studio/longform-japan", needsProject: true },
@@ -265,13 +231,23 @@ export function Sidebar() {
                 { key: "premiere", label: "프리미어", icon: Film, href: japanProjectId ? `/studio/longform-japan/projects/${japanProjectId}/premiere` : "/studio/longform-japan", needsProject: true },
                 { key: "uploads", label: "업로드목록", icon: Upload, href: "/studio/longform-japan/uploads", needsProject: false },
               ].map((item) => {
-                const isActive = item.key === "projects" ? pathname === "/studio/longform-japan" : item.key === "uploads" ? pathname === "/studio/longform-japan/uploads" : pathname.endsWith(`/${item.key}`);
+                const isActive = item.key === "uploads" ? pathname === "/studio/longform-japan/uploads" : pathname.endsWith(`/${item.key}`);
                 const waitingForProject = item.needsProject && !japanProjectId;
                 const Icon = item.icon;
                 return <Link key={item.key} href={item.href} title={waitingForProject ? "일본 롱폼 프로젝트를 먼저 선택해주세요" : undefined} onClick={() => setIsMobileOpen(false)} className={`group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition ${isActive ? "bg-sky-50 text-sky-700" : waitingForProject ? "text-muted-foreground/50" : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"}`}><Icon size={15} /><span>{item.label}</span>{isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-sky-600" />}</Link>;
               })}
             </div>
           </div>
+
+          <Link
+            href="/completed"
+            onClick={() => setIsMobileOpen(false)}
+            className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${pathname === "/completed" ? "bg-brand-pink/20 text-brand-olive-dark" : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"}`}
+          >
+            <CheckCircle size={18} className={pathname === "/completed" ? "text-brand-olive" : "text-muted-foreground group-hover:text-brand-olive-light"} />
+            <span>완료</span>
+            {pathname === "/completed" && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-brand-pink" />}
+          </Link>
         </div>
       </nav>
 
