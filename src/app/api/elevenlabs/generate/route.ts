@@ -132,7 +132,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: message }, { status: [401, 402, 429].includes(response.status) ? response.status : 502 });
     }
 
-    const alignment = payload.normalized_alignment || payload.alignment || {};
+    // normalized_alignment에는 발음용 영문 정규화가 포함될 수 있으므로 원문 정렬값을 우선한다.
+    const alignment = payload.alignment || payload.normalized_alignment || {};
     const duration = Number(alignment.character_end_times_seconds?.at(-1) || 0);
     const storagePath = `${user.id}/${projectId}/segments/${Date.now()}_${String(sortOrder + 1).padStart(2, "0")}.mp3`;
     const audio = Buffer.from(payload.audio_base64, "base64");

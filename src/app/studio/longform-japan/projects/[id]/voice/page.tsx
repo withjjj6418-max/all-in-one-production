@@ -73,7 +73,9 @@ function formatSrtTime(seconds: number) {
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(wholeSeconds).padStart(2, "0")},${String(rest).padStart(3, "0")}`;
 }
 
-function buildCombinedSrt(segments: Segment[]) {
+// 이전 정렬문자 기반 생성기는 과거 데이터 비교용으로 남겨둔다.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function buildCombinedSrtLegacy(segments: Segment[]) {
   let offset = 0;
   let cueNumber = 1;
   const blocks: string[] = [];
@@ -127,6 +129,46 @@ function downloadBlob(fileName: string, blob: Blob) {
   URL.revokeObjectURL(url);
 }
 
+function encodeWav(buffers: AudioBuffer[]) {
+  if (!buffers.length) throw new Error("WAV로 합칠 음성 구간이 없습니다.");
+  const sampleRate = buffers[0].sampleRate;
+  const channelCount = Math.min(2, Math.max(...buffers.map((buffer) => buffer.numberOfChannels)));
+  if (buffers.some((buffer) => buffer.sampleRate !== sampleRate)) throw new Error("음성 구간의 샘플레이트가 서로 다릅니다.");
+  const totalFrames = buffers.reduce((sum, buffer) => sum + buffer.length, 0);
+  const bytesPerSample = 2;
+  const dataSize = totalFrames * channelCount * bytesPerSample;
+  const output = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(output);
+  const writeAscii = (offset: number, value: string) => {
+    for (let index = 0; index < value.length; index += 1) view.setUint8(offset + index, value.charCodeAt(index));
+  };
+  writeAscii(0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  writeAscii(8, "WAVE");
+  writeAscii(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, channelCount, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * channelCount * bytesPerSample, true);
+  view.setUint16(32, channelCount * bytesPerSample, true);
+  view.setUint16(34, 16, true);
+  writeAscii(36, "data");
+  view.setUint32(40, dataSize, true);
+  let offset = 44;
+  for (const buffer of buffers) {
+    const channels = Array.from({ length: channelCount }, (_, channel) => buffer.getChannelData(Math.min(channel, buffer.numberOfChannels - 1)));
+    for (let frame = 0; frame < buffer.length; frame += 1) {
+      for (let channel = 0; channel < channelCount; channel += 1) {
+        const sample = Math.max(-1, Math.min(1, channels[channel][frame] || 0));
+        view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+        offset += bytesPerSample;
+      }
+    }
+  }
+  return new Blob([output], { type: "audio/wav" });
+}
+
 export default function JapanLongformVoicePage() {
   const { id } = useParams<{ id: string }>();
   const projectId = Number(id);
@@ -150,6 +192,7 @@ export default function JapanLongformVoicePage() {
   const [analyzing, setAnalyzing] = useState(false);
   const [generatingSegmentId, setGeneratingSegmentId] = useState("");
   const [finalizing, setFinalizing] = useState(false);
+  const [generatingSrt, setGeneratingSrt] = useState(false);
   const [continuousIndex, setContinuousIndex] = useState(0);
   const [continuousPlaying, setContinuousPlaying] = useState(false);
   const [generationProgress, setGenerationProgress] = useState(0);
@@ -416,24 +459,27 @@ export default function JapanLongformVoicePage() {
   }
 
   async function combineSegmentAudio(sourceSegments: Segment[]) {
-    const audioParts: BlobPart[] = [];
-    for (const segment of sourceSegments) {
-      if (!segment.storage_path) throw new Error("생성된 구간 파일 경로가 없습니다.");
-      const { data, error } = await supabase.storage.from(AUDIO_BUCKET).download(segment.storage_path);
-      if (error || !data) throw new Error(`생성된 ${segment.sort_order + 1}번 구간 음성을 불러오지 못했습니다.${error?.message ? ` (${error.message})` : ""}`);
-      audioParts.push(await data.arrayBuffer());
+    const audioContext = new AudioContext({ sampleRate: 48000 });
+    const decodedBuffers: AudioBuffer[] = [];
+    try {
+      for (const segment of sourceSegments) {
+        if (!segment.storage_path) throw new Error("생성된 구간 파일 경로가 없습니다.");
+        const { data, error } = await supabase.storage.from(AUDIO_BUCKET).download(segment.storage_path);
+        if (error || !data) throw new Error(`생성된 ${segment.sort_order + 1}번 구간 음성을 불러오지 못했습니다.${error?.message ? ` (${error.message})` : ""}`);
+        decodedBuffers.push(await audioContext.decodeAudioData(await data.arrayBuffer()));
+      }
+      return encodeWav(decodedBuffers);
+    } finally {
+      await audioContext.close();
     }
-    return new Blob(audioParts, { type: "audio/mpeg" });
   }
 
   async function finalizeSegments(sourceSegments: Segment[]) {
-    if (!projectFolder) throw new Error("최종 MP3와 SRT를 저장할 프로젝트 폴더를 먼저 연결해주세요.");
+    if (!projectFolder) throw new Error("최종 WAV와 SRT를 저장할 프로젝트 폴더를 먼저 연결해주세요.");
     if (!sectionsMatchScript) throw new Error("최종 일본어 대본과 현재 구간이 다릅니다. AI 구간 나누기를 다시 실행해주세요.");
     if (sourceSegments.some((segment) => segment.status !== "generated" || !segment.audio_url)) throw new Error("아직 생성하지 않았거나 수정된 구간이 있습니다.");
     const combinedAudio = await combineSegmentAudio(sourceSegments);
-    const combinedSrt = buildCombinedSrt(sourceSegments);
     const totalDuration = sourceSegments.reduce((sum, segment) => sum + Number(segment.audio_duration || 0), 0);
-    await saveFilesToFolder(projectFolder, combinedAudio, combinedSrt, false);
     const response = await fetch("/api/elevenlabs/finalize", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -441,18 +487,47 @@ export default function JapanLongformVoicePage() {
     });
     const payload = await response.json() as { run?: VoiceRun; error?: string };
     if (!response.ok || !payload.run) {
-      throw new Error(`${payload.error || "최종 완료 기록을 저장하지 못했습니다."} 사운드 폴더의 MP3와 SRT는 정상적으로 저장됐습니다.`);
+      throw new Error(payload.error || "최종 완료 기록을 저장하지 못했습니다.");
     }
-    setLatestRun(payload.run);
+    const japaneseSrt = await requestAiJapaneseSrt();
+    await saveFilesToFolder(projectFolder, combinedAudio, japaneseSrt, false);
+    setLatestRun({ ...payload.run, combined_subtitle_srt: japaneseSrt });
     setFinalAudioBlob(combinedAudio);
     setFinalAudioUrl((current) => { if (current) URL.revokeObjectURL(current); return URL.createObjectURL(combinedAudio); });
     setMessage({ kind: "notice", text: `전체 TTS와 SRT를 ${projectFolder.name} / 사운드 폴더에 저장했습니다. 총 길이 ${formatDuration(totalDuration)}` });
   }
 
+  async function requestAiJapaneseSrt() {
+    setGeneratingSrt(true);
+    try {
+      const response = await fetch("/api/elevenlabs/subtitles", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+      const payload = await response.json() as { srt?: string; error?: string };
+      if (!response.ok || !payload.srt) throw new Error(payload.error || "AI 일본어 SRT를 만들지 못했습니다.");
+      setLatestRun((current) => current ? { ...current, combined_subtitle_srt: payload.srt! } : current);
+      return payload.srt;
+    } finally {
+      setGeneratingSrt(false);
+    }
+  }
+
+  async function downloadAiJapaneseSrt() {
+    try {
+      const japaneseSrt = await requestAiJapaneseSrt();
+      downloadBlob(`${safeFileName(projectTitle)}_자막.srt`, new Blob(["\ufeff", japaneseSrt], { type: "text/plain;charset=utf-8" }));
+      setMessage({ kind: "notice", text: "최종 일본어 대본을 의미 기준 약 20자씩 나눈 SRT를 저장했습니다." });
+    } catch (error) {
+      setMessage({ kind: "error", text: error instanceof Error ? error.message : "AI 일본어 SRT 생성에 실패했습니다." });
+    }
+  }
+
   async function retryFinalization() {
     if (!segments.length || finalizing) return;
     setFinalizing(true);
-    setMessage({ kind: "notice", text: "이미 생성된 구간을 사용해 최종 MP3와 SRT를 다시 묶고 있습니다." });
+    setMessage({ kind: "notice", text: "이미 생성된 구간을 디코딩해 Premiere용 최종 WAV와 SRT로 다시 묶고 있습니다." });
     try {
       await finalizeSegments(segments);
     } catch (error) {
@@ -486,7 +561,7 @@ export default function JapanLongformVoicePage() {
         setSegments(current);
         setGenerationProgress(index + 1);
       }
-      setMessage({ kind: "notice", text: `${targets.length}개 구간을 생성했습니다. 구간별로 들어본 뒤 최종 MP3·SRT를 저장하세요.` });
+      setMessage({ kind: "notice", text: `${targets.length}개 구간을 생성했습니다. 구간별로 들어본 뒤 최종 WAV·SRT를 저장하세요.` });
     } catch (error) {
       setMessage({ kind: "error", text: error instanceof Error ? error.message : "TTS 생성 중 오류가 발생했습니다." });
     } finally {
@@ -514,10 +589,10 @@ export default function JapanLongformVoicePage() {
     const soundFolder = await folder.getDirectoryHandle("사운드", { create: true });
     const name = safeFileName(projectTitle);
     await Promise.all([
-      writeBlobToFolder(soundFolder, `${name}_최종TTS.mp3`, audio),
+      writeBlobToFolder(soundFolder, `${name}_최종TTS.wav`, audio),
       writeBlobToFolder(soundFolder, `${name}_자막.srt`, new Blob(["\ufeff", srt], { type: "text/plain;charset=utf-8" })),
     ]);
-    if (showSuccess) setMessage({ kind: "notice", text: `사운드 폴더에 ${name}_최종TTS.mp3와 SRT를 저장했습니다.` });
+    if (showSuccess) setMessage({ kind: "notice", text: `사운드 폴더에 Premiere용 ${name}_최종TTS.wav와 SRT를 저장했습니다.` });
   }
 
   async function saveFinalToProjectFolder() {
@@ -525,7 +600,8 @@ export default function JapanLongformVoicePage() {
     setSavingToFolder(true);
     try {
       const audio = finalAudioBlob || await combineSegmentAudio(segments);
-      await saveFilesToFolder(projectFolder, audio, latestRun.combined_subtitle_srt);
+      const japaneseSrt = await requestAiJapaneseSrt();
+      await saveFilesToFolder(projectFolder, audio, japaneseSrt);
       if (!finalAudioBlob) {
         setFinalAudioBlob(audio);
         setFinalAudioUrl((current) => { if (current) URL.revokeObjectURL(current); return URL.createObjectURL(audio); });
@@ -538,7 +614,7 @@ export default function JapanLongformVoicePage() {
   async function downloadFinalAudio() {
     try {
       const audio = finalAudioBlob || await combineSegmentAudio(segments);
-      downloadBlob(`${safeFileName(projectTitle)}_최종TTS.mp3`, audio);
+      downloadBlob(`${safeFileName(projectTitle)}_최종TTS.wav`, audio);
     } catch (error) {
       setMessage({ kind: "error", text: error instanceof Error ? error.message : "최종 음성을 내려받지 못했습니다." });
     }
@@ -548,7 +624,7 @@ export default function JapanLongformVoicePage() {
 
   return <div className="mx-auto max-w-7xl space-y-5">
     <Link href={`/studio/longform-japan/projects/${projectId}`} className="inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-sky-700"><ArrowLeft size={16} /> 워크벤치</Link>
-    <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><p className="text-sm font-bold text-sky-700">{projectTitle}</p><h1 className="mt-1 flex items-center gap-2 text-3xl font-bold"><FileAudio className="text-sky-700" /> 일본어 TTS · SRT</h1><p className="mt-2 text-sm text-muted-foreground">이야기 흐름에 맞춘 구간별 음성을 검수한 뒤 MP3와 자막을 프로젝트 폴더에 저장합니다.</p></div><div className="flex flex-wrap gap-2"><button onClick={analyzeScriptSections} disabled={analyzing || generating || !script.trim()} className="inline-flex items-center justify-center gap-2 rounded-xl border border-sky-700 bg-white px-4 py-3 text-sm font-bold text-sky-700 disabled:opacity-40">{analyzing ? <Loader2 size={16} className="animate-spin" /> : <WandSparkles size={16} />} AI 구간 나누기</button><button onClick={generateAll} disabled={generating || analyzing || !script.trim() || !selectedVoice} className="inline-flex min-w-52 items-center justify-center gap-2 rounded-xl bg-sky-700 px-5 py-3 text-sm font-bold text-white disabled:opacity-40">{generating ? <><Loader2 size={16} className="animate-spin" /> {generationProgress}개 생성 중</> : <><Sparkles size={16} /> {pendingGenerationCount ? `변경 구간 전체 생성 (${pendingGenerationCount})` : "전체 구간 다시 생성"}</>}</button></div></header>
+    <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><p className="text-sm font-bold text-sky-700">{projectTitle}</p><h1 className="mt-1 flex items-center gap-2 text-3xl font-bold"><FileAudio className="text-sky-700" /> 일본어 TTS · SRT</h1><p className="mt-2 text-sm text-muted-foreground">구간별 MP3를 검수한 뒤 Premiere가 전체 길이를 정확히 읽는 48kHz WAV와 자막으로 통합합니다.</p></div><div className="flex flex-wrap gap-2"><button onClick={analyzeScriptSections} disabled={analyzing || generating || !script.trim()} className="inline-flex items-center justify-center gap-2 rounded-xl border border-sky-700 bg-white px-4 py-3 text-sm font-bold text-sky-700 disabled:opacity-40">{analyzing ? <Loader2 size={16} className="animate-spin" /> : <WandSparkles size={16} />} AI 구간 나누기</button><button onClick={generateAll} disabled={generating || analyzing || !script.trim() || !selectedVoice} className="inline-flex min-w-52 items-center justify-center gap-2 rounded-xl bg-sky-700 px-5 py-3 text-sm font-bold text-white disabled:opacity-40">{generating ? <><Loader2 size={16} className="animate-spin" /> {generationProgress}개 생성 중</> : <><Sparkles size={16} /> {pendingGenerationCount ? `변경 구간 전체 생성 (${pendingGenerationCount})` : "전체 구간 다시 생성"}</>}</button></div></header>
     {message && <div className={`rounded-xl border px-4 py-3 text-sm font-semibold ${message.kind === "error" ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>{message.text}</div>}
 
     {!script.trim() ? <section className="rounded-2xl border border-border bg-white p-8 text-center shadow-sm"><p className="font-bold">저장된 최종 일본어 대본이 없습니다.</p><Link href={`/studio/longform-japan/projects/${projectId}/translate`} className="mt-4 inline-flex h-10 items-center rounded-xl bg-sky-700 px-4 text-sm font-bold text-white">대본 번역으로 이동</Link></section> : <>
@@ -587,8 +663,8 @@ export default function JapanLongformVoicePage() {
         {!continuousPlaying && pendingGenerationCount > 0 && segments.length > 0 && <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">생성 또는 재생성이 필요한 {pendingGenerationCount}개 구간을 완료하면 이어듣기가 활성화됩니다.</p>}
       </section>
 
-      <section className={`rounded-2xl border p-5 shadow-sm sm:p-6 ${latestRun ? "border-emerald-200 bg-emerald-50" : "border-border bg-white"}`}><div className="flex flex-col gap-4 lg:flex-row lg:items-center"><div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${latestRun ? "bg-white text-emerald-700" : "bg-sky-50 text-sky-700"}`}>{latestRun ? <Check size={20} /> : <Play size={20} />}</div><div className="min-w-0 flex-1"><h2 className="font-bold">최종 통합 TTS · SRT</h2><p className="mt-1 text-xs text-muted-foreground">{latestRun ? `${latestRun.segment_count}개 구간 · ${formatDuration(Number(latestRun.total_duration))} · 프로젝트 사운드 폴더 저장 완료` : pendingGenerationCount ? `${pendingGenerationCount}개 구간을 생성하거나 재생성해야 합니다.` : segments.length ? "모든 구간 검수가 끝났다면 프로젝트 사운드 폴더에 최종 MP3와 SRT를 저장하세요." : "먼저 내용 구간과 음성을 생성해주세요."}</p></div>{!latestRun && segments.length > 0 && <button onClick={retryFinalization} disabled={finalizing || generating || !projectFolder || pendingGenerationCount > 0 || !sectionsMatchScript} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40">{finalizing ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} 최종 MP3 · SRT 저장</button>}{latestRun && <div className="flex flex-wrap gap-2"><button onClick={downloadFinalAudio} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-bold text-emerald-800"><Download size={13} /> MP3</button><button onClick={() => downloadBlob(`${safeFileName(projectTitle)}_자막.srt`, new Blob(["\ufeff", latestRun.combined_subtitle_srt], { type: "text/plain;charset=utf-8" }))} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white"><Download size={13} /> SRT</button></div>}</div>{(finalAudioUrl || latestRun?.combined_audio_url) && <audio controls src={finalAudioUrl || latestRun?.combined_audio_url || undefined} className="mt-4 h-10 w-full" />}
-        <div className="mt-5 flex flex-col gap-3 rounded-xl border border-dashed border-border bg-white/80 p-4 sm:flex-row sm:items-center"><FolderOpen size={18} className="shrink-0 text-sky-700" /><div className="min-w-0 flex-1"><p className="text-sm font-bold">프로젝트 폴더의 사운드 폴더</p><p className="mt-1 truncate text-xs text-muted-foreground">{projectFolder ? `${projectFolder.name} / 사운드에 MP3와 SRT 저장` : "프로젝트 폴더를 한 번 연결하면 다음에도 기억합니다."}</p></div><button onClick={connectProjectFolder} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-bold"><FolderOpen size={13} /> {projectFolder ? "폴더 변경" : "폴더 연결"}</button><button onClick={saveFinalToProjectFolder} disabled={!projectFolder || !latestRun || savingToFolder} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">{savingToFolder ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} 사운드 폴더에 저장</button></div>
+      <section className={`rounded-2xl border p-5 shadow-sm sm:p-6 ${latestRun ? "border-emerald-200 bg-emerald-50" : "border-border bg-white"}`}><div className="flex flex-col gap-4 lg:flex-row lg:items-center"><div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${latestRun ? "bg-white text-emerald-700" : "bg-sky-50 text-sky-700"}`}>{latestRun ? <Check size={20} /> : <Play size={20} />}</div><div className="min-w-0 flex-1"><h2 className="font-bold">최종 통합 TTS · SRT</h2><p className="mt-1 text-xs text-muted-foreground">{latestRun ? `${latestRun.segment_count}개 구간 · ${formatDuration(Number(latestRun.total_duration))} · 프로젝트 사운드 폴더 저장 완료` : pendingGenerationCount ? `${pendingGenerationCount}개 구간을 생성하거나 재생성해야 합니다.` : segments.length ? "모든 구간 검수가 끝났다면 프로젝트 사운드 폴더에 최종 WAV와 SRT를 저장하세요." : "먼저 내용 구간과 음성을 생성해주세요."}</p></div>{!latestRun && segments.length > 0 && <button onClick={retryFinalization} disabled={finalizing || generating || !projectFolder || pendingGenerationCount > 0 || !sectionsMatchScript} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40">{finalizing ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} 최종 WAV · SRT 저장</button>}{latestRun && <div className="flex flex-wrap gap-2"><button onClick={downloadFinalAudio} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-bold text-emerald-800"><Download size={13} /> WAV</button><button onClick={downloadAiJapaneseSrt} disabled={generatingSrt} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">{generatingSrt ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />} AI 일본어 SRT</button></div>}</div>{(finalAudioUrl || latestRun?.combined_audio_url) && <audio controls src={finalAudioUrl || latestRun?.combined_audio_url || undefined} className="mt-4 h-10 w-full" />}
+        <div className="mt-5 flex flex-col gap-3 rounded-xl border border-dashed border-border bg-white/80 p-4 sm:flex-row sm:items-center"><FolderOpen size={18} className="shrink-0 text-sky-700" /><div className="min-w-0 flex-1"><p className="text-sm font-bold">프로젝트 폴더의 사운드 폴더</p><p className="mt-1 truncate text-xs text-muted-foreground">{projectFolder ? `${projectFolder.name} / 사운드에 48kHz WAV와 SRT 저장` : "프로젝트 폴더를 한 번 연결하면 다음에도 기억합니다."}</p></div><button onClick={connectProjectFolder} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-bold"><FolderOpen size={13} /> {projectFolder ? "폴더 변경" : "폴더 연결"}</button><button onClick={saveFinalToProjectFolder} disabled={!projectFolder || !latestRun || savingToFolder} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">{savingToFolder ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} 사운드 폴더에 저장</button></div>
       </section>
       {latestRun && <Link href={`/studio/longform-japan/projects/${projectId}/image`} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-sky-700 px-4 py-3 text-sm font-bold text-white">이미지 제작으로 <ArrowRight size={16} /></Link>}
     </>}

@@ -29,7 +29,7 @@ const stageCards: StageCard[] = [
   { key: "translate", title: "일본어 번역 · 검수", description: "Claude 1차 번역과 GPT 2차 검수 결과를 비교하고 확정합니다.", action: "번역 열기", icon: Languages },
   { key: "voice", title: "ElevenLabs TTS · SRT", description: "한 명의 일본어 목소리로 구간을 생성하고 전체 음성과 자막을 만듭니다.", action: "음성 제작 열기", icon: FileAudio },
   { key: "image", title: "썸네일 · 어두운 배경", description: "Flow용 프롬프트와 생성한 두 이미지를 프로젝트에 보관합니다.", action: "이미지 작업 열기", icon: ImageIcon },
-  { key: "motion", title: "무한 루프 영상", description: "배경 이미지에 미세한 움직임을 더한 Grok 영상을 준비합니다.", action: "루프 영상 열기", icon: Video },
+  { key: "motion", title: "무한 루프 영상", description: "배경 이미지에 미세한 움직임을 더한 Gemini 영상을 준비합니다.", action: "루프 영상 열기", icon: Video },
   { key: "premiere", title: "Premiere 편집 패키지", description: "일본어 음성·SRT·이미지·루프 영상을 한곳에 모읍니다.", action: "편집 패키지 열기", icon: Film },
   { key: "upload", title: "업로드 결과", description: "직접 업로드한 YouTube 링크와 최종 제목을 기록합니다.", action: "업로드 결과 열기", icon: Upload },
 ];

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { buildJapaneseCombinedSrt } from "@/lib/japan-longform-srt";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -12,6 +13,7 @@ type Alignment = {
 
 type Segment = {
   sort_order: number;
+  text: string;
   audio_duration: number | null;
   alignment: Alignment;
 };
@@ -25,7 +27,9 @@ function formatSrtTime(seconds: number) {
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(wholeSeconds).padStart(2, "0")},${String(rest).padStart(3, "0")}`;
 }
 
-function buildCombinedSrt(segments: Segment[]) {
+// 이전 정렬문자 기반 생성기는 기존 데이터 호환 확인용으로 남겨둔다.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function buildCombinedSrtLegacy(segments: Segment[]) {
   let offset = 0;
   let cueNumber = 1;
   const blocks: string[] = [];
@@ -72,7 +76,7 @@ export async function POST(request: Request) {
     if (!project) return NextResponse.json({ error: "프로젝트 접근 권한이 없습니다." }, { status: 403 });
 
     const { data, error: segmentError } = await supabase.from("japan_longform_voice_segments")
-      .select("sort_order, audio_duration, alignment")
+      .select("sort_order, text, audio_duration, alignment")
       .eq("project_id", projectId)
       .eq("user_id", user.id)
       .eq("status", "generated")
@@ -80,7 +84,7 @@ export async function POST(request: Request) {
     const segments = (data || []) as Segment[];
     if (segmentError || !segments.length) return NextResponse.json({ error: "통합할 구간 음성이 없습니다." }, { status: 400 });
 
-    const combinedSrt = buildCombinedSrt(segments);
+    const combinedSrt = buildJapaneseCombinedSrt(segments);
     const totalDuration = segments.reduce((sum, segment) => sum + Number(segment.audio_duration || 0), 0);
     const { data: run, error: runError } = await supabase.from("japan_longform_voice_runs").insert({
       project_id: projectId,
