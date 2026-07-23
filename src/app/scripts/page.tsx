@@ -2,12 +2,14 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { Copy, FileUp, ChevronDown, Check, Folder, Save, Scissors, Plus, Edit2, X, Loader2, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, History } from "lucide-react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getEditPointsPromptGemini, getEditPointsPromptClaude } from '@/constants/prompts';
+import { productionTypes } from "@/lib/project-workflows";
 
 function ScriptsPageContent() {
   const supabase = createClient();
+  const router = useRouter();
   
   /* ============================================================
      프로젝트 연동 관련 상태 및 이펙트
@@ -167,7 +169,10 @@ function ScriptsPageContent() {
   }, [activeTab]);
 
   const fetchProjects = async () => {
-    const { data, error } = await supabase.from("projects").select("id, title, status, progress, category, uploaded").order("updated_at", { ascending: false });
+    const { data, error } = await supabase.from("projects")
+      .select("id, title, status, progress, category, uploaded")
+      .eq("production_type", productionTypes.shortsStory)
+      .order("updated_at", { ascending: false });
     if (!error && data) {
       setProjects(data);
     }
@@ -327,6 +332,7 @@ function ScriptsPageContent() {
       title: newProjectTitle,
       status: "idea",
       progress: 0,
+      production_type: productionTypes.shortsStory,
       user_id: user.id,
       updated_at: new Date().toISOString()
     }).select().single();
@@ -337,6 +343,11 @@ function ScriptsPageContent() {
     } else {
       setProjects([data, ...projects]);
       setSelectedProjectId(data.id);
+      window.localStorage.setItem("last-shorts-story-project-id", String(data.id));
+      const nextParams = new URLSearchParams(searchParams.toString());
+      nextParams.set("project_id", String(data.id));
+      nextParams.set("tab", "write");
+      router.replace(`/scripts?${nextParams.toString()}`);
       setIsNewProjectModalOpen(false);
       setNewProjectTitle("");
     }
@@ -443,7 +454,15 @@ function ScriptsPageContent() {
                  if (val === "__new__") {
                    setIsNewProjectModalOpen(true);
                  } else {
-                   setSelectedProjectId(Number(val) || null);
+                   const nextProjectId = Number(val) || null;
+                   setSelectedProjectId(nextProjectId);
+                   if (nextProjectId) {
+                     window.localStorage.setItem("last-shorts-story-project-id", String(nextProjectId));
+                     const nextParams = new URLSearchParams(searchParams.toString());
+                     nextParams.set("project_id", String(nextProjectId));
+                     if (!nextParams.has("tab")) nextParams.set("tab", "write");
+                     router.replace(`/scripts?${nextParams.toString()}`);
+                   }
                  }
                }}
                className="w-full h-10 appearance-none rounded-lg border border-border bg-brand-cream/50 px-3 text-sm outline-none transition-colors focus:border-brand-olive focus:ring-2 focus:ring-brand-olive/20"

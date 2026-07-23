@@ -76,22 +76,24 @@ export default function LongformJapanStudioPage() {
         return;
       }
 
-      const [sourcesRes, scriptsRes, voiceRunsRes, visualsRes, editPackagesRes] = await Promise.all([
+      const [sourcesRes, scriptsRes, voiceRunsRes, visualsRes, scenesRes, editPackagesRes] = await Promise.all([
         supabase.from("japan_longform_sources").select("project_id").in("project_id", ids),
         supabase.from("japan_longform_scripts").select("project_id, adapted_korean, final_korean, verified_japanese").in("project_id", ids),
         supabase.from("japan_longform_voice_runs").select("project_id").in("project_id", ids),
         supabase.from("japan_longform_visual_assets").select("project_id, asset_kind").in("project_id", ids),
+        supabase.from("japan_longform_story_scenes").select("project_id").in("project_id", ids),
         supabase.from("japan_longform_edit_packages").select("project_id, status").in("project_id", ids),
       ]);
       if (!active) return;
 
-      const foundationResults = [sourcesRes, scriptsRes, voiceRunsRes, visualsRes, editPackagesRes];
+      const foundationResults = [sourcesRes, scriptsRes, voiceRunsRes, visualsRes, scenesRes, editPackagesRes];
       setSchemaReady(foundationResults.every((result) => !result.error));
       const sourceProjects = new Set((sourcesRes.data ?? []).map((row) => row.project_id));
       const scriptRows = new Map((scriptsRes.data ?? []).map((row) => [row.project_id, row]));
       const voiceProjects = new Set((voiceRunsRes.data ?? []).map((row) => row.project_id));
       const imageProjects = new Set((visualsRes.data ?? []).filter((row) => row.asset_kind === "thumbnail" || row.asset_kind === "background").map((row) => row.project_id));
       const motionProjects = new Set((visualsRes.data ?? []).filter((row) => row.asset_kind === "loop_video").map((row) => row.project_id));
+      const sceneProjects = new Set((scenesRes.data ?? []).map((row) => row.project_id));
       const editProjects = new Set((editPackagesRes.data ?? []).filter((row) => row.status === "ready" || row.status === "done").map((row) => row.project_id));
 
       setProjects(rows.map((project) => {
@@ -103,6 +105,7 @@ export default function LongformJapanStudioPage() {
           translate: Boolean(script?.verified_japanese),
           voice: voiceProjects.has(project.id),
           image: imageProjects.has(project.id),
+          scenes: sceneProjects.has(project.id),
           motion: motionProjects.has(project.id),
           premiere: editProjects.has(project.id),
           upload: project.uploaded === true,

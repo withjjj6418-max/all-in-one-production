@@ -83,9 +83,10 @@ export const japanLongformWorkflow = [
   { key: "translate", step: 4, label: "일본어 번역", shortLabel: "번역" },
   { key: "voice", step: 5, label: "TTS · SRT", shortLabel: "음성" },
   { key: "image", step: 6, label: "썸네일 · 배경", shortLabel: "이미지" },
-  { key: "motion", step: 7, label: "루프 영상", shortLabel: "영상" },
-  { key: "premiere", step: 8, label: "Premiere", shortLabel: "편집" },
-  { key: "upload", step: 9, label: "업로드", shortLabel: "완료" },
+  { key: "scenes", step: 7, label: "장면 일러스트", shortLabel: "장면" },
+  { key: "motion", step: 8, label: "루프 영상", shortLabel: "영상" },
+  { key: "premiere", step: 9, label: "Premiere", shortLabel: "편집" },
+  { key: "upload", step: 10, label: "업로드", shortLabel: "완료" },
 ] as const;
 
 export type JapanLongformWorkflowKey = (typeof japanLongformWorkflow)[number]["key"];

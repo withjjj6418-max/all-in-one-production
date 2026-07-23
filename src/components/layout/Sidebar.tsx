@@ -21,6 +21,7 @@ import {
   ScanText,
   Video,
   Film,
+  PanelsTopLeft,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -227,6 +228,7 @@ export function Sidebar() {
                 { key: "translate", label: "대본번역", icon: Languages, href: japanProjectId ? `/studio/longform-japan/projects/${japanProjectId}/translate` : "/studio/longform-japan", needsProject: true },
                 { key: "voice", label: "TTS · SRT", icon: FileAudio, href: japanProjectId ? `/studio/longform-japan/projects/${japanProjectId}/voice` : "/studio/longform-japan", needsProject: true },
                 { key: "image", label: "이미지", icon: Image, href: japanProjectId ? `/studio/longform-japan/projects/${japanProjectId}/image` : "/studio/longform-japan", needsProject: true },
+                { key: "scenes", label: "장면일러스트", icon: PanelsTopLeft, href: japanProjectId ? `/studio/longform-japan/projects/${japanProjectId}/scenes` : "/studio/longform-japan", needsProject: true },
                 { key: "motion", label: "루프영상", icon: Video, href: japanProjectId ? `/studio/longform-japan/projects/${japanProjectId}/motion` : "/studio/longform-japan", needsProject: true },
                 { key: "premiere", label: "프리미어", icon: Film, href: japanProjectId ? `/studio/longform-japan/projects/${japanProjectId}/premiere` : "/studio/longform-japan", needsProject: true },
                 { key: "uploads", label: "업로드목록", icon: Upload, href: "/studio/longform-japan/uploads", needsProject: false },

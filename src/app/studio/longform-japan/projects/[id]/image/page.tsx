@@ -233,7 +233,7 @@ export default function JapanLongformImagePage() {
       <AssetPanel kind="background" title="아주 어두운 외부 전경" description="메인 장소의 건물 외부·산속 저택 전경·비 오는 외부처럼 넓게 보이는 장면" prompt={backgroundPrompt} onPromptChange={setBackgroundPrompt} generating={generatingPromptKind === "background"} generationDisabled={generatingPromptKind !== null || !script.trim()} onGenerate={() => generatePrompt("background")} asset={latestBackground} uploading={uploadingKind === "background"} saving={savingAssetId === latestBackground?.id} onCopy={() => copyPrompt(backgroundPrompt, "배경")} onUpload={(event) => uploadAsset("background", event)} onSaveLocal={() => latestBackground && saveAssetLocally(latestBackground)} onDelete={() => latestBackground && deleteAsset(latestBackground)} />
     </section>
 
-    {latestBackground && <Link href={`/studio/longform-japan/projects/${projectId}/motion`} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-sky-700 px-4 py-3 text-sm font-bold text-white">Gemini 루프영상으로 <ArrowRight size={16} /></Link>}
+    {latestBackground && <Link href={`/studio/longform-japan/projects/${projectId}/scenes`} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-sky-700 px-4 py-3 text-sm font-bold text-white">주요 장면 일러스트로 <ArrowRight size={16} /></Link>}
   </div>;
 }
 
