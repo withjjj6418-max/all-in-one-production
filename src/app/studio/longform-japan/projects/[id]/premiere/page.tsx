@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import NextImage from "next/image";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Check, Copy, ExternalLink, FileText, Film, FolderOpen, ImageIcon, Loader2, Save, Sparkles, Tags, Video, Volume2 } from "lucide-react";
+import { ArrowLeft, Check, Copy, ExternalLink, FileText, Film, FolderOpen, ImageIcon, Languages, Loader2, Save, Sparkles, Tags, Video, Volume2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getProjectFolderHandle, saveProjectFolderHandle, writeBlobToFolder } from "@/lib/project-folder";
 
@@ -19,13 +19,84 @@ type EditPackage = {
 };
 
 type VisualAsset = { id: string; asset_kind: "thumbnail" | "background" | "loop_video"; url: string; file_name: string };
-type StoryScene = { id: string; sort_order: number; scene_title: string };
+type StoryScene = { id: string; sort_order: number; scene_title: string; insertion_seconds: number };
 type SceneImage = { id: string; scene_id: string; sort_order: number; url: string; file_name: string };
+type BilingualPair = { japanese: string; korean: string; timecode: string | null };
+type SrtCue = { startSeconds: number; text: string };
 type WritableDirectoryHandle = FileSystemDirectoryHandle & { requestPermission: (options?: { mode?: "read" | "readwrite" }) => Promise<PermissionState> };
 type DirectoryPickerWindow = Window & { showDirectoryPicker?: (options?: { id?: string; mode?: "read" | "readwrite" }) => Promise<FileSystemDirectoryHandle> };
 
 function stringArray(value: unknown) {
   return Array.isArray(value) ? value.map(String).filter(Boolean) : [];
+}
+
+function formatSceneTimecode(totalSeconds: number) {
+  const value = Math.max(0, Number(totalSeconds) || 0);
+  const wholeSeconds = Math.floor(value);
+  const hours = Math.floor(wholeSeconds / 3600);
+  const minutes = Math.floor((wholeSeconds % 3600) / 60);
+  const seconds = wholeSeconds % 60;
+  const hundredths = Math.floor((value - wholeSeconds) * 100);
+  return [hours, minutes, seconds, hundredths]
+    .map((part) => String(part).padStart(2, "0"))
+    .join(":");
+}
+
+function parseBilingualReview(value: string) {
+  const pairs: Array<{ japanese: string; korean: string }> = [];
+  let japanese = "";
+  for (const rawLine of value.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const japaneseMatch = line.match(/^(?:JP|일본어)\s*[｜|:：]\s*(.+)$/i);
+    const koreanMatch = line.match(/^(?:KO|KR|한국어)\s*[｜|:：]\s*(.+)$/i);
+    if (japaneseMatch) {
+      japanese = japaneseMatch[1].trim();
+    } else if (koreanMatch && japanese) {
+      pairs.push({ japanese, korean: koreanMatch[1].trim() });
+      japanese = "";
+    }
+  }
+  return pairs;
+}
+
+function parseSrt(value: string): SrtCue[] {
+  return value.trim().split(/\r?\n\r?\n+/).flatMap((block) => {
+    const lines = block.split(/\r?\n/);
+    const timingIndex = lines.findIndex((line) => line.includes("-->"));
+    if (timingIndex < 0) return [];
+    const match = lines[timingIndex].match(/(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->/);
+    if (!match) return [];
+    const startSeconds = Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]) + Number(match[4]) / 1000;
+    const text = lines.slice(timingIndex + 1).join("").trim();
+    return text ? [{ startSeconds, text }] : [];
+  });
+}
+
+function normalizeJapanese(value: string) {
+  return value.normalize("NFKC").replace(/[\s。、，．！？!?,「」『』（）()[\]【】…・：:；;"'—―ー-]/g, "");
+}
+
+function buildBilingualTimeline(reviewText: string, srt: string): BilingualPair[] {
+  const pairs = parseBilingualReview(reviewText);
+  const cues = parseSrt(srt);
+  if (!cues.length) return pairs.map((pair) => ({ ...pair, timecode: null }));
+  const normalizedCues = cues.map((cue) => normalizeJapanese(cue.text));
+  const cueOffsets: number[] = [];
+  let joined = "";
+  for (const text of normalizedCues) {
+    cueOffsets.push(joined.length);
+    joined += text;
+  }
+  let searchOffset = 0;
+  return pairs.map((pair) => {
+    const target = normalizeJapanese(pair.japanese);
+    let foundAt = target ? joined.indexOf(target, searchOffset) : -1;
+    if (foundAt < 0 && target.length >= 8) foundAt = joined.indexOf(target.slice(0, Math.min(16, target.length)), searchOffset);
+    if (foundAt < 0) return { ...pair, timecode: null };
+    const cueIndex = Math.max(0, cueOffsets.findLastIndex((offset) => offset <= foundAt));
+    searchOffset = foundAt + Math.max(1, target.length);
+    return { ...pair, timecode: formatSceneTimecode(cues[cueIndex].startSeconds) };
+  });
 }
 
 export default function JapanLongformPremierePage() {
@@ -45,6 +116,8 @@ export default function JapanLongformPremierePage() {
   const [assets, setAssets] = useState<VisualAsset[]>([]);
   const [storyScenes, setStoryScenes] = useState<StoryScene[]>([]);
   const [sceneImages, setSceneImages] = useState<SceneImage[]>([]);
+  const [bilingualReviewText, setBilingualReviewText] = useState("");
+  const [combinedSubtitleSrt, setCombinedSubtitleSrt] = useState("");
   const [projectFolder, setProjectFolder] = useState<FileSystemDirectoryHandle | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -55,6 +128,10 @@ export default function JapanLongformPremierePage() {
   const thumbnail = assets.find((item) => item.asset_kind === "thumbnail") || null;
   const background = assets.find((item) => item.asset_kind === "background") || null;
   const loopVideo = assets.find((item) => item.asset_kind === "loop_video") || null;
+  const bilingualTimeline = useMemo(
+    () => buildBilingualTimeline(bilingualReviewText, combinedSubtitleSrt),
+    [bilingualReviewText, combinedSubtitleSrt],
+  );
 
   useEffect(() => {
     let active = true;
@@ -63,12 +140,13 @@ export default function JapanLongformPremierePage() {
       if (!active) return;
       if (!user) { setMessage({ kind: "error", text: "로그인이 필요합니다." }); setLoading(false); return; }
       setUserId(user.id);
-      const [projectResult, packageResult, voiceResult, assetsResult, scenesResult] = await Promise.all([
+      const [projectResult, packageResult, voiceResult, assetsResult, scenesResult, scriptResult] = await Promise.all([
         supabase.from("projects").select("title").eq("id", projectId).eq("production_type", "longform_japan").maybeSingle(),
         supabase.from("japan_longform_edit_packages").select("edit_notes, status, title_candidates, selected_title, youtube_description, youtube_tags, timeline_text").eq("project_id", projectId).maybeSingle(),
-        supabase.from("japan_longform_voice_runs").select("id").eq("project_id", projectId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+        supabase.from("japan_longform_voice_runs").select("id, combined_subtitle_srt").eq("project_id", projectId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
         supabase.from("japan_longform_visual_assets").select("id, asset_kind, url, file_name").eq("project_id", projectId).in("asset_kind", ["thumbnail", "background", "loop_video"]).order("created_at", { ascending: false }),
-        supabase.from("japan_longform_story_scenes").select("id, sort_order, scene_title").eq("project_id", projectId).order("sort_order"),
+        supabase.from("japan_longform_story_scenes").select("id, sort_order, scene_title, insertion_seconds").eq("project_id", projectId).order("sort_order"),
+        supabase.from("japan_longform_scripts").select("bilingual_review_text").eq("project_id", projectId).maybeSingle(),
       ]);
       if (!active) return;
       const loadedScenes = (scenesResult.data || []) as StoryScene[];
@@ -89,10 +167,12 @@ export default function JapanLongformPremierePage() {
         setStatus(record.status || "preparing");
       }
       setHasVoiceRun(Boolean(voiceResult.data));
+      setCombinedSubtitleSrt(voiceResult.data?.combined_subtitle_srt || "");
+      setBilingualReviewText(scriptResult.data?.bilingual_review_text || "");
       setAssets((assetsResult.data || []) as VisualAsset[]);
       setStoryScenes(loadedScenes);
       setSceneImages((sceneImagesResult.data || []) as SceneImage[]);
-      if (projectResult.error || packageResult.error || voiceResult.error || assetsResult.error || scenesResult.error || sceneImagesResult.error) setMessage({ kind: "error", text: "Premiere 패키지 정보를 모두 불러오지 못했습니다. 최신 SQL 적용 여부를 확인해주세요." });
+      if (projectResult.error || packageResult.error || voiceResult.error || assetsResult.error || scenesResult.error || sceneImagesResult.error || scriptResult.error) setMessage({ kind: "error", text: "Premiere 패키지 정보를 모두 불러오지 못했습니다. 최신 SQL 적용 여부를 확인해주세요." });
       try { setProjectFolder(await getProjectFolderHandle(projectId)); } catch { /* IndexedDB 미지원 */ }
       setLoading(false);
     }
@@ -198,7 +278,12 @@ export default function JapanLongformPremierePage() {
     <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><AssetStatus icon={Volume2} label="최종 TTS · SRT" ready={hasVoiceRun} href={`/studio/longform-japan/projects/${projectId}/voice`} /><AssetStatus icon={ImageIcon} label="썸네일" ready={Boolean(thumbnail)} href={`/studio/longform-japan/projects/${projectId}/image`} /><AssetStatus icon={ImageIcon} label="어두운 배경" ready={Boolean(background)} href={`/studio/longform-japan/projects/${projectId}/image`} /><AssetStatus icon={ImageIcon} label={`장면 이미지 ${sceneImages.length}장`} ready={sceneImages.length > 0} href={`/studio/longform-japan/projects/${projectId}/scenes`} /><AssetStatus icon={Video} label="루프영상" ready={Boolean(loopVideo)} href={`/studio/longform-japan/projects/${projectId}/motion`} /></section>
 
     <section className="rounded-2xl border border-border bg-white p-5 shadow-sm sm:p-6"><div className="flex items-start justify-between gap-3"><div><h2 className="flex items-center gap-2 text-lg font-bold"><ImageIcon size={18} className="text-violet-700" /> 주요 장면 일러스트</h2><p className="mt-1 text-xs text-muted-foreground">장면 번호와 이미지 순번대로 Premiere에 사용할 이미지를 확인합니다.</p></div><Link href={`/studio/longform-japan/projects/${projectId}/scenes`} className="shrink-0 rounded-lg border border-border px-3 py-2 text-xs font-bold">이미지 관리</Link></div>
-      {sceneImages.length ? <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">{storyScenes.flatMap((scene, sceneIndex) => sceneImages.filter((image) => image.scene_id === scene.id).sort((a, b) => a.sort_order - b.sort_order).map((image, imageIndex) => <article key={image.id} className="overflow-hidden rounded-xl border border-border bg-stone-50"><div className="relative aspect-video bg-black"><NextImage src={image.url} alt={`${scene.scene_title} ${imageIndex + 1}번 이미지`} fill unoptimized sizes="240px" className="object-cover" /><span className="absolute left-1.5 top-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-bold text-white">{sceneIndex + 1}-{imageIndex + 1}</span></div><div className="flex items-center gap-2 p-2"><p className="min-w-0 flex-1 truncate text-xs font-bold" title={scene.scene_title}>{scene.scene_title}</p><a href={image.url} target="_blank" rel="noreferrer" aria-label={`${scene.scene_title} 원본 열기`} className="rounded-md border border-border bg-white p-1.5 text-muted-foreground hover:text-violet-700"><ExternalLink size={11} /></a></div></article>))}</div> : <div className="mt-5 rounded-xl border border-dashed border-border p-8 text-center"><p className="text-sm text-muted-foreground">저장된 주요 장면 이미지가 없습니다.</p><Link href={`/studio/longform-japan/projects/${projectId}/scenes`} className="mt-3 inline-flex rounded-lg bg-violet-700 px-3 py-2 text-xs font-bold text-white">장면 이미지 올리기</Link></div>}
+      {sceneImages.length ? <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">{storyScenes.flatMap((scene, sceneIndex) => sceneImages.filter((image) => image.scene_id === scene.id).sort((a, b) => a.sort_order - b.sort_order).map((image, imageIndex) => <article key={image.id} className="overflow-hidden rounded-xl border border-border bg-stone-50"><div className="relative aspect-video bg-black"><NextImage src={image.url} alt={`${scene.scene_title} ${imageIndex + 1}번 이미지`} fill unoptimized sizes="240px" className="object-cover" /><span className="absolute left-1.5 top-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-bold text-white">{sceneIndex + 1}-{imageIndex + 1}</span></div><div className="flex items-center gap-2 p-2"><div className="min-w-0 flex-1"><p className="truncate text-xs font-bold" title={scene.scene_title}>{scene.scene_title}</p><p className="mt-1 font-mono text-[10px] font-bold text-sky-700">{formatSceneTimecode(scene.insertion_seconds)}</p></div><a href={image.url} target="_blank" rel="noreferrer" aria-label={`${scene.scene_title} 원본 열기`} className="rounded-md border border-border bg-white p-1.5 text-muted-foreground hover:text-violet-700"><ExternalLink size={11} /></a></div></article>))}</div> : <div className="mt-5 rounded-xl border border-dashed border-border p-8 text-center"><p className="text-sm text-muted-foreground">저장된 주요 장면 이미지가 없습니다.</p><Link href={`/studio/longform-japan/projects/${projectId}/scenes`} className="mt-3 inline-flex rounded-lg bg-violet-700 px-3 py-2 text-xs font-bold text-white">장면 이미지 올리기</Link></div>}
+    </section>
+
+    <section className="rounded-2xl border border-violet-200 bg-white p-5 shadow-sm sm:p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h2 className="flex items-center gap-2 text-lg font-bold"><Languages size={18} className="text-violet-700" /> 편집용 한일 대조 대본</h2><p className="mt-1 text-xs text-muted-foreground">최종 일본어 SRT에서 문장을 찾아 실제 시작 시간과 한국어 해석을 함께 표시합니다.</p></div><Link href={`/studio/longform-japan/projects/${projectId}/translate`} className="shrink-0 rounded-lg border border-border px-3 py-2 text-xs font-bold">대조 대본 수정</Link></div>
+      {bilingualTimeline.length ? <div className="mt-5 max-h-[720px] space-y-1 overflow-y-auto rounded-xl border border-border bg-stone-50 p-3">{bilingualTimeline.map((pair, index) => <article key={`${index}-${pair.japanese}`} className="grid gap-1 rounded-lg bg-white p-3 sm:grid-cols-[92px_minmax(0,1fr)]"><span className={`font-mono text-[11px] font-bold ${pair.timecode ? "text-sky-700" : "text-amber-600"}`}>{pair.timecode || "시간 미확인"}</span><div className="min-w-0"><p className="text-sm font-semibold leading-6 text-foreground"><span className="mr-2 text-[10px] font-bold text-violet-600">JP</span>{pair.japanese}</p><p className="mt-1 text-sm leading-6 text-muted-foreground"><span className="mr-2 text-[10px] font-bold text-emerald-700">KO</span>{pair.korean}</p></div></article>)}</div> : <div className="mt-5 rounded-xl border border-dashed border-border p-8 text-center"><p className="text-sm text-muted-foreground">저장된 한일 대조 대본이 없습니다.</p><Link href={`/studio/longform-japan/projects/${projectId}/translate`} className="mt-3 inline-flex rounded-lg bg-violet-700 px-3 py-2 text-xs font-bold text-white">대본번역에서 만들기</Link></div>}
     </section>
 
     <section className="rounded-2xl border border-border bg-white p-5 shadow-sm sm:p-6"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h2 className="flex items-center gap-2 text-lg font-bold"><Sparkles size={18} className="text-sky-700" /> YouTube 업로드 정보</h2><p className="mt-1 text-xs text-muted-foreground">일본어 최종대본과 TTS 구간을 기준으로 생성하며 모든 내용은 직접 수정할 수 있습니다.</p></div><button onClick={generateMetadata} disabled={generating || !hasVoiceRun} className="inline-flex items-center justify-center gap-2 rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40">{generating ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />} {titles.length ? "AI로 다시 추천" : "AI 업로드 정보 생성"}</button></div>
