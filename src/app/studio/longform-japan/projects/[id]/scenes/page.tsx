@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type ClipboardEvent } from "react";
 import Link from "next/link";
+import NextImage from "next/image";
 import { useParams } from "next/navigation";
 import {
-  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Copy, ExternalLink,
-  Loader2, PanelsTopLeft, Plus, Save, ShieldCheck, Sparkles, Trash2,
+  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ClipboardPaste, Copy, Download,
+  ExternalLink, ImageIcon, Loader2, PanelsTopLeft, Plus, Save, ShieldCheck,
+  Sparkles, Trash2, Upload,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -26,6 +28,16 @@ type VoiceSegment = {
 };
 
 type Message = { kind: "error" | "notice"; text: string };
+
+const VISUAL_BUCKET = "japan-longform-visuals";
+
+function imageExtension(file: File) {
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  if (extension && ["png", "jpg", "jpeg", "webp"].includes(extension)) return extension === "jpeg" ? "jpg" : extension;
+  if (file.type === "image/webp") return "webp";
+  if (file.type === "image/jpeg") return "jpg";
+  return "png";
+}
 
 function formatTime(seconds: number) {
   const value = Math.max(0, Math.floor(seconds));
@@ -86,6 +98,7 @@ export default function JapanLongformScenesPage() {
   const [gptResult, setGptResult] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingSceneId, setUploadingSceneId] = useState<string | null>(null);
   const [schemaReady, setSchemaReady] = useState(true);
   const [message, setMessage] = useState<Message | null>(null);
 
@@ -250,6 +263,7 @@ export default function JapanLongformScenesPage() {
     if (!window.confirm(`“${scene.scene_title}” 장면을 삭제할까요?`)) return;
     const { error } = await supabase.from("japan_longform_story_scenes").delete().eq("id", scene.id);
     if (error) return setMessage({ kind: "error", text: "장면을 삭제하지 못했습니다." });
+    if (scene.storage_path) await supabase.storage.from(VISUAL_BUCKET).remove([scene.storage_path]);
     setScenes((current) => current.filter((item) => item.id !== scene.id).map((item, index) => ({ ...item, sort_order: index })));
   }
 
@@ -279,6 +293,75 @@ export default function JapanLongformScenesPage() {
     } catch {
       setMessage({ kind: "error", text: "프롬프트 복사에 실패했습니다." });
     }
+  }
+
+  async function uploadSceneImage(scene: JapanStoryScene, file: File) {
+    if (!userId || !schemaReady) return;
+    if (!file.type.startsWith("image/")) return setMessage({ kind: "error", text: "PNG, JPG 또는 WEBP 이미지를 올려주세요." });
+    if (file.size > 20 * 1024 * 1024) return setMessage({ kind: "error", text: "장면 이미지는 20MB 이하만 저장할 수 있습니다." });
+    setUploadingSceneId(scene.id);
+    setMessage(null);
+    const extension = imageExtension(file);
+    const storagePath = `${userId}/${projectId}/story-scenes/${scene.id}/${Date.now()}-${crypto.randomUUID()}.${extension}`;
+    try {
+      const { error: uploadError } = await supabase.storage.from(VISUAL_BUCKET).upload(storagePath, file, {
+        contentType: file.type || `image/${extension}`,
+        upsert: false,
+      });
+      if (uploadError) throw uploadError;
+      const imageUrl = supabase.storage.from(VISUAL_BUCKET).getPublicUrl(storagePath).data.publicUrl;
+      const { data, error } = await supabase.from("japan_longform_story_scenes").upsert({
+        ...scene,
+        project_id: projectId,
+        user_id: userId,
+        scene_prompt: withJapanStorySceneResolution(scene.scene_prompt),
+        image_url: imageUrl,
+        storage_path: storagePath,
+        status: "generated",
+        updated_at: new Date().toISOString(),
+      }).select("*").single();
+      if (error) {
+        await supabase.storage.from(VISUAL_BUCKET).remove([storagePath]);
+        throw error;
+      }
+      if (scene.storage_path && scene.storage_path !== storagePath) {
+        await supabase.storage.from(VISUAL_BUCKET).remove([scene.storage_path]);
+      }
+      setScenes((current) => current.map((item) => item.id === scene.id ? data as JapanStoryScene : item));
+      setMessage({ kind: "notice", text: `“${scene.scene_title}” 이미지를 프로젝트에 저장했습니다.` });
+    } catch (error) {
+      setMessage({ kind: "error", text: error instanceof Error ? error.message : "장면 이미지를 저장하지 못했습니다." });
+    } finally {
+      setUploadingSceneId(null);
+    }
+  }
+
+  function pasteSceneImage(scene: JapanStoryScene, event: ClipboardEvent<HTMLDivElement>) {
+    const imageItem = Array.from(event.clipboardData.items).find((item) => item.type.startsWith("image/"));
+    const file = imageItem?.getAsFile();
+    if (!file) return setMessage({ kind: "error", text: "클립보드에 복사된 이미지가 없습니다." });
+    event.preventDefault();
+    void uploadSceneImage(scene, file);
+  }
+
+  function chooseSceneImage(scene: JapanStoryScene, event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file) void uploadSceneImage(scene, file);
+  }
+
+  async function removeSceneImage(scene: JapanStoryScene) {
+    if (!scene.image_url || !window.confirm(`“${scene.scene_title}” 이미지를 삭제할까요?`)) return;
+    const { error } = await supabase.from("japan_longform_story_scenes").update({
+      image_url: null,
+      storage_path: null,
+      status: "approved",
+      updated_at: new Date().toISOString(),
+    }).eq("id", scene.id);
+    if (error) return setMessage({ kind: "error", text: "장면 이미지 연결을 삭제하지 못했습니다." });
+    if (scene.storage_path) await supabase.storage.from(VISUAL_BUCKET).remove([scene.storage_path]);
+    updateScene(scene.id, { image_url: null, storage_path: null, status: "approved" });
+    setMessage({ kind: "notice", text: "장면 이미지를 삭제했습니다." });
   }
 
   if (loading) return <div className="flex min-h-[60vh] items-center justify-center"><Loader2 className="animate-spin text-sky-700" /></div>;
@@ -312,6 +395,16 @@ export default function JapanLongformScenesPage() {
             <div className="grid gap-3 md:grid-cols-3"><label className="text-xs font-bold text-muted-foreground">공포 수위<select value={scene.horror_level} onChange={(event) => updateScene(scene.id, { horror_level: Number(event.target.value) as 1 | 2 | 3 })} className="mt-1.5 h-10 w-full rounded-lg border border-border bg-white px-2 text-sm text-foreground"><option value={1}>1 · 은은함</option><option value={2}>2 · 긴장감</option><option value={3}>3 · 강한 암시</option></select></label><label className="text-xs font-bold text-muted-foreground">안전 상태<select value={scene.safety_status} onChange={(event) => updateScene(scene.id, { safety_status: event.target.value as JapanStoryScene["safety_status"] })} className="mt-1.5 h-10 w-full rounded-lg border border-border bg-white px-2 text-sm text-foreground"><option value="safe">안전</option><option value="review">검토 필요</option><option value="replace">대체 필요</option></select></label><label className="text-xs font-bold text-muted-foreground">안전 연출 메모<input value={scene.safety_note} onChange={(event) => updateScene(scene.id, { safety_note: event.target.value })} className="mt-1.5 h-10 w-full rounded-lg border border-border bg-white px-3 text-sm text-foreground" /></label></div>
             <label className="block text-xs font-bold text-muted-foreground">장면별 영어 프롬프트<textarea value={scene.scene_prompt} onChange={(event) => updateScene(scene.id, { scene_prompt: event.target.value })} className="mt-1.5 min-h-32 w-full rounded-xl border border-border bg-white p-3 text-sm leading-6 text-foreground outline-none focus:border-sky-600" /></label>
             <button onClick={() => copyFinalPrompt(scene)} className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-sky-300 bg-sky-50 text-sm font-bold text-sky-700"><Copy size={15} /> 공통 화풍 + 장면 + 안전 프롬프트 복사</button>
+            <div
+              tabIndex={0}
+              onPaste={(event) => pasteSceneImage(scene, event)}
+              className="rounded-xl border border-dashed border-violet-300 bg-violet-50/40 p-3 outline-none transition focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+            >
+              {scene.image_url ? <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_190px]">
+                <div className="relative aspect-video overflow-hidden rounded-lg border border-border bg-black"><NextImage src={scene.image_url} alt={`${scene.scene_title} 장면`} fill unoptimized sizes="(min-width: 1024px) 60vw, 100vw" className="object-contain" /></div>
+                <div className="flex flex-col justify-center gap-2"><p className="text-xs font-bold text-violet-800">저장된 장면 이미지</p><p className="text-[11px] leading-5 text-muted-foreground">이 영역을 클릭한 뒤 새 이미지를 복사해 Ctrl+V하면 교체됩니다.</p><a href={scene.image_url} target="_blank" rel="noreferrer" download className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-border bg-white text-xs font-bold"><Download size={13} /> 원본 열기</a><label className="inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-violet-700 text-xs font-bold text-white"><Upload size={13} /> 파일로 교체<input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(event) => chooseSceneImage(scene, event)} /></label><button onClick={() => removeSceneImage(scene)} className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white text-xs font-bold text-red-600"><Trash2 size={13} /> 이미지 삭제</button></div>
+              </div> : <div className="flex flex-col items-center justify-center py-7 text-center"><div className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-violet-700 shadow-sm">{uploadingSceneId === scene.id ? <Loader2 size={20} className="animate-spin" /> : <ClipboardPaste size={20} />}</div><p className="mt-3 text-sm font-bold">{uploadingSceneId === scene.id ? "이미지 저장 중" : "클릭한 뒤 Ctrl+V로 이미지 붙여넣기"}</p><p className="mt-1 text-xs text-muted-foreground">또는 PNG · JPG · WEBP 파일을 선택하세요.</p><label className="mt-3 inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg bg-violet-700 px-4 text-xs font-bold text-white"><ImageIcon size={13} /> 파일 올리기<input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" disabled={uploadingSceneId === scene.id} onChange={(event) => chooseSceneImage(scene, event)} /></label></div>}
+            </div>
           </div><div className="flex shrink-0 flex-col gap-1"><button onClick={() => moveScene(index, -1)} disabled={index === 0} className="rounded-lg p-2 text-muted-foreground hover:bg-muted disabled:opacity-25"><ArrowUp size={14} /></button><button onClick={() => moveScene(index, 1)} disabled={index === scenes.length - 1} className="rounded-lg p-2 text-muted-foreground hover:bg-muted disabled:opacity-25"><ArrowDown size={14} /></button><button onClick={() => deleteScene(scene)} className="rounded-lg p-2 text-muted-foreground hover:bg-red-50 hover:text-red-600"><Trash2 size={14} /></button></div></div>
         </article>
         <div className="flex items-center gap-2 py-2"><div className="h-px flex-1 bg-border" /><button onClick={() => addScene(index)} className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-3 py-1 text-[11px] font-bold text-muted-foreground"><Plus size={11} /> 여기에 장면 삽입</button><div className="h-px flex-1 bg-border" /></div>

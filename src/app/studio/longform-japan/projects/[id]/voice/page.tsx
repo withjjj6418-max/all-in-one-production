@@ -522,8 +522,8 @@ export default function JapanLongformVoicePage() {
     try {
       const japaneseSrt = await requestAiJapaneseSrt();
       const cueCount = japaneseSrt.split(/\n\n+/).filter(Boolean).length;
-      downloadBlob(`${safeFileName(projectTitle)}_AI3-4줄_자막.srt`, new Blob(["\ufeff", asWindowsSrt(japaneseSrt)], { type: "text/plain;charset=utf-8" }));
-      setMessage({ kind: "notice", text: `긴 쉼을 기준으로 3~4줄씩 묶은 일본어 자막 ${cueCount}개를 저장했습니다.` });
+      downloadBlob(`${safeFileName(projectTitle)}_일본어_한줄자막.srt`, new Blob(["\ufeff", asWindowsSrt(japaneseSrt)], { type: "text/plain;charset=utf-8" }));
+      setMessage({ kind: "notice", text: `실제 음성의 긴 쉼과 의미 단위를 기준으로 나눈 한 줄 일본어 자막 ${cueCount}개를 저장했습니다.` });
     } catch (error) {
       setMessage({ kind: "error", text: error instanceof Error ? error.message : "AI 일본어 SRT 생성에 실패했습니다." });
     }
@@ -595,7 +595,7 @@ export default function JapanLongformVoicePage() {
     const name = safeFileName(projectTitle);
     await Promise.all([
       writeBlobToFolder(soundFolder, `${name}_최종TTS.wav`, audio),
-      writeBlobToFolder(soundFolder, `${name}_AI3-4줄_자막.srt`, new Blob(["\ufeff", asWindowsSrt(srt)], { type: "text/plain;charset=utf-8" })),
+      writeBlobToFolder(soundFolder, `${name}_일본어_한줄자막.srt`, new Blob(["\ufeff", asWindowsSrt(srt)], { type: "text/plain;charset=utf-8" })),
     ]);
     if (showSuccess) setMessage({ kind: "notice", text: `사운드 폴더에 Premiere용 ${name}_최종TTS.wav와 SRT를 저장했습니다.` });
   }

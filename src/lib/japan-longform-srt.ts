@@ -73,6 +73,98 @@ export function buildJapaneseCombinedSrt(segments: SubtitleSegment[]) {
   return blocks.join("\n\n");
 }
 
+function compactJapanese(value: string) {
+  return value.replace(/\s/gu, "");
+}
+
+function alignmentPauseAfterCharacter(alignment: SpeechAlignment, compactCharacterIndex: number, compactTextLength: number) {
+  const characters = alignment.characters || [];
+  const starts = alignment.character_start_times_seconds || [];
+  const ends = alignment.character_end_times_seconds || [];
+  const timedIndexes = characters.reduce<number[]>((result, character, index) => {
+    if (!/\s/u.test(character || "")) result.push(index);
+    return result;
+  }, []);
+  if (!timedIndexes.length || compactCharacterIndex <= 0 || compactCharacterIndex >= compactTextLength) return 0;
+  const before = timedIndexes[Math.min(timedIndexes.length - 1, compactCharacterIndex - 1)];
+  const after = timedIndexes[Math.min(timedIndexes.length - 1, compactCharacterIndex)];
+  return Math.max(0, Number(starts[after] || 0) - Number(ends[before] || 0));
+}
+
+export function refineJapaneseOneLineSubtitles(text: string, alignment: SpeechAlignment, semanticLines: string[]) {
+  const source = compactJapanese(text);
+  if (!source) return [];
+  const semanticBoundaries = new Set<number>();
+  let semanticCount = 0;
+  for (const line of semanticLines) {
+    semanticCount += compactJapanese(line).length;
+    semanticBoundaries.add(semanticCount);
+  }
+
+  const punctuation = /[。．、，,！？!?…：:；;]/u;
+  const sentenceEnd = /[。．！？!?…]/u;
+  const weakBoundary = /[はがをにへとでものやかねよてでばし]/u;
+  const quotePairs: Record<string, string> = { "「": "」", "『": "』", "“": "”", "\"": "\"" };
+  const lines: string[] = [];
+  let start = 0;
+
+  while (start < source.length) {
+    const remaining = source.length - start;
+    if (remaining <= 20) {
+      lines.push(source.slice(start));
+      break;
+    }
+
+    const openingQuote = source[start];
+    const closingQuote = quotePairs[openingQuote];
+    if (closingQuote) {
+      const quoteEnd = source.indexOf(closingQuote, start + 1);
+      const quoteLength = quoteEnd >= 0 ? quoteEnd - start + 1 : 0;
+      if (quoteLength > 0 && quoteLength <= 30) {
+        lines.push(source.slice(start, quoteEnd + 1));
+        start = quoteEnd + 1;
+        continue;
+      }
+    }
+
+    let earlyPunctuationBoundary = -1;
+    for (let boundary = start + 1; boundary <= Math.min(source.length, start + 20); boundary += 1) {
+      if (punctuation.test(source[boundary - 1])) {
+        earlyPunctuationBoundary = boundary;
+        break;
+      }
+    }
+    if (earlyPunctuationBoundary > start) {
+      lines.push(source.slice(start, earlyPunctuationBoundary));
+      start = earlyPunctuationBoundary;
+      continue;
+    }
+
+    const maximumLength = remaining > 20 && remaining - 20 < 10
+      ? Math.max(10, remaining - 10)
+      : 20;
+    let bestBoundary = start + Math.min(20, remaining);
+    let bestScore = Number.NEGATIVE_INFINITY;
+    for (let length = 10; length <= Math.min(maximumLength, remaining); length += 1) {
+      const boundary = start + length;
+      const previousCharacter = source[boundary - 1] || "";
+      const pause = alignmentPauseAfterCharacter(alignment, boundary, source.length);
+      const score = pause * 140
+        + (semanticBoundaries.has(boundary) ? 24 : 0)
+        + (sentenceEnd.test(previousCharacter) ? 40 : punctuation.test(previousCharacter) ? 28 : 0)
+        + (weakBoundary.test(previousCharacter) ? 5 : 0)
+        - Math.abs(18 - length) * 0.7;
+      if (score > bestScore) {
+        bestScore = score;
+        bestBoundary = boundary;
+      }
+    }
+    lines.push(source.slice(start, bestBoundary));
+    start = bestBoundary;
+  }
+  return lines.filter(Boolean);
+}
+
 export function buildJapaneseCombinedSrtFromLines(segments: SubtitleSegment[], linesBySegment: string[][]) {
   let offset = 0;
   let cueNumber = 1;
@@ -124,34 +216,16 @@ export function buildJapaneseCombinedSrtFromLines(segments: SubtitleSegment[], l
       const nextStart = index < lines.length - 1
         ? timingCount ? Number(starts[Math.min(timingCount - 1, nextBoundaryIndex)] ?? duration * endRatio) : duration * endRatio
         : duration;
-      return { line, cueStart, cueEnd: Math.min(duration, Math.max(cueStart + 0.05, cueEnd)), pauseAfter: Math.max(0, nextStart - cueEnd) };
+      return { line, cueStart, cueEnd: Math.min(duration, Math.max(cueStart + 0.05, cueEnd)), nextStart };
     });
 
-    const groups: Array<typeof timedLines> = [];
-    let lineIndex = 0;
-    while (lineIndex < timedLines.length) {
-      const remaining = timedLines.length - lineIndex;
-      if (remaining <= 4) {
-        groups.push(timedLines.slice(lineIndex));
-        break;
-      }
-      const candidates = [3, 4].filter((size) => remaining - size === 0 || remaining - size >= 3);
-      const groupSize = (candidates.length ? candidates : [3]).reduce((best, size) => {
-        const bestPause = timedLines[lineIndex + best - 1]?.pauseAfter ?? -1;
-        const candidatePause = timedLines[lineIndex + size - 1]?.pauseAfter ?? -1;
-        return candidatePause > bestPause ? size : best;
-      });
-      groups.push(timedLines.slice(lineIndex, lineIndex + groupSize));
-      lineIndex += groupSize;
-    }
-
-    for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
-      const group = groups[groupIndex];
-      const cueStart = group[0].cueStart;
-      const naturalEnd = group.at(-1)?.cueEnd ?? cueStart + 0.05;
-      const nextStart = groups[groupIndex + 1]?.[0].cueStart;
-      const cueEnd = nextStart === undefined ? naturalEnd : Math.min(naturalEnd, Math.max(cueStart + 0.001, nextStart - 0.001));
-      blocks.push(`${cueNumber}\n${formatSrtTime(offset + cueStart)} --> ${formatSrtTime(offset + cueEnd)}\n${group.map((item) => item.line).join("\n")}`);
+    for (let lineIndex = 0; lineIndex < timedLines.length; lineIndex += 1) {
+      const line = timedLines[lineIndex];
+      const nextCueStart = timedLines[lineIndex + 1]?.cueStart;
+      const cueEnd = nextCueStart === undefined
+        ? line.cueEnd
+        : Math.min(line.cueEnd, Math.max(line.cueStart + 0.001, nextCueStart - 0.001));
+      blocks.push(`${cueNumber}\n${formatSrtTime(offset + line.cueStart)} --> ${formatSrtTime(offset + cueEnd)}\n${line.line}`);
       cueNumber += 1;
     }
     offset += duration;
