@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import NextImage from "next/image";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Check, Copy, FileText, Film, FolderOpen, ImageIcon, Loader2, Save, Sparkles, Tags, Video, Volume2 } from "lucide-react";
+import { ArrowLeft, Check, Copy, ExternalLink, FileText, Film, FolderOpen, ImageIcon, Loader2, Save, Sparkles, Tags, Video, Volume2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getProjectFolderHandle, saveProjectFolderHandle, writeBlobToFolder } from "@/lib/project-folder";
 
@@ -18,6 +19,8 @@ type EditPackage = {
 };
 
 type VisualAsset = { id: string; asset_kind: "thumbnail" | "background" | "loop_video"; url: string; file_name: string };
+type StoryScene = { id: string; sort_order: number; scene_title: string };
+type SceneImage = { id: string; scene_id: string; sort_order: number; url: string; file_name: string };
 type WritableDirectoryHandle = FileSystemDirectoryHandle & { requestPermission: (options?: { mode?: "read" | "readwrite" }) => Promise<PermissionState> };
 type DirectoryPickerWindow = Window & { showDirectoryPicker?: (options?: { id?: string; mode?: "read" | "readwrite" }) => Promise<FileSystemDirectoryHandle> };
 
@@ -40,6 +43,8 @@ export default function JapanLongformPremierePage() {
   const [status, setStatus] = useState<EditPackage["status"]>("preparing");
   const [hasVoiceRun, setHasVoiceRun] = useState(false);
   const [assets, setAssets] = useState<VisualAsset[]>([]);
+  const [storyScenes, setStoryScenes] = useState<StoryScene[]>([]);
+  const [sceneImages, setSceneImages] = useState<SceneImage[]>([]);
   const [projectFolder, setProjectFolder] = useState<FileSystemDirectoryHandle | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -58,12 +63,19 @@ export default function JapanLongformPremierePage() {
       if (!active) return;
       if (!user) { setMessage({ kind: "error", text: "로그인이 필요합니다." }); setLoading(false); return; }
       setUserId(user.id);
-      const [projectResult, packageResult, voiceResult, assetsResult] = await Promise.all([
+      const [projectResult, packageResult, voiceResult, assetsResult, scenesResult] = await Promise.all([
         supabase.from("projects").select("title").eq("id", projectId).eq("production_type", "longform_japan").maybeSingle(),
         supabase.from("japan_longform_edit_packages").select("edit_notes, status, title_candidates, selected_title, youtube_description, youtube_tags, timeline_text").eq("project_id", projectId).maybeSingle(),
         supabase.from("japan_longform_voice_runs").select("id").eq("project_id", projectId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
         supabase.from("japan_longform_visual_assets").select("id, asset_kind, url, file_name").eq("project_id", projectId).in("asset_kind", ["thumbnail", "background", "loop_video"]).order("created_at", { ascending: false }),
+        supabase.from("japan_longform_story_scenes").select("id, sort_order, scene_title").eq("project_id", projectId).order("sort_order"),
       ]);
+      if (!active) return;
+      const loadedScenes = (scenesResult.data || []) as StoryScene[];
+      const sceneIds = loadedScenes.map((scene) => scene.id);
+      const sceneImagesResult = sceneIds.length
+        ? await supabase.from("japan_longform_scene_images").select("id, scene_id, sort_order, url, file_name").in("scene_id", sceneIds).order("sort_order").order("created_at")
+        : { data: [] as SceneImage[], error: null };
       if (!active) return;
       setProjectTitle(projectResult.data?.title || "일본 롱폼 프로젝트");
       if (packageResult.data) {
@@ -78,7 +90,9 @@ export default function JapanLongformPremierePage() {
       }
       setHasVoiceRun(Boolean(voiceResult.data));
       setAssets((assetsResult.data || []) as VisualAsset[]);
-      if (projectResult.error || packageResult.error || voiceResult.error || assetsResult.error) setMessage({ kind: "error", text: "Premiere 패키지 정보를 모두 불러오지 못했습니다. 최신 SQL 적용 여부를 확인해주세요." });
+      setStoryScenes(loadedScenes);
+      setSceneImages((sceneImagesResult.data || []) as SceneImage[]);
+      if (projectResult.error || packageResult.error || voiceResult.error || assetsResult.error || scenesResult.error || sceneImagesResult.error) setMessage({ kind: "error", text: "Premiere 패키지 정보를 모두 불러오지 못했습니다. 최신 SQL 적용 여부를 확인해주세요." });
       try { setProjectFolder(await getProjectFolderHandle(projectId)); } catch { /* IndexedDB 미지원 */ }
       setLoading(false);
     }
@@ -181,7 +195,11 @@ export default function JapanLongformPremierePage() {
 
     {message && <div className={`rounded-xl border px-4 py-3 text-sm font-semibold ${message.kind === "error" ? "border-red-200 bg-red-50 text-red-700" : "border-sky-200 bg-sky-50 text-sky-800"}`}>{message.text}</div>}
 
-    <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><AssetStatus icon={Volume2} label="최종 TTS · SRT" ready={hasVoiceRun} href={`/studio/longform-japan/projects/${projectId}/voice`} /><AssetStatus icon={ImageIcon} label="썸네일" ready={Boolean(thumbnail)} href={`/studio/longform-japan/projects/${projectId}/image`} /><AssetStatus icon={ImageIcon} label="어두운 배경" ready={Boolean(background)} href={`/studio/longform-japan/projects/${projectId}/image`} /><AssetStatus icon={Video} label="루프영상" ready={Boolean(loopVideo)} href={`/studio/longform-japan/projects/${projectId}/motion`} /></section>
+    <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><AssetStatus icon={Volume2} label="최종 TTS · SRT" ready={hasVoiceRun} href={`/studio/longform-japan/projects/${projectId}/voice`} /><AssetStatus icon={ImageIcon} label="썸네일" ready={Boolean(thumbnail)} href={`/studio/longform-japan/projects/${projectId}/image`} /><AssetStatus icon={ImageIcon} label="어두운 배경" ready={Boolean(background)} href={`/studio/longform-japan/projects/${projectId}/image`} /><AssetStatus icon={ImageIcon} label={`장면 이미지 ${sceneImages.length}장`} ready={sceneImages.length > 0} href={`/studio/longform-japan/projects/${projectId}/scenes`} /><AssetStatus icon={Video} label="루프영상" ready={Boolean(loopVideo)} href={`/studio/longform-japan/projects/${projectId}/motion`} /></section>
+
+    <section className="rounded-2xl border border-border bg-white p-5 shadow-sm sm:p-6"><div className="flex items-start justify-between gap-3"><div><h2 className="flex items-center gap-2 text-lg font-bold"><ImageIcon size={18} className="text-violet-700" /> 주요 장면 일러스트</h2><p className="mt-1 text-xs text-muted-foreground">장면 번호와 이미지 순번대로 Premiere에 사용할 이미지를 확인합니다.</p></div><Link href={`/studio/longform-japan/projects/${projectId}/scenes`} className="shrink-0 rounded-lg border border-border px-3 py-2 text-xs font-bold">이미지 관리</Link></div>
+      {sceneImages.length ? <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">{storyScenes.flatMap((scene, sceneIndex) => sceneImages.filter((image) => image.scene_id === scene.id).sort((a, b) => a.sort_order - b.sort_order).map((image, imageIndex) => <article key={image.id} className="overflow-hidden rounded-xl border border-border bg-stone-50"><div className="relative aspect-video bg-black"><NextImage src={image.url} alt={`${scene.scene_title} ${imageIndex + 1}번 이미지`} fill unoptimized sizes="240px" className="object-cover" /><span className="absolute left-1.5 top-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-bold text-white">{sceneIndex + 1}-{imageIndex + 1}</span></div><div className="flex items-center gap-2 p-2"><p className="min-w-0 flex-1 truncate text-xs font-bold" title={scene.scene_title}>{scene.scene_title}</p><a href={image.url} target="_blank" rel="noreferrer" aria-label={`${scene.scene_title} 원본 열기`} className="rounded-md border border-border bg-white p-1.5 text-muted-foreground hover:text-violet-700"><ExternalLink size={11} /></a></div></article>))}</div> : <div className="mt-5 rounded-xl border border-dashed border-border p-8 text-center"><p className="text-sm text-muted-foreground">저장된 주요 장면 이미지가 없습니다.</p><Link href={`/studio/longform-japan/projects/${projectId}/scenes`} className="mt-3 inline-flex rounded-lg bg-violet-700 px-3 py-2 text-xs font-bold text-white">장면 이미지 올리기</Link></div>}
+    </section>
 
     <section className="rounded-2xl border border-border bg-white p-5 shadow-sm sm:p-6"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h2 className="flex items-center gap-2 text-lg font-bold"><Sparkles size={18} className="text-sky-700" /> YouTube 업로드 정보</h2><p className="mt-1 text-xs text-muted-foreground">일본어 최종대본과 TTS 구간을 기준으로 생성하며 모든 내용은 직접 수정할 수 있습니다.</p></div><button onClick={generateMetadata} disabled={generating || !hasVoiceRun} className="inline-flex items-center justify-center gap-2 rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40">{generating ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />} {titles.length ? "AI로 다시 추천" : "AI 업로드 정보 생성"}</button></div>
 
