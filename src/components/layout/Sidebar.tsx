@@ -222,7 +222,7 @@ export function Sidebar() {
           <div className={`overflow-hidden transition-all duration-200 ${isJapanStudioOpen ? "max-h-[32rem] opacity-100" : "max-h-0 opacity-0"}`}>
             <div className="ml-4 space-y-0.5 border-l border-sidebar-border py-1 pl-3">
               {[
-                { key: "source", label: "원문수집", icon: ScanText, href: japanProjectId ? `/studio/longform-japan/projects/${japanProjectId}/source` : "/studio/longform-japan", needsProject: true },
+                { key: "source", label: "원문수집", icon: ScanText, href: "/studio/longform-japan/source", needsProject: false },
                 { key: "adapt", label: "각색", icon: WandSparkles, href: japanProjectId ? `/studio/longform-japan/projects/${japanProjectId}/adapt` : "/studio/longform-japan", needsProject: true },
                 { key: "script", label: "대본수정", icon: PenLine, href: japanProjectId ? `/studio/longform-japan/projects/${japanProjectId}/script` : "/studio/longform-japan", needsProject: true },
                 { key: "translate", label: "대본번역", icon: Languages, href: japanProjectId ? `/studio/longform-japan/projects/${japanProjectId}/translate` : "/studio/longform-japan", needsProject: true },

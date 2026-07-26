@@ -140,14 +140,6 @@ export default function LongformJapanStudioPage() {
   }, {});
   const categoryGroups = Object.entries(groups).sort(([a], [b]) => a === "미분류" ? 1 : b === "미분류" ? -1 : a.localeCompare(b, "ko"));
 
-  const openCreate = () => {
-    setEditingProject(null);
-    setFormTitle("");
-    setFormCategory("");
-    setFormMemo("");
-    setModalOpen(true);
-  };
-
   const openEdit = (project: Project) => {
     setEditingProject(project);
     setFormTitle(project.title);
@@ -205,7 +197,7 @@ export default function LongformJapanStudioPage() {
     <section className="rounded-3xl border border-border bg-white p-6 shadow-sm sm:p-8">
       <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div><div className="mb-3 inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700"><Languages size={14} /> 롱폼(일본)</div><h1 className="text-3xl font-bold tracking-tight">일본 롱폼 제작 스튜디오</h1><p className="mt-2 text-sm text-muted-foreground">한국어 원문부터 일본어 음성·영상·업로드까지 전용 흐름으로 관리합니다.</p></div>
-        <button type="button" onClick={openCreate} className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-olive px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-brand-olive-dark"><Plus size={16} /> 새 프로젝트</button>
+        <Link href="/studio/longform-japan/source" className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-olive px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-brand-olive-dark"><Plus size={16} /> 새 프로젝트</Link>
       </div>
     </section>
 
@@ -219,7 +211,7 @@ export default function LongformJapanStudioPage() {
     <div className="flex flex-wrap items-center justify-end gap-1.5"><span className="mr-1 text-[11px] font-bold text-muted-foreground">카드 정렬</span>{([{ key: "progress", label: "진행도순" }, { key: "name", label: "이름순" }, { key: "updated", label: "수정순" }] as const).map((item) => { const active = sort.key === item.key; const DirectionIcon = sort.direction === "asc" ? ArrowUp : ArrowDown; return <button key={item.key} type="button" onClick={() => setSort((current) => current.key === item.key ? { ...current, direction: current.direction === "asc" ? "desc" : "asc" } : { key: item.key, direction: item.key === "name" ? "asc" : "desc" })} className={`inline-flex h-8 items-center gap-1 rounded-lg border px-2.5 text-xs font-bold ${active ? "border-brand-olive bg-brand-cream text-brand-olive-dark" : "border-border bg-white text-muted-foreground"}`}>{item.label}{active && <DirectionIcon size={12} />}</button>; })}</div>
 
     {loading ? <div className="flex min-h-64 items-center justify-center rounded-2xl border border-border bg-white"><Loader2 className="animate-spin text-brand-olive" /></div>
-      : currentProjects.length === 0 ? <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-white px-6 text-center"><Languages size={35} className="text-muted-foreground/40" /><p className="mt-3 font-bold">표시할 일본 롱폼 프로젝트가 없습니다</p><p className="mt-1 text-sm text-muted-foreground">새 프로젝트를 만들어 첫 제작을 시작하세요.</p></div>
+      : currentProjects.length === 0 ? <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-white px-6 text-center"><Languages size={35} className="text-muted-foreground/40" /><p className="mt-3 font-bold">표시할 일본 롱폼 프로젝트가 없습니다</p><p className="mt-1 text-sm text-muted-foreground">원문을 준비해 새 프로젝트를 시작하세요.</p><Link href="/studio/longform-japan/source" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-brand-olive px-4 py-2.5 text-sm font-bold text-white"><Plus size={15} /> 원문수집에서 만들기</Link></div>
         : <div className="space-y-8">{categoryGroups.map(([category, categoryProjects]) => <section key={category}><div className="mb-3 flex items-center gap-2 px-1"><FolderKanban size={17} className="text-sky-700" /><h2 className="font-bold">{category}</h2><span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-bold text-muted-foreground shadow-sm">{categoryProjects.length}</span></div><div className="grid gap-3 md:grid-cols-3">{categoryProjects.map((project) => <ProjectCard key={project.id} project={project} onEdit={() => openEdit(project)} onDelete={() => deleteProject(project)} />)}</div></section>)}</div>}
 
     {modalOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setModalOpen(false); }}><div role="dialog" aria-modal="true" className="w-full max-w-md rounded-3xl border border-border bg-white shadow-2xl"><div className="flex items-center justify-between border-b border-border px-6 py-4"><h2 className="flex items-center gap-2 font-bold"><Languages size={18} className="text-sky-700" />{editingProject ? "프로젝트 편집" : "일본 롱폼 프로젝트 만들기"}</h2><button type="button" onClick={() => setModalOpen(false)} className="rounded-lg p-2 text-muted-foreground hover:bg-muted"><X size={17} /></button></div><form onSubmit={saveProject} className="space-y-4 p-6">

@@ -57,13 +57,20 @@ ${segments.map((segment) => `<section id="${segment.id}">\n${segment.text}\n</se
     try { parsed = JSON.parse(response.text || "") as AiResult; }
     catch { return NextResponse.json({ error: "AI 자막 줄바꿈 결과를 읽지 못했습니다." }, { status: 502 }); }
     const byId = new Map((parsed.sections || []).map((section) => [section.id, section.lines]));
+    const fallbackSegments: number[] = [];
     const linesBySegment = segments.map((segment) => {
       const semanticLines = (byId.get(segment.id) || [])
         .flatMap((value) => String(value).split(/\r?\n/))
         .map((line) => line.trim())
         .filter(Boolean);
-      if (!semanticLines.length || compact(semanticLines.join("")) !== compact(segment.text)) throw new Error(`${segment.sort_order + 1}번 구간에서 AI가 원문을 변경했습니다. 다시 시도해주세요.`);
-      return refineJapaneseOneLineSubtitles(segment.text, segment.alignment, semanticLines);
+      const preservesOriginal = semanticLines.length > 0
+        && compact(semanticLines.join("")) === compact(segment.text);
+      if (!preservesOriginal) fallbackSegments.push(segment.sort_order + 1);
+      return refineJapaneseOneLineSubtitles(
+        segment.text,
+        segment.alignment,
+        preservesOriginal ? semanticLines : [],
+      );
     });
     const combinedSrt = buildJapaneseCombinedSrtFromLines(segments, linesBySegment);
     const segmentUpdates = segments.map((segment, index) => {
@@ -73,7 +80,14 @@ ${segments.map((segment) => `<section id="${segment.id}">\n${segment.text}\n</se
     await Promise.all(segmentUpdates);
     const { data: run } = await supabase.from("japan_longform_voice_runs").select("id").eq("project_id", projectId).eq("user_id", user.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (run) await supabase.from("japan_longform_voice_runs").update({ combined_subtitle_srt: combinedSrt }).eq("id", run.id).eq("user_id", user.id);
-    return NextResponse.json({ srt: combinedSrt, linesBySegment });
+    return NextResponse.json({
+      srt: combinedSrt,
+      linesBySegment,
+      fallbackSegments,
+      warning: fallbackSegments.length
+        ? `${fallbackSegments.join(", ")}번 구간은 AI가 원문을 바꿔 원문 보존 방식으로 자동 분할했습니다.`
+        : undefined,
+    });
   } catch (error) {
     console.error("Japan longform subtitle formatting error:", error);
     return NextResponse.json({ error: error instanceof Error ? error.message : "AI 일본어 자막 생성 중 오류가 발생했습니다." }, { status: 500 });

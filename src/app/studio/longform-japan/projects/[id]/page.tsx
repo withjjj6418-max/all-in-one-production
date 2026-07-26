@@ -23,7 +23,7 @@ type StageCard = {
 };
 
 const stageCards: StageCard[] = [
-  { key: "source", title: "한국 원문 수집", description: "한국 YouTube 주소에서 자막을 가져오거나 원문을 직접 붙여넣습니다.", action: "원문 수집 열기", icon: ScanText },
+  { key: "source", title: "저장 원문 확인 · 수정", description: "이 프로젝트를 만들 때 저장한 한국어 원문을 확인하거나 수정합니다.", action: "저장 원문 열기", icon: ScanText },
   { key: "adapt", title: "Claude 한국어 각색", description: "15~20분 분량의 한국어 이야기로 각색하고 결과를 보관합니다.", action: "각색 열기", icon: Sparkles },
   { key: "script", title: "한국어 대본 수정", description: "번역 전에 사건 흐름과 문장을 최종 확정합니다.", action: "대본 수정 열기", icon: FilePenLine },
   { key: "translate", title: "일본어 번역 · 검수", description: "Claude 1차 번역과 GPT 2차 검수 결과를 비교하고 확정합니다.", action: "번역 열기", icon: Languages },
