@@ -6,13 +6,13 @@ import NextImage from "next/image";
 import { useParams } from "next/navigation";
 import { ArrowLeft, Check, Copy, ExternalLink, FileText, Film, FolderOpen, ImageIcon, Languages, Loader2, Save, Sparkles, Tags, Video, Volume2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { buildBilingualTimeline, formatEditorTimecode } from "@/lib/japan-longform-bilingual";
 import { getProjectFolderHandle, saveProjectFolderHandle, writeBlobToFolder } from "@/lib/project-folder";
 
 type EditPackage = {
   edit_notes: string;
   status: "preparing" | "ready" | "done";
   title_candidates: unknown;
-  title_translations: unknown;
   selected_title: string;
   youtube_description: string;
   youtube_tags: string[];
@@ -22,13 +22,18 @@ type EditPackage = {
 type VisualAsset = { id: string; asset_kind: "thumbnail" | "background" | "loop_video"; url: string; file_name: string };
 type StoryScene = { id: string; sort_order: number; scene_title: string; insertion_seconds: number };
 type SceneImage = { id: string; scene_id: string; sort_order: number; url: string; file_name: string };
-type BilingualPair = { japanese: string; korean: string; timecode: string | null };
-type SrtCue = { startSeconds: number; text: string };
 type WritableDirectoryHandle = FileSystemDirectoryHandle & { requestPermission: (options?: { mode?: "read" | "readwrite" }) => Promise<PermissionState> };
 type DirectoryPickerWindow = Window & { showDirectoryPicker?: (options?: { id?: string; mode?: "read" | "readwrite" }) => Promise<FileSystemDirectoryHandle> };
 
-function stringArray(value: unknown) {
-  return Array.isArray(value) ? value.map(String).filter(Boolean) : [];
+function titleCandidateArrays(value: unknown) {
+  if (!Array.isArray(value)) return { titles: [] as string[], translations: [] as string[] };
+  const candidates = value.map((item) => {
+    if (typeof item === "string") return { japanese: item.trim(), korean: "" };
+    if (!item || typeof item !== "object") return { japanese: "", korean: "" };
+    const row = item as { japanese?: unknown; korean?: unknown };
+    return { japanese: String(row.japanese || "").trim(), korean: String(row.korean || "").trim() };
+  }).filter((item) => item.japanese);
+  return { titles: candidates.map((item) => item.japanese), translations: candidates.map((item) => item.korean) };
 }
 
 function formatSceneTimecode(totalSeconds: number) {
@@ -41,63 +46,6 @@ function formatSceneTimecode(totalSeconds: number) {
   return [hours, minutes, seconds, hundredths]
     .map((part) => String(part).padStart(2, "0"))
     .join(":");
-}
-
-function parseBilingualReview(value: string) {
-  const pairs: Array<{ japanese: string; korean: string }> = [];
-  let japanese = "";
-  for (const rawLine of value.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    const japaneseMatch = line.match(/^(?:JP|일본어)\s*[｜|:：]\s*(.+)$/i);
-    const koreanMatch = line.match(/^(?:KO|KR|한국어)\s*[｜|:：]\s*(.+)$/i);
-    if (japaneseMatch) {
-      japanese = japaneseMatch[1].trim();
-    } else if (koreanMatch && japanese) {
-      pairs.push({ japanese, korean: koreanMatch[1].trim() });
-      japanese = "";
-    }
-  }
-  return pairs;
-}
-
-function parseSrt(value: string): SrtCue[] {
-  return value.trim().split(/\r?\n\r?\n+/).flatMap((block) => {
-    const lines = block.split(/\r?\n/);
-    const timingIndex = lines.findIndex((line) => line.includes("-->"));
-    if (timingIndex < 0) return [];
-    const match = lines[timingIndex].match(/(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->/);
-    if (!match) return [];
-    const startSeconds = Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]) + Number(match[4]) / 1000;
-    const text = lines.slice(timingIndex + 1).join("").trim();
-    return text ? [{ startSeconds, text }] : [];
-  });
-}
-
-function normalizeJapanese(value: string) {
-  return value.normalize("NFKC").replace(/[\s。、，．！？!?,「」『』（）()[\]【】…・：:；;"'—―ー-]/g, "");
-}
-
-function buildBilingualTimeline(reviewText: string, srt: string): BilingualPair[] {
-  const pairs = parseBilingualReview(reviewText);
-  const cues = parseSrt(srt);
-  if (!cues.length) return pairs.map((pair) => ({ ...pair, timecode: null }));
-  const normalizedCues = cues.map((cue) => normalizeJapanese(cue.text));
-  const cueOffsets: number[] = [];
-  let joined = "";
-  for (const text of normalizedCues) {
-    cueOffsets.push(joined.length);
-    joined += text;
-  }
-  let searchOffset = 0;
-  return pairs.map((pair) => {
-    const target = normalizeJapanese(pair.japanese);
-    let foundAt = target ? joined.indexOf(target, searchOffset) : -1;
-    if (foundAt < 0 && target.length >= 8) foundAt = joined.indexOf(target.slice(0, Math.min(16, target.length)), searchOffset);
-    if (foundAt < 0) return { ...pair, timecode: null };
-    const cueIndex = Math.max(0, cueOffsets.findLastIndex((offset) => offset <= foundAt));
-    searchOffset = foundAt + Math.max(1, target.length);
-    return { ...pair, timecode: formatSceneTimecode(cues[cueIndex].startSeconds) };
-  });
 }
 
 export default function JapanLongformPremierePage() {
@@ -144,7 +92,7 @@ export default function JapanLongformPremierePage() {
       setUserId(user.id);
       const [projectResult, packageResult, voiceResult, assetsResult, scenesResult, scriptResult] = await Promise.all([
         supabase.from("projects").select("title").eq("id", projectId).eq("production_type", "longform_japan").maybeSingle(),
-        supabase.from("japan_longform_edit_packages").select("edit_notes, status, title_candidates, title_translations, selected_title, youtube_description, youtube_tags, timeline_text").eq("project_id", projectId).maybeSingle(),
+        supabase.from("japan_longform_edit_packages").select("edit_notes, status, title_candidates, selected_title, youtube_description, youtube_tags, timeline_text").eq("project_id", projectId).maybeSingle(),
         supabase.from("japan_longform_voice_runs").select("id, combined_subtitle_srt").eq("project_id", projectId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
         supabase.from("japan_longform_visual_assets").select("id, asset_kind, url, file_name").eq("project_id", projectId).in("asset_kind", ["thumbnail", "background", "loop_video"]).order("created_at", { ascending: false }),
         supabase.from("japan_longform_story_scenes").select("id, sort_order, scene_title, insertion_seconds").eq("project_id", projectId).order("sort_order"),
@@ -160,8 +108,9 @@ export default function JapanLongformPremierePage() {
       setProjectTitle(projectResult.data?.title || "일본 롱폼 프로젝트");
       if (packageResult.data) {
         const record = packageResult.data as EditPackage;
-        setTitles(stringArray(record.title_candidates));
-        setTitleTranslations(stringArray(record.title_translations));
+        const savedTitles = titleCandidateArrays(record.title_candidates);
+        setTitles(savedTitles.titles);
+        setTitleTranslations(savedTitles.translations);
         setSelectedTitle(record.selected_title || "");
         setDescription(record.youtube_description || "");
         setTags(record.youtube_tags || []);
@@ -189,8 +138,10 @@ export default function JapanLongformPremierePage() {
       user_id: userId,
       edit_notes: editNotes,
       status: overrides?.status ?? status,
-      title_candidates: overrides?.titles ?? titles,
-      title_translations: overrides?.titleTranslations ?? titleTranslations,
+      title_candidates: (overrides?.titles ?? titles).map((title, index) => ({
+        japanese: title,
+        korean: (overrides?.titleTranslations ?? titleTranslations)[index] || "",
+      })),
       selected_title: overrides?.selectedTitle ?? selectedTitle.trim(),
       youtube_description: overrides?.description ?? description.trim(),
       youtube_tags: overrides?.tags ?? tags,
@@ -288,7 +239,7 @@ export default function JapanLongformPremierePage() {
 
     <section className="rounded-2xl border border-violet-200 bg-white p-5 shadow-sm sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h2 className="flex items-center gap-2 text-lg font-bold"><Languages size={18} className="text-violet-700" /> 편집용 한일 대조 대본</h2><p className="mt-1 text-xs text-muted-foreground">최종 일본어 SRT에서 문장을 찾아 실제 시작 시간과 한국어 해석을 함께 표시합니다.</p></div><Link href={`/studio/longform-japan/projects/${projectId}/translate`} className="shrink-0 rounded-lg border border-border px-3 py-2 text-xs font-bold">대조 대본 수정</Link></div>
-      {bilingualTimeline.length ? <div className="mt-5 max-h-[720px] space-y-1 overflow-y-auto rounded-xl border border-border bg-stone-50 p-3">{bilingualTimeline.map((pair, index) => <article key={`${index}-${pair.japanese}`} className="grid gap-1 rounded-lg bg-white p-3 sm:grid-cols-[92px_minmax(0,1fr)]"><span className={`font-mono text-[11px] font-bold ${pair.timecode ? "text-sky-700" : "text-amber-600"}`}>{pair.timecode || "시간 미확인"}</span><div className="min-w-0"><p className="text-sm font-semibold leading-6 text-foreground"><span className="mr-2 text-[10px] font-bold text-violet-600">JP</span>{pair.japanese}</p><p className="mt-1 text-sm leading-6 text-muted-foreground"><span className="mr-2 text-[10px] font-bold text-emerald-700">KO</span>{pair.korean}</p></div></article>)}</div> : <div className="mt-5 rounded-xl border border-dashed border-border p-8 text-center"><p className="text-sm text-muted-foreground">저장된 한일 대조 대본이 없습니다.</p><Link href={`/studio/longform-japan/projects/${projectId}/translate`} className="mt-3 inline-flex rounded-lg bg-violet-700 px-3 py-2 text-xs font-bold text-white">대본번역에서 만들기</Link></div>}
+      {bilingualTimeline.length ? <div className="mt-5 max-h-[720px] space-y-1 overflow-y-auto rounded-xl border border-border bg-stone-50 p-3">{bilingualTimeline.map((pair, index) => <article key={`${index}-${pair.japanese}`} className="grid gap-1 rounded-lg bg-white p-3 sm:grid-cols-[92px_minmax(0,1fr)]"><span className={`font-mono text-[11px] font-bold ${pair.startSeconds !== null ? "text-sky-700" : "text-amber-600"}`}>{pair.startSeconds !== null ? formatEditorTimecode(pair.startSeconds) : "시간 미확인"}</span><div className="min-w-0"><p className="text-sm font-semibold leading-6 text-foreground">{pair.japanese}</p><p className="mt-1 text-sm leading-6 text-muted-foreground">{pair.korean}</p></div></article>)}</div> : <div className="mt-5 rounded-xl border border-dashed border-border p-8 text-center"><p className="text-sm text-muted-foreground">저장된 한일 대조 대본이 없습니다.</p><Link href={`/studio/longform-japan/projects/${projectId}/translate`} className="mt-3 inline-flex rounded-lg bg-violet-700 px-3 py-2 text-xs font-bold text-white">대본번역에서 만들기</Link></div>}
     </section>
 
     <section className="rounded-2xl border border-border bg-white p-5 shadow-sm sm:p-6"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h2 className="flex items-center gap-2 text-lg font-bold"><Sparkles size={18} className="text-sky-700" /> YouTube 업로드 정보</h2><p className="mt-1 text-xs text-muted-foreground">일본어 최종대본과 TTS 구간을 기준으로 생성하며 모든 내용은 직접 수정할 수 있습니다.</p></div><button onClick={generateMetadata} disabled={generating || !hasVoiceRun} className="inline-flex items-center justify-center gap-2 rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40">{generating ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />} {titles.length ? "AI로 다시 추천" : "AI 업로드 정보 생성"}</button></div>
@@ -306,7 +257,7 @@ export default function JapanLongformPremierePage() {
 
     <section className="flex flex-col gap-3 rounded-2xl border border-border bg-white p-4 shadow-sm sm:flex-row sm:items-center"><FolderOpen size={19} className="shrink-0 text-sky-700" /><div className="min-w-0 flex-1"><p className="text-sm font-bold">업로드 정보 로컬 보관</p><p className="mt-1 truncate text-xs text-muted-foreground">{projectFolder ? `${projectFolder.name} / 업로드 / YouTube_업로드정보.txt` : "프로젝트 폴더를 연결하면 업로드 정보도 TXT로 보관할 수 있습니다."}</p></div><button onClick={connectProjectFolder} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-bold"><FolderOpen size={13} /> {projectFolder ? "폴더 변경" : "폴더 연결"}</button><button onClick={saveUploadInfoFile} disabled={!projectFolder || !selectedTitle.trim() || savingFile} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">{savingFile ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />} TXT 저장</button></section>
 
-    {timeline && <details className="rounded-2xl border border-border bg-white p-4 text-sm shadow-sm"><summary className="cursor-pointer font-bold">TTS 기준 자동 타임라인 확인</summary><pre className="mt-3 whitespace-pre-wrap rounded-xl bg-stone-50 p-4 text-xs leading-6">{timeline}</pre></details>}
+    {timeline && <details className="rounded-2xl border border-border bg-white p-4 text-sm shadow-sm"><summary className="cursor-pointer font-bold">한일 대조 대본 · 최종 SRT 기준 타임라인 확인</summary><pre className="mt-3 whitespace-pre-wrap rounded-xl bg-stone-50 p-4 text-xs leading-6">{timeline}</pre></details>}
   </div>;
 }
 
