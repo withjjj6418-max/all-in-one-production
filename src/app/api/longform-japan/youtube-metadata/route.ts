@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 export const maxDuration = 120;
 
 type Segment = { section_title: string; audio_duration: number | null };
-type MetadataResult = { titles?: string[]; introduction?: string; call_to_action?: string; tags?: string[] };
+type MetadataResult = { titles?: string[]; title_translations?: string[]; introduction?: string; call_to_action?: string; tags?: string[] };
 
 function timestamp(totalSeconds: number) {
   const seconds = Math.max(0, Math.floor(totalSeconds));
@@ -56,13 +56,14 @@ Create upload metadata from the Japanese script below.
 Requirements:
 - Write everything in natural Japanese for a Japanese audience.
 - Return exactly 3 compelling but truthful title candidates. Each title should be concise, distinct, searchable, and avoid unsupported clickbait.
+- Return exactly 3 natural Korean translations in title_translations, matching the title candidates in the same order. These are editor references, not additional title suggestions.
 - The introduction should be 2–3 short paragraphs that introduce this specific story while evoking the pale-study archive concept. Do not spoil the ending.
 - Write one restrained call-to-action asking viewers to subscribe and like the video, matching the quiet eerie channel voice.
 - Return exactly 15 unique YouTube search tags highly relevant to Japanese horror, kaidan, mystery narration, and this specific story. Tags must not contain # symbols and must not claim guaranteed ranking.
 - Do not include the timeline inside introduction or call_to_action; the server will append exact timestamps.
 
 Return JSON only:
-{"titles":["...","...","..."],"introduction":"...","call_to_action":"...","tags":["...15 items..."]}
+{"titles":["...","...","..."],"title_translations":["한국어 번역","한국어 번역","한국어 번역"],"introduction":"...","call_to_action":"...","tags":["...15 items..."]}
 
 Current project title: ${project.title}
 Exact timeline section names:
@@ -77,12 +78,13 @@ ${japaneseScript.slice(0, 26000)}`;
     try { result = JSON.parse(response.text || "") as MetadataResult; }
     catch { return NextResponse.json({ error: "AI 업로드 정보 결과를 읽지 못했습니다." }, { status: 502 }); }
     const titles = (result.titles || []).map((item) => String(item).trim()).filter(Boolean).slice(0, 3);
+    const titleTranslations = (result.title_translations || []).map((item) => String(item).trim()).filter(Boolean).slice(0, 3);
     const tags = [...new Set((result.tags || []).map((item) => String(item).replace(/^#+/, "").trim()).filter(Boolean))].slice(0, 15);
     const introduction = result.introduction?.trim() || "";
     const callToAction = result.call_to_action?.trim() || "";
-    if (titles.length !== 3 || tags.length !== 15 || !introduction || !callToAction) return NextResponse.json({ error: "AI가 제목·설명·태그를 모두 만들지 못했습니다. 다시 시도해주세요." }, { status: 502 });
+    if (titles.length !== 3 || titleTranslations.length !== 3 || tags.length !== 15 || !introduction || !callToAction) return NextResponse.json({ error: "AI가 제목·한국어 번역·설명·태그를 모두 만들지 못했습니다. 다시 시도해주세요." }, { status: 502 });
     const description = `${introduction}\n\n${callToAction}\n\n【目次】\n${timeline}`;
-    return NextResponse.json({ titles, description, tags, timeline });
+    return NextResponse.json({ titles, titleTranslations, description, tags, timeline });
   } catch (error) {
     console.error("Japan longform YouTube metadata error:", error);
     return NextResponse.json({ error: "YouTube 업로드 정보 생성 중 오류가 발생했습니다." }, { status: 500 });

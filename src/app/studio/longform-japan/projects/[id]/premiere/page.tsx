@@ -12,6 +12,7 @@ type EditPackage = {
   edit_notes: string;
   status: "preparing" | "ready" | "done";
   title_candidates: unknown;
+  title_translations: unknown;
   selected_title: string;
   youtube_description: string;
   youtube_tags: string[];
@@ -106,6 +107,7 @@ export default function JapanLongformPremierePage() {
   const [userId, setUserId] = useState("");
   const [projectTitle, setProjectTitle] = useState("");
   const [titles, setTitles] = useState<string[]>([]);
+  const [titleTranslations, setTitleTranslations] = useState<string[]>([]);
   const [selectedTitle, setSelectedTitle] = useState("");
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState<string[]>([]);
@@ -142,7 +144,7 @@ export default function JapanLongformPremierePage() {
       setUserId(user.id);
       const [projectResult, packageResult, voiceResult, assetsResult, scenesResult, scriptResult] = await Promise.all([
         supabase.from("projects").select("title").eq("id", projectId).eq("production_type", "longform_japan").maybeSingle(),
-        supabase.from("japan_longform_edit_packages").select("edit_notes, status, title_candidates, selected_title, youtube_description, youtube_tags, timeline_text").eq("project_id", projectId).maybeSingle(),
+        supabase.from("japan_longform_edit_packages").select("edit_notes, status, title_candidates, title_translations, selected_title, youtube_description, youtube_tags, timeline_text").eq("project_id", projectId).maybeSingle(),
         supabase.from("japan_longform_voice_runs").select("id, combined_subtitle_srt").eq("project_id", projectId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
         supabase.from("japan_longform_visual_assets").select("id, asset_kind, url, file_name").eq("project_id", projectId).in("asset_kind", ["thumbnail", "background", "loop_video"]).order("created_at", { ascending: false }),
         supabase.from("japan_longform_story_scenes").select("id, sort_order, scene_title, insertion_seconds").eq("project_id", projectId).order("sort_order"),
@@ -159,6 +161,7 @@ export default function JapanLongformPremierePage() {
       if (packageResult.data) {
         const record = packageResult.data as EditPackage;
         setTitles(stringArray(record.title_candidates));
+        setTitleTranslations(stringArray(record.title_translations));
         setSelectedTitle(record.selected_title || "");
         setDescription(record.youtube_description || "");
         setTags(record.youtube_tags || []);
@@ -180,13 +183,14 @@ export default function JapanLongformPremierePage() {
     return () => { active = false; };
   }, [projectId, supabase]);
 
-  function packageValues(overrides?: Partial<{ titles: string[]; selectedTitle: string; description: string; tags: string[]; timeline: string; status: EditPackage["status"] }>) {
+  function packageValues(overrides?: Partial<{ titles: string[]; titleTranslations: string[]; selectedTitle: string; description: string; tags: string[]; timeline: string; status: EditPackage["status"] }>) {
     return {
       project_id: projectId,
       user_id: userId,
       edit_notes: editNotes,
       status: overrides?.status ?? status,
       title_candidates: overrides?.titles ?? titles,
+      title_translations: overrides?.titleTranslations ?? titleTranslations,
       selected_title: overrides?.selectedTitle ?? selectedTitle.trim(),
       youtube_description: overrides?.description ?? description.trim(),
       youtube_tags: overrides?.tags ?? tags,
@@ -200,15 +204,16 @@ export default function JapanLongformPremierePage() {
     setMessage(null);
     try {
       const response = await fetch("/api/longform-japan/youtube-metadata", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId }) });
-      const result = await response.json() as { titles?: string[]; description?: string; tags?: string[]; timeline?: string; error?: string };
-      if (!response.ok || !result.titles || !result.description || !result.tags || !result.timeline) throw new Error(result.error || "업로드 정보를 만들지 못했습니다.");
+      const result = await response.json() as { titles?: string[]; titleTranslations?: string[]; description?: string; tags?: string[]; timeline?: string; error?: string };
+      if (!response.ok || !result.titles || !result.titleTranslations || !result.description || !result.tags || !result.timeline) throw new Error(result.error || "업로드 정보를 만들지 못했습니다.");
       const nextSelected = result.titles[0] || "";
       const { error } = await supabase.from("japan_longform_edit_packages").upsert({
-        ...packageValues({ titles: result.titles, selectedTitle: nextSelected, description: result.description, tags: result.tags, timeline: result.timeline }),
+        ...packageValues({ titles: result.titles, titleTranslations: result.titleTranslations, selectedTitle: nextSelected, description: result.description, tags: result.tags, timeline: result.timeline }),
         metadata_generated_at: new Date().toISOString(),
       }, { onConflict: "project_id" });
       if (error) throw error;
       setTitles(result.titles);
+      setTitleTranslations(result.titleTranslations);
       setSelectedTitle(nextSelected);
       setDescription(result.description);
       setTags(result.tags);
@@ -288,7 +293,7 @@ export default function JapanLongformPremierePage() {
 
     <section className="rounded-2xl border border-border bg-white p-5 shadow-sm sm:p-6"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h2 className="flex items-center gap-2 text-lg font-bold"><Sparkles size={18} className="text-sky-700" /> YouTube 업로드 정보</h2><p className="mt-1 text-xs text-muted-foreground">일본어 최종대본과 TTS 구간을 기준으로 생성하며 모든 내용은 직접 수정할 수 있습니다.</p></div><button onClick={generateMetadata} disabled={generating || !hasVoiceRun} className="inline-flex items-center justify-center gap-2 rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40">{generating ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />} {titles.length ? "AI로 다시 추천" : "AI 업로드 정보 생성"}</button></div>
 
-      <div className="mt-6 space-y-5"><div><label className="text-sm font-bold">AI 추천 제목 3개</label><div className="mt-2 grid gap-2">{titles.length ? titles.map((title, index) => <button key={`${title}-${index}`} type="button" onClick={() => setSelectedTitle(title)} className={`flex items-start gap-3 rounded-xl border p-3 text-left text-sm ${selectedTitle === title ? "border-sky-500 bg-sky-50" : "border-border hover:border-sky-200"}`}><span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${selectedTitle === title ? "bg-sky-700 text-white" : "bg-muted text-muted-foreground"}`}>{index + 1}</span><span className="font-semibold leading-6">{title}</span></button>) : <p className="rounded-xl bg-stone-50 p-4 text-sm text-muted-foreground">아직 추천 제목이 없습니다.</p>}</div><label className="mt-3 block text-xs font-bold text-muted-foreground">최종 선택 제목</label><input value={selectedTitle} onChange={(event) => setSelectedTitle(event.target.value)} placeholder="최종 업로드 제목" className="mt-1 w-full rounded-xl border border-border px-3 py-2.5 text-sm outline-none focus:border-sky-500" /></div>
+      <div className="mt-6 space-y-5"><div><label className="text-sm font-bold">AI 추천 제목 3개</label><div className="mt-2 grid gap-2">{titles.length ? titles.map((title, index) => <button key={`${title}-${index}`} type="button" onClick={() => setSelectedTitle(title)} className={`flex items-start gap-3 rounded-xl border p-3 text-left text-sm ${selectedTitle === title ? "border-sky-500 bg-sky-50" : "border-border hover:border-sky-200"}`}><span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${selectedTitle === title ? "bg-sky-700 text-white" : "bg-muted text-muted-foreground"}`}>{index + 1}</span><span className="min-w-0"><span className="block font-semibold leading-6">{title}</span>{titleTranslations[index] && <span className="mt-1 block text-xs leading-5 text-muted-foreground">{titleTranslations[index]}</span>}</span></button>) : <p className="rounded-xl bg-stone-50 p-4 text-sm text-muted-foreground">아직 추천 제목이 없습니다.</p>}</div><label className="mt-3 block text-xs font-bold text-muted-foreground">최종 선택 제목</label><input value={selectedTitle} onChange={(event) => setSelectedTitle(event.target.value)} placeholder="최종 업로드 제목" className="mt-1 w-full rounded-xl border border-border px-3 py-2.5 text-sm outline-none focus:border-sky-500" /></div>
 
         <div><div className="flex items-center justify-between"><label className="text-sm font-bold">설명 · 구독 요청 · 타임라인</label><span className="text-xs text-muted-foreground">{description.length.toLocaleString()}자</span></div><textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="영상 내용 소개와 타임라인이 여기에 생성됩니다." className="mt-2 min-h-80 w-full resize-y rounded-xl border border-border bg-stone-50 p-4 text-sm leading-7 outline-none focus:border-sky-500" /></div>
 
