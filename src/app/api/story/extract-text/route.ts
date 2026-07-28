@@ -15,10 +15,10 @@ export async function POST(request: Request) {
     if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
     const body = await request.json() as ExtractRequest;
-    const projectId = Number(body.projectId);
+    const projectId = body.projectId == null ? null : Number(body.projectId);
     const images = body.images ?? [];
-    if (!Number.isInteger(projectId) || projectId <= 0 || images.length < 1 || images.length > 10) {
-      return NextResponse.json({ error: "프로젝트와 1~10장의 캡처 이미지가 필요합니다." }, { status: 400 });
+    if ((projectId !== null && (!Number.isInteger(projectId) || projectId <= 0)) || images.length < 1 || images.length > 10) {
+      return NextResponse.json({ error: "1~10장의 캡처 이미지가 필요합니다." }, { status: 400 });
     }
 
     const parsed = images.map((image) => image.match(supportedImage));
@@ -30,8 +30,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "캡처 이미지 전체 용량이 너무 큽니다." }, { status: 413 });
     }
 
-    const { data: project } = await supabase.from("projects").select("id").eq("id", projectId).eq("user_id", user.id).maybeSingle();
-    if (!project) return NextResponse.json({ error: "프로젝트 접근 권한이 없습니다." }, { status: 403 });
+    if (projectId !== null) {
+      const { data: project } = await supabase.from("projects").select("id").eq("id", projectId).eq("user_id", user.id).maybeSingle();
+      if (!project) return NextResponse.json({ error: "프로젝트 접근 권한이 없습니다." }, { status: 403 });
+    }
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) return NextResponse.json({ error: "캡처 글자 추출에는 GEMINI_API_KEY 설정이 필요합니다." }, { status: 503 });

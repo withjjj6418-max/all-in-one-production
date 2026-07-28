@@ -153,17 +153,6 @@ export default function StoryStudioPage() {
     setFormUploaded(isUploaded(project));
   };
 
-  const openCreateModal = () => {
-    setEditingProject(null);
-    setCreatingProject(true);
-    setFormCategory("");
-    setFormTitle("");
-    setFormStage("시작 전");
-    setFormMemo("");
-    setFormWorkComplete(false);
-    setFormUploaded(false);
-  };
-
   const closeProjectModal = () => {
     setEditingProject(null);
     setCreatingProject(false);
@@ -224,7 +213,7 @@ export default function StoryStudioPage() {
   };
 
   return <div className="mx-auto max-w-6xl space-y-6">
-    <section className="rounded-3xl border border-border bg-white p-6 shadow-sm sm:p-8"><div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><div className="mb-3 inline-flex items-center gap-2 rounded-full bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700"><BookOpenText size={14} /> 숏폼(사연)</div><h1 className="text-3xl font-bold tracking-tight">사연 제작 스튜디오</h1><p className="mt-2 text-sm text-muted-foreground">원문부터 업로드까지 프로젝트별 제작 흐름을 이어서 관리합니다.</p></div><button type="button" onClick={openCreateModal} className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-olive px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-brand-olive-dark"><Plus size={16} /> 새 프로젝트</button></div></section>
+    <section className="rounded-3xl border border-border bg-white p-6 shadow-sm sm:p-8"><div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><div className="mb-3 inline-flex items-center gap-2 rounded-full bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700"><BookOpenText size={14} /> 숏폼(사연)</div><h1 className="text-3xl font-bold tracking-tight">사연 제작 스튜디오</h1><p className="mt-2 text-sm text-muted-foreground">원문부터 업로드까지 프로젝트별 제작 흐름을 이어서 관리합니다.</p></div><Link href="/studio/shorts-story/source" className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-olive px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-brand-olive-dark"><Plus size={16} /> 새 프로젝트</Link></div></section>
 
     <div className="flex flex-col gap-3 lg:flex-row lg:items-center"><label className="relative flex-1"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="프로젝트 또는 카테고리 검색" className="h-11 w-full rounded-xl border border-border bg-white pl-10 pr-4 text-sm outline-none focus:border-brand-olive" /></label><div className="grid grid-cols-3 rounded-xl border border-border bg-white p-1 shadow-sm"><ViewButton active={view === "active"} onClick={() => setView("active")} icon={FolderKanban} label="진행 중" count={activeCount} /><ViewButton active={view === "work-complete"} onClick={() => setView("work-complete")} icon={CheckCircle} label="작업 완료" count={workCompleteCount} /><ViewButton active={view === "uploaded"} onClick={() => setView("uploaded")} icon={Upload} label="업로드 완료" count={uploadedCount} /></div></div>
     <div className="flex items-center justify-end gap-1.5"><span className="mr-1 text-[11px] font-bold text-muted-foreground">카드 정렬</span>{([{ key: "progress", label: "진행도순" }, { key: "name", label: "이름순" }, { key: "updated", label: "수정순" }] as const).map((item) => { const active = sort.key === item.key; const DirectionIcon = sort.direction === "asc" ? ArrowUp : ArrowDown; return <button key={item.key} type="button" onClick={() => setSort((current) => current.key === item.key ? { ...current, direction: current.direction === "asc" ? "desc" : "asc" } : { key: item.key, direction: item.key === "name" ? "asc" : "desc" })} className={`inline-flex h-8 items-center gap-1 rounded-lg border px-2.5 text-xs font-bold transition ${active ? "border-brand-olive bg-brand-cream text-brand-olive-dark" : "border-border bg-white text-muted-foreground hover:border-brand-olive/40"}`}>{item.label}{active && <DirectionIcon size={12} />}</button>; })}</div>

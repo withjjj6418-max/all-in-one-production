@@ -189,7 +189,7 @@ export function Sidebar() {
           <div className={`overflow-hidden transition-all duration-200 ${isStoryStudioOpen ? "max-h-80 opacity-100" : "max-h-0 opacity-0"}`}>
             <div className="ml-4 space-y-0.5 border-l border-sidebar-border py-1 pl-3">
               {[
-                { key: "story", label: "원문각색", href: storyProjectId ? `/studio/shorts-story/projects/${storyProjectId}/story` : "/studio/shorts-story", icon: WandSparkles, needsProject: true },
+                { key: "story", label: "원문각색", href: "/studio/shorts-story/source", icon: WandSparkles, needsProject: false },
                 { key: "script", label: "대본수정", href: storyProjectId ? `/scripts?project_id=${storyProjectId}&tab=write` : "/studio/shorts-story", icon: PenLine, needsProject: true },
                 { key: "voice", label: "TTS", href: storyProjectId ? `/studio/shorts-story/projects/${storyProjectId}/voice/cast` : "/studio/shorts-story", icon: FileAudio, needsProject: true },
                 { key: "characters", label: "캐릭터", href: storyProjectId ? `/studio/shorts-story/projects/${storyProjectId}/characters` : "/studio/shorts-story", icon: Image, needsProject: true },
@@ -197,7 +197,7 @@ export function Sidebar() {
                 { key: "uploads", label: "업로드목록", href: "/studio/shorts-story/uploads", icon: Upload, needsProject: false },
               ].map((item) => {
                 const isActive = item.key === "uploads" ? pathname === "/studio/shorts-story/uploads"
-                  : item.key === "story" ? pathname.endsWith("/story")
+                  : item.key === "story" ? pathname === "/studio/shorts-story/source" || pathname.endsWith("/story")
                   : item.key === "script" ? pathname === "/scripts" && currentQuery.includes(`project_id=${storyProjectId}`)
                   : item.key === "voice" ? pathname.endsWith("/voice/cast") || pathname.endsWith("/voice")
                   : item.key === "editing" ? pathname.endsWith("/editing")
