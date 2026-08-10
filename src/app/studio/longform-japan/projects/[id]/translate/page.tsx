@@ -101,11 +101,35 @@ export default function JapanLongformTranslatePage() {
 
   async function copyPromptAndOpenChatGpt() {
     if (!record?.final_korean || !claudeJapanese.trim()) return setMessage({ kind: "error", text: "한국어 대본과 Claude 번역본이 모두 필요합니다." });
-    const prompt = `다음 한국어 원문과 Claude의 일본어 번역을 비교 검수해줘. 누락, 오역, 어색한 직역, 존칭과 시점 불일치를 고치고 일본 시청자가 듣기 자연스러운 TTS용 일본어 최종 대본만 출력해줘. 사건과 문단 순서는 임의로 바꾸지 마.\n\n[한국어 최종 대본]\n${record.final_korean}\n\n[Claude 1차 일본어 번역]\n${claudeJapanese.trim()}`;
+    const prompt = `다음 한국어 원문과 Claude의 일본어 번역을 비교 검수해줘.
+
+검수 규칙:
+- 누락, 오역, 어색한 직역, 일본어 문법, 존칭, 인물 호칭과 시점 불일치를 바로잡는다.
+- 일본 시청자가 들었을 때 자연스러운 TTS용 일본어로 다듬는다.
+- 원문의 의미, 사건, 정보, 분위기와 문단 순서는 임의로 바꾸거나 요약하지 않는다.
+- 검수가 끝나면 아래 출력 형식을 정확히 지킨다.
+
+출력 형식:
+[최종 일본어 대본]
+검수를 마친 일본어 전체 대본을 처음부터 끝까지 빠짐없이 출력한다.
+
+[수정 내역]
+실제로 수정한 부분마다 아래 형식으로 정리한다.
+- 수정 전: Claude 번역의 해당 표현
+- 수정 후: 최종 대본에 반영한 표현
+- 수정 이유: 무엇이 잘못되었거나 어색했고 왜 이렇게 고쳤는지 한국어로 설명
+
+단순한 문장부호처럼 의미에 영향이 없는 수정은 생략해도 된다. 수정한 내용이 없다면 [수정 내역] 아래에 "수정 없음"이라고 쓴다. 코드 블록이나 다른 머리말은 넣지 않는다.
+
+[한국어 최종 대본]
+${record.final_korean}
+
+[Claude 1차 일본어 번역]
+${claudeJapanese.trim()}`;
     const chatWindow = window.open("https://chatgpt.com/", "_blank", "noopener,noreferrer");
     try {
       await navigator.clipboard.writeText(prompt);
-      setMessage({ kind: "notice", text: "검수 요청문을 복사하고 ChatGPT를 열었습니다. 결과를 최종 일본어 대본 칸에 붙여넣어주세요." });
+      setMessage({ kind: "notice", text: "검수 요청문을 복사하고 ChatGPT를 열었습니다. 최종 대본과 수정 내역을 각각 해당 칸에 붙여넣어주세요." });
     } catch {
       chatWindow?.close();
       setMessage({ kind: "error", text: "검수 요청문 복사에 실패했습니다." });
@@ -172,8 +196,8 @@ ${record?.final_korean || ""}`;
         <article className="flex flex-col rounded-2xl border border-border bg-white p-5 shadow-sm"><div><span className="rounded-full bg-orange-50 px-2.5 py-1 text-[11px] font-bold text-orange-700">1차 번역</span><h2 className="mt-3 font-bold">Claude 일본어 번역본</h2><p className="mt-1 text-xs text-muted-foreground">Claude에서 나온 일본어 대본 전체를 붙여넣으세요.</p></div><textarea value={claudeJapanese} onChange={(event) => setClaudeJapanese(event.target.value)} placeholder="Claude 1차 일본어 번역을 붙여넣으세요." rows={5} className="mt-4 h-40 resize-y rounded-xl border border-border p-4 text-sm leading-7 outline-none focus:border-sky-600" /><div className="mt-3 flex items-center justify-between gap-3"><span className="text-xs text-muted-foreground">{claudeJapanese.length.toLocaleString()}자</span><button onClick={saveClaudeTranslation} disabled={saving || !claudeJapanese.trim()} className="inline-flex h-10 items-center gap-2 rounded-xl border border-brand-olive px-4 text-sm font-bold text-brand-olive disabled:opacity-40">{saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} 1차 번역 저장</button></div></article>
       </section>
 
-      <section className="rounded-2xl border border-sky-200 bg-white p-5 shadow-sm sm:p-6"><div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div><span className="rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-bold text-violet-700">2차 검수</span><h2 className="mt-3 text-xl font-bold">GPT 교차 검수</h2><p className="mt-1 text-sm leading-6 text-muted-foreground">검수 요청문을 복사해 ChatGPT에서 작업한 뒤 최종 결과를 아래에 붙여넣습니다.</p></div><button onClick={copyPromptAndOpenChatGpt} disabled={!claudeJapanese.trim()} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-violet-700 px-4 text-sm font-bold text-white disabled:opacity-40"><Copy size={15} /> 검수 요청 복사하고 GPT 열기</button></div>
-        <div className="mt-5 grid gap-5 xl:grid-cols-[1.6fr_1fr]"><label className="block text-sm font-semibold">최종 일본어 대본<textarea value={verifiedJapanese} onChange={(event) => setVerifiedJapanese(event.target.value)} placeholder="ChatGPT에서 검수한 최종 일본어 대본을 붙여넣으세요." rows={5} className="mt-2 h-40 w-full resize-y rounded-xl border border-border p-4 leading-7 outline-none focus:border-violet-500" /></label><label className="block text-sm font-semibold">검수 메모<textarea value={reviewNotes} onChange={(event) => setReviewNotes(event.target.value)} placeholder="주요 교정 내용 또는 작업 메모" rows={5} className="mt-2 h-40 w-full resize-y rounded-xl border border-border p-4 text-sm leading-6 outline-none focus:border-violet-500" />{verificationModel && <span className="mt-2 block text-xs text-muted-foreground">검수 방식: {verificationModel === "manual" ? "수동 GPT" : verificationModel}</span>}</label></div>
+      <section className="rounded-2xl border border-sky-200 bg-white p-5 shadow-sm sm:p-6"><div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div><span className="rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-bold text-violet-700">2차 검수</span><h2 className="mt-3 text-xl font-bold">GPT 교차 검수</h2><p className="mt-1 text-sm leading-6 text-muted-foreground">검수 요청문을 복사하면 ChatGPT가 최종 일본어 대본과 수정한 부분·이유를 나누어 출력합니다.</p></div><button onClick={copyPromptAndOpenChatGpt} disabled={!claudeJapanese.trim()} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-violet-700 px-4 text-sm font-bold text-white disabled:opacity-40"><Copy size={15} /> 검수 요청 복사하고 GPT 열기</button></div>
+        <div className="mt-5 grid gap-5 xl:grid-cols-[1.6fr_1fr]"><label className="block text-sm font-semibold">최종 일본어 대본<textarea value={verifiedJapanese} onChange={(event) => setVerifiedJapanese(event.target.value)} placeholder="GPT 결과의 [최종 일본어 대본] 내용만 붙여넣으세요." rows={5} className="mt-2 h-40 w-full resize-y rounded-xl border border-border p-4 leading-7 outline-none focus:border-violet-500" /></label><label className="block text-sm font-semibold">수정 내역 · 이유<textarea value={reviewNotes} onChange={(event) => setReviewNotes(event.target.value)} placeholder="GPT 결과의 [수정 내역] 내용을 붙여넣으세요." rows={5} className="mt-2 h-40 w-full resize-y rounded-xl border border-border p-4 text-sm leading-6 outline-none focus:border-violet-500" />{verificationModel && <span className="mt-2 block text-xs text-muted-foreground">검수 방식: {verificationModel === "manual" ? "수동 GPT" : verificationModel}</span>}</label></div>
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><span className="text-xs text-muted-foreground">최종 일본어 {verifiedJapanese.length.toLocaleString()}자</span><button onClick={saveFinal} disabled={saving || !verifiedJapanese.trim()} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-brand-olive px-5 text-sm font-bold text-white disabled:opacity-40">{saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} 최종 일본어 대본 확정</button></div>
         {verifiedJapanese.trim() && <Link href={`/studio/longform-japan/projects/${projectId}/voice`} className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-sky-700 text-sm font-bold text-white">ElevenLabs TTS로 <ArrowRight size={16} /></Link>}
       </section>
