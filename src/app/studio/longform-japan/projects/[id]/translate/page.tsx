@@ -5,6 +5,10 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ArrowLeft, ArrowRight, Check, Copy, ExternalLink, Languages, Loader2, Save } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import {
+  japanLongformClaudeTranslationInstructions,
+  japanLongformGptReviewPolicy,
+} from "@/lib/japan-longform-translation-instructions";
 
 type ScriptRecord = {
   source_id: string | null;
@@ -75,6 +79,15 @@ export default function JapanLongformTranslatePage() {
     }
   }
 
+  async function copyClaudeInstructions() {
+    try {
+      await navigator.clipboard.writeText(japanLongformClaudeTranslationInstructions);
+      setMessage({ kind: "notice", text: "자연스러움 우선 Claude 번역 지침을 복사했습니다. Claude 프로젝트 지침을 이 내용으로 교체해주세요." });
+    } catch {
+      setMessage({ kind: "error", text: "Claude 번역 지침 복사에 실패했습니다." });
+    }
+  }
+
   function values(next?: Partial<{ claude: string; verified: string; notes: string; model: string; bilingual: string }>) {
     return {
       project_id: projectId,
@@ -101,13 +114,17 @@ export default function JapanLongformTranslatePage() {
 
   async function copyPromptAndOpenChatGpt() {
     if (!record?.final_korean || !claudeJapanese.trim()) return setMessage({ kind: "error", text: "한국어 대본과 Claude 번역본이 모두 필요합니다." });
-    const prompt = `다음 한국어 원문과 Claude의 일본어 번역을 비교 검수해줘.
+    const prompt = `너는 한국어 원문의 의미를 정확히 이해하는 일본어 원어민 공포 낭독 대본 편집자야.
 
-검수 규칙:
-- 누락, 오역, 어색한 직역, 일본어 문법, 존칭, 인물 호칭과 시점 불일치를 바로잡는다.
-- 일본 시청자가 들었을 때 자연스러운 TTS용 일본어로 다듬는다.
-- 원문의 의미, 사건, 정보, 분위기와 문단 순서는 임의로 바꾸거나 요약하지 않는다.
-- 검수가 끝나면 아래 출력 형식을 정확히 지킨다.
+다음 한국어 원문과 Claude의 일본어 번역을 비교 검수해줘.
+
+${japanLongformGptReviewPolicy}
+
+작업 순서:
+1. 먼저 Claude 일본어 번역만 일본인 청자의 관점에서 읽고 번역투, 문법 오류, 부자연스러운 호흡과 호칭을 찾는다.
+2. 한국어 원문과 대조하여 누락, 오역, 정보 추가, 인과관계와 단서의 변형을 찾는다.
+3. 자연스러운 의역은 유지하고 실제로 필요한 부분만 최소한으로 수정한다.
+4. 최종 대본을 다시 읽어 일본 공포 낭독으로 자연스럽게 이어지는지 확인한다.
 
 출력 형식:
 [최종 일본어 대본]
@@ -115,11 +132,14 @@ export default function JapanLongformTranslatePage() {
 
 [수정 내역]
 실제로 수정한 부분마다 아래 형식으로 정리한다.
+- 구분: 필수 수정 / 선택 표현 개선
 - 수정 전: Claude 번역의 해당 표현
 - 수정 후: 최종 대본에 반영한 표현
-- 수정 이유: 무엇이 잘못되었거나 어색했고 왜 이렇게 고쳤는지 한국어로 설명
+- 수정 이유: 일본어 청자에게 무엇이 잘못되거나 어색했는지, 또는 원문의 어떤 의미가 달라졌는지 한국어로 구체적으로 설명
 
-단순한 문장부호처럼 의미에 영향이 없는 수정은 생략해도 된다. 수정한 내용이 없다면 [수정 내역] 아래에 "수정 없음"이라고 쓴다. 코드 블록이나 다른 머리말은 넣지 않는다.
+필수 수정은 오역, 누락, 문법 오류, 부자연스러운 일본어, 인물·사건·단서의 불일치에만 사용한다.
+선택 표현 개선은 둘 다 자연스럽지만 낭독 분위기상 더 나은 표현을 제안할 때만 사용한다.
+단순한 문장부호 수정은 내역에서 생략한다. 수정한 내용이 없다면 [수정 내역] 아래에 "수정 없음"이라고 쓴다. 코드 블록이나 다른 머리말은 넣지 않는다.
 
 [한국어 최종 대본]
 ${record.final_korean}
@@ -192,7 +212,7 @@ ${record?.final_korean || ""}`;
     {message && <div className={`rounded-xl border px-4 py-3 text-sm font-semibold ${message.kind === "error" ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>{message.text}</div>}
     {!record?.final_korean ? <section className="rounded-2xl border border-border bg-white p-8 text-center shadow-sm"><p className="font-bold">저장된 한국어 최종 대본이 없습니다.</p><Link href={`/studio/longform-japan/projects/${projectId}/script`} className="mt-4 inline-flex h-10 items-center rounded-xl bg-sky-700 px-4 text-sm font-bold text-white">대본 수정으로 이동</Link></section> : <>
       <section className="grid items-start gap-5 xl:grid-cols-2">
-        <article className="flex flex-col rounded-2xl border border-border bg-white p-5 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-3"><div><span className="rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">기준 대본</span><h2 className="mt-3 font-bold">한국어 최종 대본</h2></div><button onClick={copyKoreanAndOpenClaude} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#D97757] px-4 text-sm font-bold text-white"><ExternalLink size={15} /> 복사하고 Claude 열기</button></div><div className="mt-4 max-h-[620px] flex-1 overflow-y-auto whitespace-pre-wrap rounded-xl bg-muted/60 p-4 text-sm leading-7">{record.final_korean}</div><p className="mt-3 text-xs text-muted-foreground">{record.final_korean.length.toLocaleString()}자</p></article>
+        <article className="flex flex-col rounded-2xl border border-border bg-white p-5 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-3"><div><span className="rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">기준 대본</span><h2 className="mt-3 font-bold">한국어 최종 대본</h2></div><div className="flex flex-wrap gap-2"><button onClick={copyClaudeInstructions} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#D97757] px-3 text-xs font-bold text-[#B85F43]"><Copy size={14} /> 개정 Claude 지침 복사</button><button onClick={copyKoreanAndOpenClaude} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#D97757] px-4 text-sm font-bold text-white"><ExternalLink size={15} /> 대본 복사하고 Claude 열기</button></div></div><div className="mt-4 max-h-[620px] flex-1 overflow-y-auto whitespace-pre-wrap rounded-xl bg-muted/60 p-4 text-sm leading-7">{record.final_korean}</div><p className="mt-3 text-xs text-muted-foreground">{record.final_korean.length.toLocaleString()}자</p></article>
         <article className="flex flex-col rounded-2xl border border-border bg-white p-5 shadow-sm"><div><span className="rounded-full bg-orange-50 px-2.5 py-1 text-[11px] font-bold text-orange-700">1차 번역</span><h2 className="mt-3 font-bold">Claude 일본어 번역본</h2><p className="mt-1 text-xs text-muted-foreground">Claude에서 나온 일본어 대본 전체를 붙여넣으세요.</p></div><textarea value={claudeJapanese} onChange={(event) => setClaudeJapanese(event.target.value)} placeholder="Claude 1차 일본어 번역을 붙여넣으세요." rows={5} className="mt-4 h-40 resize-y rounded-xl border border-border p-4 text-sm leading-7 outline-none focus:border-sky-600" /><div className="mt-3 flex items-center justify-between gap-3"><span className="text-xs text-muted-foreground">{claudeJapanese.length.toLocaleString()}자</span><button onClick={saveClaudeTranslation} disabled={saving || !claudeJapanese.trim()} className="inline-flex h-10 items-center gap-2 rounded-xl border border-brand-olive px-4 text-sm font-bold text-brand-olive disabled:opacity-40">{saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} 1차 번역 저장</button></div></article>
       </section>
 
