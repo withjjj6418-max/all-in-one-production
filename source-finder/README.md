@@ -22,7 +22,11 @@ npm run dev
 GEMINI_API_KEY=
 YOUTUBE_API_KEY=
 GOOGLE_CLOUD_VISION_API_KEY=
+SERPAPI_API_KEY=
+IMGBB_API_KEY=
 ```
+
+`SERPAPI_API_KEY`는 Google Lens 및 Google 텍스트 검색에 사용합니다. `IMGBB_API_KEY`는 로컬 대표 프레임을 Lens가 읽을 수 있도록 10분 동안만 임시 업로드하는 데 사용합니다. 전체 영상은 업로드하지 않습니다.
 
 `GOOGLE_CLOUD_VISION_API_KEY`를 사용할 Google Cloud 프로젝트에서는 **Cloud Vision API**와 결제를 활성화하고, 키의 API 제한에 Cloud Vision API를 허용해야 합니다. 이 키는 브라우저로 전달되지 않습니다. 원본 탐색 시 검색용 대표 프레임이 최대 4장까지 Google Vision Web Detection으로 전송됩니다.
 

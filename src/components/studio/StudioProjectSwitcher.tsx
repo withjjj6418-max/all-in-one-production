@@ -17,7 +17,7 @@ type ProjectOption = {
 
 const studioPaths: Record<ProductionType, string> = {
   shorts_story: "/studio/shorts-story",
-  shorts_haejja: "/studio/shorts-haejja",
+  shorts_haejja: "/studio/shorts-family",
   longform_japan: "/studio/longform-japan",
   longform_movie: "/studio/longform-movie",
 };

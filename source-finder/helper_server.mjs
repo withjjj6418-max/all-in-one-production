@@ -4,6 +4,17 @@ import path from 'path';
 import { spawn, spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { inspectCandidate, runSourceFinder, verifyCandidates } from './source_finder.mjs';
+import {
+  downloadBoardSource,
+  createFamilyStill,
+  ensureProjectLayout,
+  listFamilyLibrary,
+  packageFamilyProject,
+  resolveFamilyFolder,
+  stageFamilyCandidate,
+  splitRankingReference,
+} from './shorts_family.mjs';
+import { analyzeFamilyCandidates, describeFamilyCandidate, getLocalVisionStatus, verifyFamilyCandidates } from './local_family_analyzer.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -158,7 +169,7 @@ const server = http.createServer(async (req, res) => {
       ok: true,
       service: 'source-finder-helper',
       version: 2,
-      capabilities: ['url-analysis', 'file-analysis', 'candidate-metadata', 'candidate-video-verification', 'asset-preview'],
+      capabilities: ['url-analysis', 'file-analysis', 'candidate-metadata', 'candidate-video-verification', 'asset-preview', 'shorts-family-library', 'shorts-family-download', 'shorts-family-split', 'shorts-family-package', 'shorts-family-local-vision', 'shorts-family-batch-originals'],
     });
     return;
   }
@@ -244,6 +255,121 @@ const server = http.createServer(async (req, res) => {
     } catch (error) {
       sendJson(res, 500, { ok: false, error: error.message });
     }
+    return;
+  }
+
+  if (req.method === 'GET' && requestUrl.pathname === '/shorts-family/library') {
+    try {
+      sendJson(res, 200, { ok: true, files: listFamilyLibrary() });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error.message });
+    }
+    return;
+  }
+
+  if (req.method === 'GET' && requestUrl.pathname === '/shorts-family/local-vision-status') {
+    sendJson(res, 200, { ok: true, ...await getLocalVisionStatus() });
+    return;
+  }
+
+  if (req.method === 'GET' && requestUrl.pathname === '/shorts-family/still') {
+    try {
+      const image = createFamilyStill({ filePath: requestUrl.searchParams.get('path'), at: requestUrl.searchParams.get('at') });
+      res.writeHead(200, corsHeaders('image/jpeg'));
+      res.end(image);
+    } catch (error) { sendJson(res, 400, { ok: false, error: error.message }); }
+    return;
+  }
+
+  if (req.method === 'POST' && requestUrl.pathname === '/shorts-family/analyze-all') {
+    try {
+      const payload = await readJson(req, 4 * 1024 * 1024);
+      sendJson(res, 200, { ok: true, ...(await analyzeFamilyCandidates(payload.candidates)) });
+    } catch (error) { sendJson(res, 500, { ok: false, error: error.message }); }
+    return;
+  }
+
+  if (req.method === 'POST' && requestUrl.pathname === '/shorts-family/describe-one') {
+    try {
+      const payload = await readJson(req, 4 * 1024 * 1024);
+      sendJson(res, 200, { ok: true, ...(await describeFamilyCandidate(payload.candidate)) });
+    } catch (error) { sendJson(res, 500, { ok: false, error: error.message }); }
+    return;
+  }
+
+  if (req.method === 'POST' && requestUrl.pathname === '/shorts-family/verify-all') {
+    try {
+      const payload = await readJson(req, 4 * 1024 * 1024);
+      sendJson(res, 200, { ok: true, results: await verifyFamilyCandidates(payload.searches) });
+    } catch (error) { sendJson(res, 500, { ok: false, error: error.message }); }
+    return;
+  }
+
+  if (req.method === 'POST' && requestUrl.pathname === '/shorts-family/download') {
+    try {
+      const payload = await readJson(req);
+      const result = downloadBoardSource(payload);
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error.message });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && requestUrl.pathname === '/shorts-family/stage-candidate') {
+    try {
+      const payload = await readJson(req);
+      sendJson(res, 200, { ok: true, ...stageFamilyCandidate(payload) });
+    } catch (error) { sendJson(res, 400, { ok: false, error: error.message }); }
+    return;
+  }
+
+  if (req.method === 'POST' && requestUrl.pathname === '/shorts-family/split') {
+    try {
+      const payload = await readJson(req);
+      const result = splitRankingReference(payload);
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error.message });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && requestUrl.pathname === '/shorts-family/package') {
+    try {
+      const payload = await readJson(req, 4 * 1024 * 1024);
+      const result = packageFamilyProject(payload);
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error.message });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && requestUrl.pathname === '/shorts-family/open-folder') {
+    try {
+      const payload = await readJson(req);
+      const result = ensureProjectLayout(payload.projectCode);
+      openOutputFolder(result.root);
+      sendJson(res, 200, { ok: true, projectRoot: result.root });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error.message });
+    }
+    return;
+  }
+
+
+  if (req.method === 'POST' && requestUrl.pathname === '/shorts-family/open-containing-folder') {
+    try {
+      const payload = await readJson(req);
+      const folder = resolveFamilyFolder(payload.path);
+      const requested = path.resolve(String(payload.path || ''));
+      if (fs.existsSync(requested) && fs.statSync(requested).isFile()) {
+        const child = spawn('explorer.exe', [`/select,${requested}`], { detached: true, stdio: 'ignore' });
+        child.unref();
+      } else openOutputFolder(folder);
+      sendJson(res, 200, { ok: true, folder });
+    } catch (error) { sendJson(res, 400, { ok: false, error: error.message }); }
     return;
   }
 

@@ -37,11 +37,11 @@ export const studios: StudioConfig[] = [
   },
   {
     type: "shorts_haejja",
-    slug: "shorts-haejja",
-    label: "숏폼(해짜)",
-    description: "해짜 콘텐츠에 맞는 전용 제작 방식을 구성할 예정입니다.",
+    slug: "shorts-family",
+    label: "숏폼(가족)",
+    description: "검증된 랭킹형쇼츠를 분석하고 가족 소재의 한국·일본 버전을 함께 제작합니다.",
     icon: Clapperboard,
-    available: false,
+    available: true,
     accent: "bg-amber-100 text-amber-700",
   },
   {

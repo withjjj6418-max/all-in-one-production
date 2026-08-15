@@ -8,7 +8,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "source-finder": "node source-finder/helper_server.mjs"
+    "source-finder": "node source-finder/helper_server.mjs",
+    "shorts-family:package": "node scripts/shorts-family-package.mjs",
+    "shorts-family:check": "node scripts/check-shorts-family.mjs",
+    "shorts-family:check-search": "node scripts/check-search-integrations.mjs",
+    "shorts-family:setup-vision": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-local-vision.ps1"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

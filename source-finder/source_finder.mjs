@@ -326,6 +326,21 @@ function grayFrameHashes(videoPath, fps = 1) {
   return variants;
 }
 
+function templateOverlayPenalty(videoPath) {
+  const result = spawnSync(ffmpegPath, [
+    '-hide_banner', '-loglevel', 'error', '-i', videoPath, '-t', '120',
+    '-vf', 'fps=0.5,crop=iw:ih*0.30:0:0,scale=64:36,format=gray',
+    '-f', 'rawvideo', '-pix_fmt', 'gray', 'pipe:1',
+  ], { encoding: null, maxBuffer: 16 * 1024 * 1024, windowsHide: true });
+  if (result.status !== 0 || !result.stdout?.length) return { penalty: 0, blackRatio: 0 };
+  const pixels = Buffer.from(result.stdout);
+  let nearBlack = 0;
+  for (const value of pixels) if (value <= 30) nearBlack += 1;
+  const blackRatio = nearBlack / pixels.length;
+  const penalty = blackRatio >= 0.55 ? 28 : blackRatio >= 0.38 ? 16 : 0;
+  return { penalty, blackRatio: Math.round(blackRatio * 100) };
+}
+
 function differenceHash(pixels) {
   const bits = [];
   for (let y = 0; y < 32; y += 1) {
@@ -400,11 +415,12 @@ function compareHashSequences(queryVariants, candidateVariants) {
     bestSimilarity: Math.round((similarities[0] || 0) * 100),
     alignedFrames: alignment.frames,
     alignedSimilarity: Math.round(alignment.similarity * 100),
+    matchStartSeconds: alignment.candidateStart,
   };
 }
 
 function bestSequenceAlignment(queryVariants, candidateVariants) {
-  let best = { quality: 0, similarity: 0, frames: 0 };
+  let best = { quality: 0, similarity: 0, frames: 0, candidateStart: 0 };
   for (const query of queryVariants) {
     for (const candidate of candidateVariants) {
       for (let offset = -query.length + 1; offset < candidate.length; offset += 1) {
@@ -421,7 +437,7 @@ function bestSequenceAlignment(queryVariants, candidateVariants) {
             if (start > 0) sum += similarities[start + windowSize - 1] - similarities[start - 1];
             const average = sum / windowSize;
             const quality = average + Math.min(0.025, (windowSize - 3) * 0.005);
-            if (quality > best.quality) best = { quality, similarity: average, frames: windowSize };
+            if (quality > best.quality) best = { quality, similarity: average, frames: windowSize, candidateStart: Math.max(0, offset) + start };
           }
         }
       }
@@ -474,10 +490,8 @@ export async function verifyCandidates(jobId, urls) {
 
   const verificationRoot = nodePath.join(jobDir, 'verification');
   fs.mkdirSync(verificationRoot, { recursive: true });
-  const uniqueUrls = [...new Set((urls || []).map((url) => String(url).trim()).filter(isWebUrl))].slice(0, 12);
-  const results = [];
-
-  for (const url of uniqueUrls) {
+  const uniqueUrls = [...new Set((urls || []).map((url) => String(url).trim()).filter(isWebUrl))].slice(0, 4);
+  const verifyOne = async (url) => {
     const candidateId = createHash('sha1').update(url).digest('hex').slice(0, 12);
     const candidateDir = nodePath.join(verificationRoot, candidateId);
     fs.mkdirSync(candidateDir, { recursive: true });
@@ -492,10 +506,23 @@ export async function verifyCandidates(jobId, urls) {
       if (!candidateName) throw new Error('후보 영상을 가져오지 못했습니다.');
       const candidateHashes = grayFrameHashes(nodePath.join(candidateDir, candidateName), 1);
       const comparison = compareHashSequences(queryHashes, candidateHashes);
-      results.push({ ok: true, url, ...comparison });
+      const overlay = templateOverlayPenalty(nodePath.join(candidateDir, candidateName));
+      return {
+        ok: true,
+        url,
+        ...comparison,
+        rawScore: comparison.score,
+        score: Math.max(0, comparison.score - overlay.penalty),
+        templatePenalty: overlay.penalty,
+        overlayBlackRatio: overlay.blackRatio,
+      };
     } catch (error) {
-      results.push({ ok: false, url, score: 0, matchedFrames: 0, bestSimilarity: 0, error: error.message });
+      return { ok: false, url, score: 0, matchedFrames: 0, bestSimilarity: 0, error: error.message };
     }
+  };
+  const results = [];
+  for (let index = 0; index < uniqueUrls.length; index += 3) {
+    results.push(...await Promise.all(uniqueUrls.slice(index, index + 3).map(verifyOne)));
   }
   fs.writeFileSync(
     nodePath.join(verificationRoot, 'results.json'),
