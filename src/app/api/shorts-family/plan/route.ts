@@ -51,7 +51,8 @@ Rules:
 - Create exactly 3 Korean overall-title candidates and exactly 3 natural Japanese overall-title candidates. Add a Korean translation to every Japanese candidate. Put the strongest candidate in korean_title/japanese_title too.
 - For every candidate, describe 소재(material), 핵심감정(emotion), 조회를 부르는 원인(cause).
 - Korean rank labels must be natural and at most 4 Korean characters excluding spaces.
-- Japanese labels must be short natural Japanese and each needs a Korean translation.
+- Japanese labels (japanese_label) are NOT a title or an objective description — they are the short reaction caption that sits under each rank number on screen, like a friend commenting beside the viewer. Do not translate the Korean label literally. Pick whichever fits the scene: exaggerated praise/admiration, naming the situation in a witty way, exaggerating relatable embarrassment/pain, a paradox punchline (e.g. "lost the match but won the moment"), a meme-style "confirmed" verdict, intensifying with "〜すぎる", or slipping in a personal-taste aside with "個人的に". Common evaluative words: 〜すぎる, さすが, 確定, まさか, 個人的に, これはずるい, 神, 伝説級, 最高すぎる. Length 7-18 Japanese characters. "w"/"ww"/"www" works like Korean "ㅋ/ㅋㅋㅋ" — only add it to genuinely funny/surprising entries, never force it onto all 5. Each needs a Korean translation.
+- japanese_title_candidates (the overall video title, different from japanese_label) should follow the reference channel's real title formula, e.g. "どれが1番好き？〜のバズった5選" or "〜のバズった5選" style, not a plain descriptive sentence. Vary the 3 candidates in phrasing/tone.
 - Select exactly 5 candidates. Japanese rank MUST always be the exact inverse of Korean rank: Korean 1 = Japanese 5, Korean 2 = Japanese 4, Korean 3 = Japanese 3, Korean 4 = Japanese 2, Korean 5 = Japanese 1.
 - Rank 1 should have the clearest payoff/reversal; rank 5 should hook immediately.
 - Do not assume nationality or identify minors.
