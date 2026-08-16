@@ -598,6 +598,87 @@ function writeReport(rootDir, report) {
   fs.writeFileSync(textPath, lines.join('\n'), 'utf8');
 }
 
+function readDownloadReport(rootDir = DEFAULT_TARGET_DIR) {
+  const resolvedRoot = path.resolve(rootDir);
+  const reportPath = path.join(resolvedRoot, 'download-report.json');
+  if (!fs.existsSync(reportPath)) {
+    return {
+      generatedAt: new Date().toISOString(),
+      rootDir: resolvedRoot,
+      total: 0,
+      downloaded: [],
+      failed: [],
+      items: [],
+    };
+  }
+
+  const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+  if (!Array.isArray(report?.items) || !Array.isArray(report?.downloaded) || !Array.isArray(report?.failed)) {
+    throw new Error('기존 다운로드 리포트의 형식이 올바르지 않습니다.');
+  }
+  return report;
+}
+
+export function getSourceBoardDownloadStatuses(rootDir = DEFAULT_TARGET_DIR) {
+  const report = readDownloadReport(rootDir);
+  return report.items.map((item) => ({
+    url: String(item.url || '').trim(),
+    status: item.status === '다운로드 완료' && item.path && fs.existsSync(item.path)
+      ? 'downloaded'
+      : item.status === '다운불가'
+        ? 'failed'
+        : 'pending',
+  }));
+}
+
+export async function downloadOneSourceBoardItem({ url, title, category, rootDir = DEFAULT_TARGET_DIR }) {
+  const cleanUrl = String(url || '').trim();
+  if (!cleanUrl) throw new Error('다운로드할 영상 URL이 필요합니다.');
+
+  const targetRoot = ensureOutputRoot(path.resolve(rootDir));
+  const report = readDownloadReport(targetRoot);
+  const existing = report.items.find((item) => String(item.url || '').trim() === cleanUrl);
+  if (existing?.status === '다운로드 완료' && existing.path && fs.existsSync(existing.path)) {
+    return { status: 'downloaded', path: existing.path, alreadyDownloaded: true };
+  }
+  if (existing?.status === '다운불가') {
+    return { status: 'failed', reason: existing.reason || '이전에 다운로드 불가로 판정된 영상입니다.' };
+  }
+
+  checkBinaries();
+  const categoryName = String(category || '미분류').trim() || '미분류';
+  const cleanTitle = String(title || '').trim() || new URL(cleanUrl).hostname || '영상';
+  const folderPath = path.join(targetRoot, safeFolderName(categoryName));
+  fs.mkdirSync(folderPath, { recursive: true });
+  const destinationPath = uniqueDestination(folderPath, safeVideoStem(cleanTitle), '.mp4');
+  const result = await downloadSingleVideo({
+    url: cleanUrl,
+    title: cleanTitle,
+    folderPath,
+    destinationPath,
+  });
+
+  const reportItem = result.status === 'downloaded'
+    ? { category: categoryName, title: cleanTitle, url: cleanUrl, path: result.path, status: '다운로드 완료' }
+    : { category: categoryName, title: cleanTitle, url: cleanUrl, path: result.path, status: '다운불가', reason: result.reason };
+
+  // 같은 URL의 오래된 미완료 기록이 있다면 새 판정으로 교체한다.
+  report.items = report.items.filter((item) => String(item.url || '').trim() !== cleanUrl);
+  report.downloaded = report.downloaded.filter((item) => String(item.url || '').trim() !== cleanUrl);
+  report.failed = report.failed.filter((item) => String(item.url || '').trim() !== cleanUrl);
+  report.items.push(reportItem);
+  if (result.status === 'downloaded') report.downloaded.push(reportItem);
+  else report.failed.push(reportItem);
+  report.generatedAt = new Date().toISOString();
+  report.rootDir = targetRoot;
+  report.total = report.items.length;
+  writeReport(targetRoot, report);
+
+  return result.status === 'downloaded'
+    ? { status: 'downloaded', path: result.path, alreadyDownloaded: false }
+    : { status: 'failed', reason: result.reason };
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const outputDir = args.outputDir || process.env.SOURCE_BOARD_DOWNLOAD_DIR || DEFAULT_TARGET_DIR;
@@ -725,7 +806,9 @@ async function main() {
   console.log(`리포트 위치: ${path.join(targetRoot, 'download-report.json')}`);
 }
 
-main().catch((error) => {
-  console.error('오류:', error.message || error);
-  process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  main().catch((error) => {
+    console.error('오류:', error.message || error);
+    process.exit(1);
+  });
+}

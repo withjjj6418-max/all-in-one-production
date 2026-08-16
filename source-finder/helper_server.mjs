@@ -18,6 +18,7 @@ import {
   assertSourcePath,
 } from './shorts_family.mjs';
 import { analyzeFamilyCandidates, describeFamilyCandidate, getLocalVisionStatus, verifyFamilyCandidates } from './local_family_analyzer.mjs';
+import { downloadOneSourceBoardItem, getSourceBoardDownloadStatuses } from '../scripts/download-source-board.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -260,8 +261,28 @@ const server = http.createServer(async (req, res) => {
       ok: true,
       service: 'source-finder-helper',
       version: 3,
-      capabilities: ['url-analysis', 'file-analysis', 'candidate-metadata', 'candidate-video-verification', 'asset-preview', 'shorts-family-library', 'shorts-family-download', 'shorts-family-split', 'shorts-family-package', 'shorts-family-local-vision', 'shorts-family-batch-originals', 'shorts-family-stream'],
+      capabilities: ['url-analysis', 'file-analysis', 'candidate-metadata', 'candidate-video-verification', 'asset-preview', 'source-board-download-status', 'source-board-download', 'shorts-family-library', 'shorts-family-download', 'shorts-family-split', 'shorts-family-package', 'shorts-family-local-vision', 'shorts-family-batch-originals', 'shorts-family-stream'],
     });
+    return;
+  }
+
+  if (req.method === 'GET' && requestUrl.pathname === '/source-board/download-status') {
+    try {
+      sendJson(res, 200, { ok: true, items: getSourceBoardDownloadStatuses() });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error.message });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && requestUrl.pathname === '/source-board/download') {
+    try {
+      const payload = await readJson(req);
+      const result = await downloadOneSourceBoardItem(payload);
+      sendJson(res, result.status === 'downloaded' ? 200 : 422, { ok: result.status === 'downloaded', ...result });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error.message });
+    }
     return;
   }
 
