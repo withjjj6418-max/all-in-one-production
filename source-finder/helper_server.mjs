@@ -1,7 +1,7 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
-import { spawn, spawnSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { inspectCandidate, runSourceFinder, verifyCandidates } from './source_finder.mjs';
 import {
@@ -9,10 +9,13 @@ import {
   createFamilyStill,
   ensureProjectLayout,
   listFamilyLibrary,
+  listFamilyRecommendationLibrary,
   packageFamilyProject,
   resolveFamilyFolder,
   stageFamilyCandidate,
+  stageUploadedReference,
   splitRankingReference,
+  assertSourcePath,
 } from './shorts_family.mjs';
 import { analyzeFamilyCandidates, describeFamilyCandidate, getLocalVisionStatus, verifyFamilyCandidates } from './local_family_analyzer.mjs';
 
@@ -34,6 +37,40 @@ function corsHeaders(contentType = 'application/json; charset=utf-8') {
 function sendJson(res, status, payload) {
   res.writeHead(status, corsHeaders());
   res.end(JSON.stringify(payload));
+}
+
+function contentTypeForVideo(extension) {
+  switch (extension) {
+    case '.mp4': case '.m4v': return 'video/mp4';
+    case '.mov': return 'video/quicktime';
+    case '.mkv': return 'video/x-matroska';
+    case '.webm': return 'video/webm';
+    default: return 'application/octet-stream';
+  }
+}
+
+function streamVideoFile(req, res, sourcePath) {
+  const stat = fs.statSync(sourcePath);
+  const contentType = contentTypeForVideo(path.extname(sourcePath).toLowerCase());
+  const headers = { ...corsHeaders(contentType), 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, max-age=3600' };
+  const range = req.headers.range;
+  if (!range) {
+    res.writeHead(200, { ...headers, 'Content-Length': stat.size });
+    if (req.method === 'HEAD') { res.end(); return; }
+    fs.createReadStream(sourcePath).pipe(res);
+    return;
+  }
+  const match = /bytes=(\d*)-(\d*)/.exec(range);
+  const start = match && match[1] ? Number(match[1]) : 0;
+  const end = match && match[2] ? Number(match[2]) : stat.size - 1;
+  if (!match || Number.isNaN(start) || Number.isNaN(end) || start > end || end >= stat.size) {
+    res.writeHead(416, { ...headers, 'Content-Range': `bytes */${stat.size}` });
+    res.end();
+    return;
+  }
+  res.writeHead(206, { ...headers, 'Content-Range': `bytes ${start}-${end}/${stat.size}`, 'Content-Length': end - start + 1 });
+  if (req.method === 'HEAD') { res.end(); return; }
+  fs.createReadStream(sourcePath, { start, end }).pipe(res);
 }
 
 function readJson(req, maxBytes = 1024 * 1024) {
@@ -61,11 +98,19 @@ function readJson(req, maxBytes = 1024 * 1024) {
 }
 
 function openOutputFolder(outputDir) {
-  try {
-    const child = spawn('explorer.exe', [outputDir], { detached: true, stdio: 'ignore', windowsHide: true });
-    child.unref();
-  } catch (error) {
-    console.warn(`결과 폴더를 열지 못했습니다: ${error.message}`);
+  const target = path.resolve(String(outputDir || ''));
+  if (!fs.existsSync(target) || !fs.statSync(target).isDirectory()) throw new Error(`열 폴더를 찾을 수 없습니다: ${target}`);
+  const result = spawnSync('powershell.exe', [
+    '-NoProfile', '-NonInteractive', '-Command',
+    'Start-Process -FilePath explorer.exe -ArgumentList @($env:SHORTS_FOLDER_TO_OPEN)',
+  ], {
+    encoding: 'utf8',
+    windowsHide: true,
+    env: { ...process.env, SHORTS_FOLDER_TO_OPEN: target },
+  });
+  if (result.status !== 0 || result.error) {
+    const detail = String(result.stderr || result.error?.message || '').trim();
+    throw new Error(detail || `Explorer에서 폴더를 열지 못했습니다: ${target}`);
   }
 }
 
@@ -155,6 +200,52 @@ async function handleFileUpload(req, res) {
   });
 }
 
+async function handleFamilyReferenceUpload(req, res) {
+  const encodedName = String(req.headers['x-file-name'] || 'uploaded-reference.mp4');
+  let originalFileName = 'uploaded-reference.mp4';
+  try { originalFileName = decodeURIComponent(encodedName); } catch { originalFileName = encodedName; }
+  originalFileName = path.basename(originalFileName).replace(/[<>:"/\\|?*]/g, '_');
+  let title = originalFileName.replace(/\.[^.]+$/, '');
+  try { title = req.headers['x-file-title'] ? decodeURIComponent(String(req.headers['x-file-title'])) : title; } catch { /* 제목 헤더가 없으면 파일명을 쓴다. */ }
+
+  const uploadDir = path.join(__dirname, 'uploads');
+  fs.mkdirSync(uploadDir, { recursive: true });
+  const tempPath = path.join(uploadDir, `${Date.now()}-${originalFileName}`);
+  const stream = fs.createWriteStream(tempPath, { flags: 'wx' });
+  let size = 0;
+  let settled = false;
+
+  const fail = (status, message) => {
+    if (settled) return;
+    settled = true;
+    stream.destroy();
+    fs.rmSync(tempPath, { force: true });
+    sendJson(res, status, { ok: false, error: message });
+  };
+
+  req.on('data', (chunk) => {
+    size += chunk.length;
+    if (size > MAX_UPLOAD_BYTES) {
+      fail(413, '파일은 최대 1GB까지 업로드할 수 있습니다.');
+      req.destroy();
+    }
+  });
+  req.on('error', (error) => fail(500, error.message));
+  stream.on('error', (error) => fail(500, error.message));
+
+  req.pipe(stream);
+  stream.on('finish', () => {
+    if (settled) return;
+    try {
+      const result = stageUploadedReference({ tempFilePath: tempPath, title });
+      settled = true;
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (error) {
+      fail(500, error.message);
+    }
+  });
+}
+
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
     res.writeHead(204, corsHeaders());
@@ -168,8 +259,8 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, 200, {
       ok: true,
       service: 'source-finder-helper',
-      version: 2,
-      capabilities: ['url-analysis', 'file-analysis', 'candidate-metadata', 'candidate-video-verification', 'asset-preview', 'shorts-family-library', 'shorts-family-download', 'shorts-family-split', 'shorts-family-package', 'shorts-family-local-vision', 'shorts-family-batch-originals'],
+      version: 3,
+      capabilities: ['url-analysis', 'file-analysis', 'candidate-metadata', 'candidate-video-verification', 'asset-preview', 'shorts-family-library', 'shorts-family-download', 'shorts-family-split', 'shorts-family-package', 'shorts-family-local-vision', 'shorts-family-batch-originals', 'shorts-family-stream'],
     });
     return;
   }
@@ -267,8 +358,27 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'GET' && requestUrl.pathname === '/shorts-family/recommendation-library') {
+    try {
+      sendJson(res, 200, { ok: true, files: listFamilyRecommendationLibrary() });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error.message });
+    }
+    return;
+  }
+
   if (req.method === 'GET' && requestUrl.pathname === '/shorts-family/local-vision-status') {
     sendJson(res, 200, { ok: true, ...await getLocalVisionStatus() });
+    return;
+  }
+
+  if ((req.method === 'GET' || req.method === 'HEAD') && requestUrl.pathname === '/shorts-family/stream') {
+    try {
+      const sourcePath = assertSourcePath(requestUrl.searchParams.get('path'));
+      streamVideoFile(req, res, sourcePath);
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: error.message });
+    }
     return;
   }
 
@@ -302,6 +412,11 @@ const server = http.createServer(async (req, res) => {
       const payload = await readJson(req, 4 * 1024 * 1024);
       sendJson(res, 200, { ok: true, results: await verifyFamilyCandidates(payload.searches) });
     } catch (error) { sendJson(res, 500, { ok: false, error: error.message }); }
+    return;
+  }
+
+  if (req.method === 'POST' && requestUrl.pathname === '/shorts-family/upload-reference') {
+    await handleFamilyReferenceUpload(req, res);
     return;
   }
 
@@ -363,11 +478,9 @@ const server = http.createServer(async (req, res) => {
     try {
       const payload = await readJson(req);
       const folder = resolveFamilyFolder(payload.path);
-      const requested = path.resolve(String(payload.path || ''));
-      if (fs.existsSync(requested) && fs.statSync(requested).isFile()) {
-        const child = spawn('explorer.exe', [`/select,${requested}`], { detached: true, stdio: 'ignore' });
-        child.unref();
-      } else openOutputFolder(folder);
+      // 이 버튼의 목적은 파일 선택이 아니라 저장 폴더 확인이다.
+      // /select 인자는 한글·공백 경로에서 Explorer가 조용히 실패할 수 있으므로 폴더를 직접 연다.
+      openOutputFolder(folder);
       sendJson(res, 200, { ok: true, folder });
     } catch (error) { sendJson(res, 400, { ok: false, error: error.message }); }
     return;

@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "source-finder": "node source-finder/helper_server.mjs",
+    "source-board:download": "node scripts/download-source-board.mjs",
     "shorts-family:package": "node scripts/shorts-family-package.mjs",
     "shorts-family:check": "node scripts/check-shorts-family.mjs",
     "shorts-family:check-search": "node scripts/check-search-integrations.mjs",
@@ -37,6 +38,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
+    "playwright": "^1.62.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

@@ -23,6 +23,9 @@ import {
   Film,
   PanelsTopLeft,
   Baby,
+  Sparkles,
+  Scissors,
+  Activity,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -55,10 +58,17 @@ export function Sidebar() {
   const pathJapanProjectId = pathname.match(/^\/studio\/longform-japan\/projects\/(\d+)/)?.[1] ?? null;
   const rememberedJapanProjectId = mounted && typeof window !== "undefined" ? window.localStorage.getItem("last-longform-japan-project-id") : null;
   const japanProjectId = pathJapanProjectId || rememberedJapanProjectId;
+  const queryFamilyProjectId = mounted && pathname.startsWith("/studio/shorts-family") ? new URLSearchParams(currentQuery).get("project_id") : null;
+  const rememberedFamilyProjectId = mounted && typeof window !== "undefined" ? window.localStorage.getItem("last-shorts-family-project-id") : null;
+  const familyProjectId = queryFamilyProjectId || rememberedFamilyProjectId;
 
   useEffect(() => {
     if (pathStoryProjectId && typeof window !== "undefined") window.localStorage.setItem("last-shorts-story-project-id", pathStoryProjectId);
   }, [pathStoryProjectId]);
+
+  useEffect(() => {
+    if (queryFamilyProjectId && typeof window !== "undefined") window.localStorage.setItem("last-shorts-family-project-id", queryFamilyProjectId);
+  }, [queryFamilyProjectId]);
 
   useEffect(() => {
     if (pathJapanProjectId && typeof window !== "undefined") window.localStorage.setItem("last-longform-japan-project-id", pathJapanProjectId);
@@ -211,14 +221,27 @@ export function Sidebar() {
             </div>
           </div>
 
-          <div className={`flex items-center rounded-lg transition-all duration-200 ${pathname.startsWith("/studio/shorts-family") ? "bg-amber-50 text-amber-800" : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"}`}><Link href="/studio/shorts-family?stage=discover" onClick={() => { setCurrentQuery("?stage=discover"); setIsMobileOpen(false); }} className="group flex min-w-0 flex-1 items-center gap-3 rounded-l-lg px-3 py-2.5 text-sm font-medium"><Baby size={18} className="shrink-0 text-amber-600" /><span>숏폼(가족)</span></Link><button type="button" onClick={() => setIsFamilyStudioOpen((current) => !current)} aria-label="숏폼(가족) 메뉴 열기" aria-expanded={isFamilyStudioOpen} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-r-lg hover:bg-amber-100"><ChevronDown size={16} className={`transition-transform ${isFamilyStudioOpen ? "rotate-180" : ""}`} /></button></div>
-          <div className={`overflow-hidden transition-all duration-200 ${isFamilyStudioOpen ? "max-h-80 opacity-100" : "max-h-0 opacity-0"}`}><div className="ml-4 space-y-0.5 border-l border-sidebar-border py-1 pl-3">{[
-            { key: "discover", label: "랭킹형 발굴", icon: Search },
-            { key: "setup", label: "프로젝트·분리", icon: ScanText },
-            { key: "trace", label: "원본 추적·검수", icon: Baby },
-              { key: "template", label: "순위·제목·템플릿", icon: WandSparkles },
-            { key: "premiere", label: "Premiere 제작", icon: Film },
-          ].map((item) => { const Icon = item.icon; const familyStage = new URLSearchParams(currentQuery).get("stage") || "discover"; const isActive = pathname.startsWith("/studio/shorts-family") && familyStage === item.key; return <Link key={item.key} href={`/studio/shorts-family?stage=${item.key}`} onClick={() => { setCurrentQuery(`?stage=${item.key}`); setIsMobileOpen(false); }} className={`group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition ${isActive ? "bg-amber-100 text-amber-800" : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"}`}><Icon size={15} /><span>{item.label}</span>{isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-amber-500" />}</Link>; })}</div></div>
+          <div className={`flex items-center rounded-lg transition-all duration-200 ${pathname.startsWith("/studio/shorts-family") ? "bg-amber-50 text-amber-800" : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"}`}><Link href="/studio/shorts-family" onClick={() => { setCurrentQuery(""); setIsMobileOpen(false); }} className="group flex min-w-0 flex-1 items-center gap-3 rounded-l-lg px-3 py-2.5 text-sm font-medium"><Baby size={18} className="shrink-0 text-amber-600" /><span>숏폼(가족)</span></Link><button type="button" onClick={() => setIsFamilyStudioOpen((current) => !current)} aria-label="숏폼(가족) 메뉴 열기" aria-expanded={isFamilyStudioOpen} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-r-lg hover:bg-amber-100"><ChevronDown size={16} className={`transition-transform ${isFamilyStudioOpen ? "rotate-180" : ""}`} /></button></div>
+            <div className={`overflow-hidden transition-all duration-200 ${isFamilyStudioOpen ? "max-h-96 opacity-100" : "max-h-0 opacity-0"}`}><div className="ml-4 space-y-0.5 border-l border-sidebar-border py-1 pl-3">{[
+              { key: "hot", label: "실시간 급상승", icon: Activity, needsProject: false, href: "/studio/shorts-family/hot-videos" },
+              { key: "discover", label: "랭킹형 발굴", icon: Search, needsProject: false },
+            { key: "setup", label: "프로젝트·분리", icon: ScanText, needsProject: true },
+            { key: "trace", label: "원본 추적·검수", icon: Baby, needsProject: true },
+            { key: "edit", label: "원본 편집", icon: Scissors, needsProject: true },
+            { key: "ranking", label: "순위 문구", icon: WandSparkles, needsProject: true },
+            { key: "title", label: "제목 추천", icon: Sparkles, needsProject: true },
+            { key: "premiere", label: "템플릿·Premiere 제작", icon: Film, needsProject: true },
+          ].map((item) => {
+            const Icon = item.icon;
+            const familyStage = new URLSearchParams(currentQuery).get("stage") || "";
+              const directHref = "href" in item ? item.href : undefined;
+              const isActive = directHref ? pathname === directHref : pathname === "/studio/shorts-family" && familyStage === item.key;
+              const waitingForProject = item.needsProject && !familyProjectId;
+              const href = directHref ?? (familyProjectId
+                ? `/studio/shorts-family?project_id=${familyProjectId}&stage=${item.key}`
+                : item.needsProject ? "/studio/shorts-family" : `/studio/shorts-family?stage=${item.key}`);
+            return <Link key={item.key} href={href} title={waitingForProject ? "가족 프로젝트를 먼저 선택해주세요" : undefined} onClick={() => { setCurrentQuery(href.includes("?") ? `?${href.split("?")[1]}` : ""); setIsMobileOpen(false); }} className={`group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition ${isActive ? "bg-amber-100 text-amber-800" : waitingForProject ? "text-muted-foreground/50" : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"}`}><Icon size={15} /><span>{item.label}</span>{isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-amber-500" />}</Link>;
+          })}</div></div>
 
           <div className={`flex items-center rounded-lg transition-all duration-200 ${pathname.startsWith("/studio/longform-japan") ? "bg-sky-50 text-sky-700" : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"}`}>
             <Link href="/studio/longform-japan" onClick={() => setIsMobileOpen(false)} className="group flex min-w-0 flex-1 items-center gap-3 rounded-l-lg px-3 py-2.5 text-sm font-medium">
