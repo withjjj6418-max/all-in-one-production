@@ -20,6 +20,12 @@ export default function StudioHubPage() {
       </section>
 
       <section className="grid gap-4 md:grid-cols-2">
+        <Link href="/studio/shorts-workshop" className="group flex min-h-56 flex-col rounded-2xl border border-brand-olive/20 bg-brand-cream p-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+          <span className="text-xs font-bold text-brand-olive">내 컴퓨터의 제작실</span>
+          <h2 className="mt-6 text-xl font-bold text-brand-olive-dark">독백(가족)</h2>
+          <p className="mt-2 flex-1 text-sm leading-6 text-muted-foreground">해외 원본과 한국 레퍼런스로 대본을 만들고, 자막·음성·효과를 수정해 MP4와 프리미어 편집 파일로 출력합니다.</p>
+          <span className="mt-5 flex items-center gap-1.5 text-sm font-bold text-brand-olive">제작실 열기 <ArrowRight size={15} /></span>
+        </Link>
         {studios.map((studio) => {
           const Icon = studio.icon;
           const content = (

@@ -1,3 +1,4 @@
+import { ensureShortsStudio } from "./start-shorts-studio.mjs";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,6 +7,10 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const nextCli = path.join(projectRoot, "node_modules", "next", "dist", "bin", "next");
 const helperServer = path.join(projectRoot, "source-finder", "helper_server.mjs");
 const nextArguments = [nextCli, "dev", ...process.argv.slice(2)];
+
+await ensureShortsStudio().catch(error => {
+  console.error("[독백 제작실] 자동 시작 실패:", error.message);
+});
 
 const processes = [
   spawn(process.execPath, [helperServer], {

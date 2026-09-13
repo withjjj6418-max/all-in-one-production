@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 
 const pageTitles: Record<string, string> = {
   "/": "대시보드",
+  "/studio/shorts-workshop": "쇼츠제작실",
   "/research": "영상소스모음",
   "/projects": "프로젝트",
   "/analytics": "영상 분석",
@@ -16,7 +17,7 @@ const pageTitles: Record<string, string> = {
 
 export function Header() {
   const pathname = usePathname();
-  const title = pathname === "/studio/longform-japan/uploads"
+  const title = pathname.startsWith("/studio/shorts-workshop") ? "독백(가족)" : pathname === "/studio/longform-japan/uploads"
     ? "일본 롱폼 업로드 목록"
     : pathname.startsWith("/studio/longform-japan/projects/")
     ? "일본 롱폼 제작 워크벤치"

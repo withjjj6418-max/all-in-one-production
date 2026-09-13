@@ -40,6 +40,7 @@ export function Sidebar() {
   const [currentQuery, setCurrentQuery] = useState("");
   const [isStoryStudioOpen, setIsStoryStudioOpen] = useState(false);
   const [isFamilyStudioOpen, setIsFamilyStudioOpen] = useState(() => pathname.startsWith("/studio/shorts-family"));
+  const [isMonologueOpen, setIsMonologueOpen] = useState(true);
   const [isJapanStudioOpen, setIsJapanStudioOpen] = useState(false);
 
   useEffect(() => {
@@ -271,6 +272,27 @@ export function Sidebar() {
                 const waitingForProject = item.needsProject && !japanProjectId;
                 const Icon = item.icon;
                 return <Link key={item.key} href={item.href} title={waitingForProject ? "일본 롱폼 프로젝트를 먼저 선택해주세요" : undefined} onClick={() => setIsMobileOpen(false)} className={`group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition ${isActive ? "bg-sky-50 text-sky-700" : waitingForProject ? "text-muted-foreground/50" : "text-muted-foreground hover:bg-brand-cream hover:text-foreground"}`}><Icon size={15} /><span>{item.label}</span>{isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-sky-600" />}</Link>;
+              })}
+            </div>
+          </div>
+
+          <div className={`flex items-center rounded-lg ${pathname.startsWith("/studio/shorts-workshop") ? "bg-brand-cream text-brand-olive-dark" : "text-muted-foreground"}`}>
+            <Link href="/studio/shorts-workshop" onClick={() => {setIsMonologueOpen(true); setIsMobileOpen(false);}} className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-sm font-medium"><Film size={18} /><span>독백(가족)</span></Link>
+            <button type="button" onClick={() => setIsMonologueOpen(value => !value)} aria-label={isMonologueOpen ? "독백(가족) 메뉴 접기" : "독백(가족) 메뉴 펼치기"} aria-expanded={isMonologueOpen} className="flex h-10 w-10 items-center justify-center"><ChevronDown size={16} className={`transition-transform ${isMonologueOpen ? "rotate-180" : ""}`} /></button>
+          </div>
+          <div className={`overflow-hidden transition-all duration-200 ${isMonologueOpen ? "max-h-96 opacity-100" : "max-h-0 opacity-0"}`} inert={!isMonologueOpen}>
+            <div className="ml-4 space-y-0.5 border-l border-sidebar-border py-1 pl-3">
+              {[
+                {key: "", label: "프로젝트 목록", icon: Film},
+                {key: "discover", label: "독백형 발굴", icon: Search},
+                {key: "source", label: "원본 선택", icon: ScanText},
+                {key: "script", label: "기획", icon: PenLine},
+                {key: "captions", label: "자막·효과음", icon: WandSparkles},
+                {key: "premiere", label: "영상 출력", icon: Film},
+              ].map(({key, label, icon: Icon}) => {
+                const href = key ? `/studio/shorts-workshop/${key}` : "/studio/shorts-workshop";
+                const active = pathname === href;
+                return <Link key={key} href={href} onClick={() => setIsMobileOpen(false)} aria-current={active ? "page" : undefined} className={`flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium ${active ? "bg-brand-cream text-brand-olive-dark" : "text-muted-foreground hover:bg-brand-cream"}`}><Icon size={15} /><span>{label}</span>{active && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-brand-olive" />}</Link>;
               })}
             </div>
           </div>
