@@ -1,0 +1,1 @@
+{"name":"personal-gantt","version":"1.0.0","private":true,"type":"module","scripts":{"dev":"vite --host 127.0.0.1 --port 5186 --strictPort","build":"vite build","test":"node --test src/scheduler.test.js"},"dependencies":{"react":"^18.2.0","react-dom":"^18.2.0"},"devDependencies":{"vite":"^5.0.0"}}
