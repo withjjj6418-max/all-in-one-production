@@ -9,6 +9,9 @@ const projectRoot = path.resolve(__dirname, '..');
 const binDir = path.join(__dirname, 'bin');
 const ffmpegPath = path.join(binDir, 'ffmpeg.exe');
 const ytdlpPath = path.join(binDir, 'yt-dlp.exe');
+const aiPythonPath = path.join(projectRoot, '.venv-ai', 'Scripts', 'python.exe');
+const aiInpaintScriptPath = path.join(__dirname, 'ai_inpaint_video.py');
+const aiInpaintModelPath = path.join(__dirname, 'models', 'inpainting_lama_2025jan.onnx');
 
 export const SHORTS_FAMILY_ROOT = path.resolve(
   process.env.SHORTS_FAMILY_SOURCE_ROOT || 'C:\\Users\\withj\\Dropbox\\해짜_소스모음',
@@ -176,6 +179,193 @@ export function createFamilyStill({ filePath, at = 1 }) {
   ], { encoding: null, windowsHide: true, maxBuffer: 8 * 1024 * 1024 });
   if (result.status !== 0 || !result.stdout?.length) throw new Error('참고용 스틸컷을 만들지 못했습니다.');
   return Buffer.from(result.stdout);
+}
+
+function normalizeRedactionRegions(regions) {
+  const normalized = (Array.isArray(regions) ? regions : []).slice(0, 8).map((region) => ({
+    x: Math.max(0, Math.min(1, Number(region?.x) || 0)),
+    y: Math.max(0, Math.min(1, Number(region?.y) || 0)),
+    width: Math.max(0, Math.min(1, Number(region?.width) || 0)),
+    height: Math.max(0, Math.min(1, Number(region?.height) || 0)),
+  })).filter((region) => region.width >= 0.01 && region.height >= 0.01);
+  if (!normalized.length) throw new Error('제거할 영역을 한 개 이상 선택해주세요.');
+  return normalized;
+}
+
+function redactionOutputPaths(sourcePath) {
+  const directory = path.dirname(sourcePath);
+  const extension = path.extname(sourcePath);
+  const sourceStem = path.basename(sourcePath, extension);
+  const alreadyClean = /-clean(?:-\d+)?$/i.test(sourceStem) && extension.toLowerCase() === '.mp4';
+  const outputStem = alreadyClean ? sourceStem : uniqueFilenameStem(directory, `${sourceStem}-clean`);
+  return {
+    directory,
+    alreadyClean,
+    outputStem,
+    outputPath: path.join(directory, `${outputStem}.mp4`),
+    temporaryPath: path.join(directory, `.${outputStem}.redacting-${process.pid}-${Date.now()}.mp4`),
+    backupDirectory: path.join(directory, '.redaction-backups'),
+  };
+}
+
+function finalizeRedactedVideo(sourcePath, paths) {
+  const { outputPath, temporaryPath, backupDirectory, outputStem } = paths;
+  const backupManifestPath = path.join(backupDirectory, `${outputStem}.json`);
+  if (outputPath === sourcePath) {
+    const recoveryPath = `${sourcePath}.redacting-backup`;
+    fs.renameSync(sourcePath, recoveryPath);
+    try {
+      fs.renameSync(temporaryPath, outputPath);
+      fs.rmSync(recoveryPath, { force: true });
+    } catch (error) {
+      if (!fs.existsSync(sourcePath) && fs.existsSync(recoveryPath)) fs.renameSync(recoveryPath, sourcePath);
+      throw error;
+    }
+  } else {
+    fs.mkdirSync(backupDirectory, { recursive: true });
+    const backupPath = path.join(backupDirectory, path.basename(sourcePath));
+    fs.renameSync(sourcePath, backupPath);
+    try {
+      fs.renameSync(temporaryPath, outputPath);
+      fs.writeFileSync(backupManifestPath, JSON.stringify({ originalPath: sourcePath, backupPath, cleanPath: outputPath }, null, 2), 'utf8');
+    } catch (error) {
+      if (!fs.existsSync(sourcePath) && fs.existsSync(backupPath)) fs.renameSync(backupPath, sourcePath);
+      throw error;
+    }
+  }
+  return { outputPath, originalBackedUp: outputPath !== sourcePath };
+}
+
+export function getFamilyAiInpaintStatus() {
+  const missing = [];
+  if (!fs.existsSync(aiPythonPath)) missing.push('Python AI 환경');
+  if (!fs.existsSync(aiInpaintScriptPath)) missing.push('AI 처리 스크립트');
+  if (!fs.existsSync(aiInpaintModelPath)) missing.push('LaMa AI 모델');
+  return {
+    ready: missing.length === 0,
+    missing,
+    setupCommand: 'npm run shorts-family:setup-inpainting',
+    engine: 'LaMa ONNX · 배치 최적화',
+  };
+}
+
+export function redactFamilyVideo({ filePath, regions }) {
+  assertBinaries();
+  const sourcePath = assertSourcePath(filePath);
+  const media = probeVideo(sourcePath);
+  if (!media.width || !media.height) throw new Error('영상 크기를 확인하지 못했습니다.');
+  const normalizedRegions = normalizeRedactionRegions(regions);
+
+  const boxes = normalizedRegions.map((region) => {
+    const rawX = Math.floor(region.x * media.width);
+    const rawY = Math.floor(region.y * media.height);
+    const rawWidth = Math.ceil(region.width * media.width);
+    const rawHeight = Math.ceil(region.height * media.height);
+    // 글자 외곽선까지 포함하도록 선택 영역을 조금 넓힌 뒤, delogo가 참조할 테두리 픽셀을 남긴다.
+    const padding = Math.max(2, Math.round(Math.min(media.width, media.height) * 0.006));
+    const x = Math.max(1, Math.min(media.width - 3, rawX - padding));
+    const y = Math.max(1, Math.min(media.height - 3, rawY - padding));
+    const width = Math.max(2, Math.min(media.width - x - 1, rawWidth + padding * 2));
+    const height = Math.max(2, Math.min(media.height - y - 1, rawHeight + padding * 2));
+    return { x, y, width, height };
+  });
+
+  // delogo는 영역 안의 글자를 흐리는 대신, 사각형 가장자리의 배경 픽셀을 안쪽으로 보간한다.
+  // 단순 박스 블러보다 온라인 편집기의 지우개처럼 잔상이 적고 배경에 가까운 결과를 만든다.
+  const filters = `[0:v]${boxes.map((box) => `delogo=x=${box.x}:y=${box.y}:w=${box.width}:h=${box.height}:show=0`).join(',')}[redacted]`;
+
+  const paths = redactionOutputPaths(sourcePath);
+  run(ffmpegPath, [
+    '-hide_banner', '-loglevel', 'error', '-i', sourcePath,
+    '-filter_complex', filters, '-map', '[redacted]', '-map', '0:a?',
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', '-y', paths.temporaryPath,
+  ]);
+  const rendered = probeVideo(paths.temporaryPath);
+  if (!rendered.duration || !rendered.width || !rendered.height) throw new Error('로고 제거 편집본을 확인하지 못했습니다.');
+  const finalized = finalizeRedactedVideo(sourcePath, paths);
+  return { path: finalized.outputPath, filename: path.basename(finalized.outputPath), replacedPath: sourcePath, originalBackedUp: finalized.originalBackedUp, regions: normalizedRegions, mode: 'fast' };
+}
+
+export function redactFamilyVideoAi({ filePath, regions, clipStart = 0, clipEnd = null }) {
+  assertBinaries();
+  const sourcePath = assertSourcePath(filePath);
+  const normalizedRegions = normalizeRedactionRegions(regions);
+  const status = getFamilyAiInpaintStatus();
+  if (!status.ready) throw new Error(`AI 자연 제거 준비가 필요합니다: ${status.missing.join(', ')}. ${status.setupCommand}을 실행해주세요.`);
+  const paths = redactionOutputPaths(sourcePath);
+  const result = spawnSync(aiPythonPath, [
+    aiInpaintScriptPath,
+    '--input', sourcePath,
+    '--output', paths.temporaryPath,
+    '--regions', JSON.stringify(normalizedRegions),
+    '--model', aiInpaintModelPath,
+    '--ffmpeg', ffmpegPath,
+    '--start', String(Math.max(0, Number(clipStart) || 0)),
+    '--end', String(Math.max(0, Number(clipEnd) || 0)),
+  ], {
+    encoding: 'utf8',
+    windowsHide: true,
+    maxBuffer: 32 * 1024 * 1024,
+    timeout: 30 * 60 * 1000,
+    env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+  });
+  if (result.status !== 0) {
+    try { fs.rmSync(paths.temporaryPath, { force: true }); } catch { /* 실패한 임시 파일만 정리한다. */ }
+    const detail = String(result.stderr || result.stdout || result.error?.message || '').trim();
+    throw new Error(detail || 'AI 자연 제거 처리에 실패했습니다.');
+  }
+  const rendered = probeVideo(paths.temporaryPath);
+  if (!rendered.duration || !rendered.width || !rendered.height) {
+    try { fs.rmSync(paths.temporaryPath, { force: true }); } catch { /* 검증 실패 임시 파일만 정리한다. */ }
+    throw new Error('AI 자연 제거 편집본을 확인하지 못했습니다.');
+  }
+  const finalized = finalizeRedactedVideo(sourcePath, paths);
+  const progressLines = String(result.stdout || '').trim().split(/\r?\n/).filter(Boolean);
+  let provider = 'CPUExecutionProvider';
+  for (const line of progressLines) {
+    try {
+      const event = JSON.parse(line);
+      if (event.provider) provider = event.provider;
+    } catch { /* 진행 로그가 JSON이 아니어도 결과에는 영향이 없다. */ }
+  }
+  return {
+    path: finalized.outputPath,
+    filename: path.basename(finalized.outputPath),
+    replacedPath: sourcePath,
+    originalBackedUp: finalized.originalBackedUp,
+    regions: normalizedRegions,
+    mode: 'ai',
+    provider,
+  };
+}
+
+export function restoreRedactedFamilyVideo({ filePath }) {
+  const cleanPath = assertSourcePath(filePath);
+  const directory = path.dirname(cleanPath);
+  const cleanStem = path.basename(cleanPath, path.extname(cleanPath));
+  const backupDirectory = path.join(directory, '.redaction-backups');
+  const manifestPath = path.join(backupDirectory, `${cleanStem}.json`);
+  if (!fs.existsSync(manifestPath)) throw new Error('이 편집본의 원본 백업을 찾을 수 없습니다. 새 백업 기능 적용 전에 처리한 영상일 수 있습니다.');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const originalPath = path.resolve(String(manifest.originalPath || ''));
+  const backupPath = path.resolve(String(manifest.backupPath || ''));
+  if (!isInside(directory, originalPath) || !isInside(backupDirectory, backupPath)) throw new Error('원본 백업 경로가 올바르지 않습니다.');
+  if (!fs.existsSync(backupPath)) throw new Error('보관된 원본 파일을 찾을 수 없습니다.');
+  if (fs.existsSync(originalPath)) throw new Error('복원할 원본 이름의 파일이 이미 존재합니다.');
+
+  fs.renameSync(backupPath, originalPath);
+  try {
+    fs.rmSync(cleanPath, { force: true });
+  } catch (error) {
+    if (!fs.existsSync(backupPath) && fs.existsSync(originalPath)) fs.renameSync(originalPath, backupPath);
+    throw error;
+  }
+  try { fs.rmSync(manifestPath, { force: true }); } catch { /* 복원된 원본은 유지한다. */ }
+  try {
+    if (fs.existsSync(backupDirectory) && fs.readdirSync(backupDirectory).length === 0) fs.rmdirSync(backupDirectory);
+  } catch { /* 비어 있는 숨김 폴더 정리 실패는 복원 결과에 영향을 주지 않는다. */ }
+  return { path: originalPath, filename: path.basename(originalPath), removedCleanPath: cleanPath, restored: true };
 }
 
 export function resolveFamilyFolder(filePath) {

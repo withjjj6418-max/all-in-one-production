@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import SourceBoardImport from "./SourceBoardImport";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import ProjectDashboard, { type WorkshopProject, type ProjectCommand } from "./ProjectDashboard";
@@ -97,6 +98,7 @@ export default function ShortsWorkshopPage() {
         <Link href="/studio/shorts-workshop" className="rounded-lg border border-border bg-white px-3 py-2 text-sm">프로젝트 목록</Link>
         {steps.map(([key, label], index) => <Link key={key} href={`/studio/shorts-workshop/${key}`} aria-current={stage === key ? "step" : undefined} className={`rounded-lg border px-3 py-2 text-sm ${stage === key ? "border-brand-olive bg-brand-olive text-white" : "border-border bg-white text-muted-foreground"}`}>{index + 1}. {label}</Link>)}
       </nav>
+      {!home && stage === "discover" && <Suspense fallback={null}><SourceBoardImport studio={STUDIO} frame={frame} ready={status === "ready"} connectionAttempt={attempt} /></Suspense>}
       {status === "offline" && (
         <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm leading-7 text-amber-950">
           <p className="font-bold">이 컴퓨터의 쇼츠제작실을 먼저 실행해 주세요.</p>

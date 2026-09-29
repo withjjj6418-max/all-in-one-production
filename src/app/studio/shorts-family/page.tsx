@@ -5,8 +5,8 @@ import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
-  ArrowRight, Baby, Check, ChevronRight, Clock3, FileVideo2, FolderKanban, FolderOpen,
-  Eye, Loader2, PackageCheck, PauseCircle, Play, Plus, RefreshCw, Save, Scissors,
+  ArrowRight, Baby, Check, ChevronRight, Clock3, Eraser, FileVideo2, FolderKanban, FolderOpen,
+  Eye, Loader2, PackageCheck, PauseCircle, Play, Plus, RefreshCw, RotateCcw, Save, Scissors,
   ShieldCheck, Sparkles, Trash2, WandSparkles,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -34,6 +34,7 @@ type PlanningResult = {
 type TitleCandidates = { korean: string[]; japanese: Array<{ japanese: string; korean: string }> };
 type LocalAnalysis = { index: number; jobId: string; description: string; ocr: string[]; watermarks: string[]; language: string; queries: string[] };
 type SceneCopy = { japaneseDescription: string; koreanSuggestions: Array<{ korean: string; tone: string }>; suggestions: Array<{ japanese: string; korean: string; tone: string }> };
+type RedactionRegion = { x: number; y: number; width: number; height: number };
 type Candidate = {
   id?: string; sourceTitle: string; sourceUrl: string; localPath: string; sourceKind: "reference_split" | "library" | "original_found";
   referencePath?: string;
@@ -589,8 +590,8 @@ function ShortsFamilyWorkspace() {
     };
   }
 
-  async function saveCandidate(index: number): Promise<boolean> {
-    const candidate = candidates[index];
+  async function saveCandidate(index: number, candidateOverride?: Candidate): Promise<boolean> {
+    const candidate = candidateOverride || candidates[index];
     if (!projectId || !candidate) {
       setMessage("프로젝트를 먼저 만들어주세요.");
       return false;
@@ -615,6 +616,55 @@ function ShortsFamilyWorkspace() {
       return false;
     }
     finally { setBusy(null); }
+  }
+
+  async function redactCandidate(index: number, regions: RedactionRegion[], mode: "fast" | "ai"): Promise<boolean> {
+    const candidate = candidates[index];
+    if (!candidate || !regions.length) return false;
+    setBusy(`redact-${index}`);
+    setMessage(mode === "ai"
+      ? `${index + 1}번 영상의 로고·자막을 AI가 주변 배경으로 복원하고 있습니다. 영상 길이에 따라 몇 분 걸릴 수 있습니다.`
+      : `${index + 1}번 영상의 로고·자막을 빠르게 지우고 있습니다.`);
+    try {
+      const result = await callHelper<{ path: string; filename: string; replacedPath: string; originalBackedUp: boolean; provider?: string }>(mode === "ai" ? "/shorts-family/redact-ai" : "/shorts-family/redact", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filePath: candidate.localPath, regions, clipStart: candidate.clipStart, clipEnd: candidate.clipEnd }), signal: AbortSignal.timeout(30 * 60 * 1000),
+      });
+      const updated = { ...candidate, localPath: result.path };
+      updateCandidate(index, { localPath: result.path });
+      const saved = await saveCandidate(index, updated);
+      setMessage(saved
+        ? `${index + 1}번 ${mode === "ai" ? "AI 자연 제거" : "빠른 제거"} 완료: ${result.filename} · 기존 원본을 편집본으로 교체했습니다.${result.provider ? ` (${result.provider})` : ""}`
+        : `${result.filename}은 생성됐지만 프로젝트 저장에 실패했습니다. 변경사항 저장을 다시 눌러주세요.`);
+      return saved;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : `${mode === "ai" ? "AI 자연 제거" : "빠른 제거"} 실패`);
+      return false;
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function restoreRedactedCandidate(index: number): Promise<boolean> {
+    const candidate = candidates[index];
+    if (!candidate) return false;
+    setBusy(`restore-redact-${index}`);
+    setMessage(`${index + 1}번 영상을 제거 적용 전 원본으로 되돌리고 있습니다.`);
+    try {
+      const result = await callHelper<{ path: string; filename: string }>("/shorts-family/redact-restore", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filePath: candidate.localPath }),
+      });
+      const updated = { ...candidate, localPath: result.path };
+      updateCandidate(index, { localPath: result.path });
+      const saved = await saveCandidate(index, updated);
+      setMessage(saved ? `${index + 1}번 영상을 원본 ${result.filename}으로 복원했습니다.` : "원본은 복원됐지만 프로젝트 저장에 실패했습니다. 변경사항 저장을 다시 눌러주세요.");
+      return saved;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "원본 복원 실패");
+      return false;
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function persistAll() {
@@ -908,7 +958,7 @@ function ShortsFamilyWorkspace() {
       </div>
     </section>}
 
-    {requestedStage === "edit" && <section className="rounded-2xl border border-teal-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-end justify-between gap-3"><div><div className="text-xs font-black text-teal-700">STEP 4</div><h2 className="mt-1 font-bold">원본 편집</h2><p className="mt-1 text-xs text-muted-foreground">다운로드된 후보 영상의 길이와 화면 처리(확대·크롭·블러)를 조절합니다. 순위·문구는 다음 단계에서 정합니다.</p></div><button onClick={saveAll} disabled={!projectId || stagedCandidateIndexes.length === 0 || Boolean(busy)} className="inline-flex h-10 items-center gap-2 rounded-xl border border-border px-4 text-sm font-bold disabled:opacity-40">{busy === "save" ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} 프로젝트 저장</button></div>{stagedCandidateIndexes.length === 0 ? <div className="mt-4 rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">STEP 3에서 후보 영상을 먼저 다운로드해주세요.</div> : <div className="mt-5 space-y-3">{stagedCandidateIndexes.map(({ candidate, index }) => <CandidateTrimEditor key={`${candidate.localPath}-${index}`} index={index} candidate={candidate} update={(patch) => updateCandidate(index, patch)} save={() => saveCandidate(index)} saving={busy === `save-candidate-${index}`} />)}{downloadsReady && <a href="/studio/shorts-family?stage=ranking" className="mt-1 inline-flex h-9 items-center gap-1 rounded-lg bg-teal-700 px-3 text-xs font-black text-white">순위·문구 편집으로 이동 <ChevronRight size={13} /></a>}</div>}</section>}
+    {requestedStage === "edit" && <section className="rounded-2xl border border-teal-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-end justify-between gap-3"><div><div className="text-xs font-black text-teal-700">STEP 4</div><h2 className="mt-1 font-bold">원본 편집</h2><p className="mt-1 text-xs text-muted-foreground">다운로드된 후보 영상의 길이와 화면 처리(확대·크롭·블러)를 조절하고, 고정된 로고·자막 영역을 제거합니다. 순위·문구는 다음 단계에서 정합니다.</p></div><button onClick={saveAll} disabled={!projectId || stagedCandidateIndexes.length === 0 || Boolean(busy)} className="inline-flex h-10 items-center gap-2 rounded-xl border border-border px-4 text-sm font-bold disabled:opacity-40">{busy === "save" ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} 프로젝트 저장</button></div>{stagedCandidateIndexes.length === 0 ? <div className="mt-4 rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">STEP 3에서 후보 영상을 먼저 다운로드해주세요.</div> : <div className="mt-5 space-y-3">{stagedCandidateIndexes.map(({ candidate, index }) => <CandidateTrimEditor key={`${candidate.localPath}-${index}`} index={index} candidate={candidate} update={(patch) => updateCandidate(index, patch)} save={() => saveCandidate(index)} saving={busy === `save-candidate-${index}`} redact={(regions, mode) => redactCandidate(index, regions, mode)} redacting={busy === `redact-${index}`} restore={() => restoreRedactedCandidate(index)} restoring={busy === `restore-redact-${index}`} />)}{downloadsReady && <a href="/studio/shorts-family?stage=ranking" className="mt-1 inline-flex h-9 items-center gap-1 rounded-lg bg-teal-700 px-3 text-xs font-black text-white">순위·문구 편집으로 이동 <ChevronRight size={13} /></a>}</div>}</section>}
 
     {requestedStage === "ranking" && <section className="rounded-2xl border border-violet-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-end justify-between gap-3"><div><div className="text-xs font-black text-violet-700">STEP 5</div><h2 className="mt-1 font-bold">순위·장면 문구 편집</h2><p className="mt-1 text-xs text-muted-foreground">한국 1위부터 후보 소스를 고르고 장면 범위와 순위 반응 문구를 정합니다. 일본 순위는 한국 순위의 정확한 역순으로 자동 고정됩니다.</p></div><div className="flex flex-wrap gap-2"><button onClick={generateRanking} disabled={!downloadsReady || Boolean(busy)} className="inline-flex h-10 items-center gap-2 rounded-xl bg-violet-600 px-4 text-sm font-bold text-white disabled:opacity-40">{busy === "planning" ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />} 순위 섞기</button><button onClick={generateAllSceneCopies} disabled={!rankingComplete || Boolean(busy)} className="inline-flex h-10 items-center gap-2 rounded-xl bg-sky-700 px-4 text-sm font-bold text-white disabled:opacity-40">{busy === "scene-copy-all" ? <Loader2 size={15} className="animate-spin" /> : <WandSparkles size={15} />} 전체 문구 추천</button><button onClick={saveAll} disabled={!projectId || !downloadsReady || Boolean(busy)} className="inline-flex h-10 items-center gap-2 rounded-xl border border-border px-4 text-sm font-bold disabled:opacity-40"><Save size={15} /> 프로젝트 저장</button></div></div>{!downloadsReady ? <div className="mt-4 rounded-xl border border-dashed border-amber-300 bg-amber-50 p-6 text-center text-sm font-bold text-amber-800">원본 추적 페이지에서 후보 영상 5개 이상을 먼저 다운로드해주세요. 현재 {stagedCandidateIndexes.length}/5개</div> : <div className="mt-5 space-y-4">{[1, 2, 3, 4, 5].map((rank) => { const selected = candidates.findIndex((candidate) => candidate.koreanRank === rank && /[\\/]01-candidates[\\/]/i.test(candidate.localPath)); return <RankSlotEditor key={rank} rank={rank} selectedIndex={selected} sourceOptions={stagedCandidateIndexes} candidate={selected >= 0 ? candidates[selected] : undefined} sceneCopy={selected >= 0 ? sceneCopies[selected] : undefined} generatingCopy={busy === "planning" || busy === "scene-copy-all" || (selected >= 0 && busy === `scene-copy-${selected}`)} selectSource={(index) => assignRankSource(rank, index)} update={(patch) => selected >= 0 && updateCandidate(selected, patch)} generateCopy={() => selected >= 0 && generateSceneCopy(selected)} />; })}</div>}</section>}
 
@@ -986,15 +1036,24 @@ function TrimSlider({ duration, clipStart, clipEnd, update, seekWhenPaused }: { 
   </div>;
 }
 
-function CandidateTrimEditor({ index, candidate, update, save, saving }: { index: number; candidate: Candidate; update: (patch: Partial<Candidate>) => void; save: () => Promise<boolean>; saving: boolean }) {
+function CandidateTrimEditor({ index, candidate, update, save, saving, redact, redacting, restore, restoring }: { index: number; candidate: Candidate; update: (patch: Partial<Candidate>) => void; save: () => Promise<boolean>; saving: boolean; redact: (regions: RedactionRegion[], mode: "fast" | "ai") => Promise<boolean>; redacting: boolean; restore: () => Promise<boolean>; restoring: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const videoStageRef = useRef<HTMLDivElement>(null);
   const [duration, setDuration] = useState(0);
   const [videoFailed, setVideoFailed] = useState(false);
+  const [redactionOpen, setRedactionOpen] = useState(false);
+  const [redactionRegions, setRedactionRegions] = useState<RedactionRegion[]>([]);
+  const [draftRegion, setDraftRegion] = useState<RedactionRegion | null>(null);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [contentBox, setContentBox] = useState({ left: 0, top: 0, width: 0, height: 0 });
+  const [applyingRedaction, setApplyingRedaction] = useState(false);
+  const [redactionMode, setRedactionMode] = useState<"fast" | "ai" | null>(null);
   const rangeSignature = `${candidate.clipStart}|${candidate.clipEnd ?? ""}`;
   const [savedRangeSignature, setSavedRangeSignature] = useState(rangeSignature);
   const rangeChanged = rangeSignature !== savedRangeSignature;
   const streamUrl = `${HELPER}/shorts-family/stream?path=${encodeURIComponent(candidate.localPath)}`;
   const clipEnd = candidate.clipEnd ?? duration;
+  const redactionDone = /-clean(?:-\d+)?\.mp4$/i.test(candidate.localPath);
   const saveRangeChanges = async () => {
     if (!rangeChanged || saving) return;
     if (await save()) setSavedRangeSignature(rangeSignature);
@@ -1004,12 +1063,76 @@ function CandidateTrimEditor({ index, candidate, update, save, saving }: { index
     if (!video || !video.paused) return;
     video.currentTime = Math.max(0, Math.min(seconds, video.duration || duration));
   };
+  const syncContentBox = useCallback(() => {
+    const video = videoRef.current;
+    const stage = videoStageRef.current;
+    if (!video || !stage || !video.videoWidth || !video.videoHeight) return;
+    const stageWidth = stage.clientWidth;
+    const stageHeight = stage.clientHeight;
+    const videoRatio = video.videoWidth / video.videoHeight;
+    const stageRatio = stageWidth / stageHeight;
+    const width = videoRatio > stageRatio ? stageWidth : stageHeight * videoRatio;
+    const height = videoRatio > stageRatio ? stageWidth / videoRatio : stageHeight;
+    setContentBox({ left: (stageWidth - width) / 2, top: (stageHeight - height) / 2, width, height });
+  }, []);
+  useEffect(() => {
+    const stage = videoStageRef.current;
+    if (!stage) return;
+    const observer = new ResizeObserver(syncContentBox);
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, [syncContentBox]);
+  const pointInOverlay = (event: React.PointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return {
+      x: Math.max(0, Math.min(1, (event.clientX - rect.left) / Math.max(1, rect.width))),
+      y: Math.max(0, Math.min(1, (event.clientY - rect.top) / Math.max(1, rect.height))),
+    };
+  };
+  const beginRegion = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (applyingRedaction || redacting) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const point = pointInOverlay(event);
+    videoRef.current?.pause();
+    setDragStart(point);
+    setDraftRegion({ ...point, width: 0, height: 0 });
+  };
+  const moveRegion = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragStart) return;
+    const point = pointInOverlay(event);
+    setDraftRegion({ x: Math.min(dragStart.x, point.x), y: Math.min(dragStart.y, point.y), width: Math.abs(point.x - dragStart.x), height: Math.abs(point.y - dragStart.y) });
+  };
+  const finishRegion = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragStart) return;
+    const point = pointInOverlay(event);
+    const next = { x: Math.min(dragStart.x, point.x), y: Math.min(dragStart.y, point.y), width: Math.abs(point.x - dragStart.x), height: Math.abs(point.y - dragStart.y) };
+    if (next.width >= 0.01 && next.height >= 0.01) setRedactionRegions((current) => [...current, next].slice(0, 8));
+    setDragStart(null);
+    setDraftRegion(null);
+  };
+  const applyRedaction = async (mode: "fast" | "ai") => {
+    if (!redactionRegions.length || applyingRedaction || redacting) return;
+    setApplyingRedaction(true);
+    setRedactionMode(mode);
+    try {
+      if (await redact(redactionRegions, mode)) {
+        setRedactionRegions([]);
+        setRedactionOpen(false);
+        setVideoFailed(false);
+      }
+    } finally {
+      setApplyingRedaction(false);
+      setRedactionMode(null);
+    }
+  };
+  const visibleRegions = draftRegion ? [...redactionRegions, draftRegion] : redactionRegions;
   return <article className="rounded-xl border border-border bg-white p-4">
-    <div className="flex items-start justify-between gap-3"><p className="min-w-0 truncate text-sm font-black">{index + 1}번 · {candidate.sourceTitle}</p><button type="button" onClick={saveRangeChanges} disabled={saving || !rangeChanged} className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-md border px-3 text-[10px] font-black ${rangeChanged ? "border-teal-500 bg-teal-50 text-teal-800" : "border-emerald-300 bg-emerald-50 text-emerald-700"} disabled:opacity-75`}>{saving ? <Loader2 size={12} className="animate-spin" /> : rangeChanged ? <Save size={12} /> : <Check size={12} />} {saving ? "저장 중…" : rangeChanged ? "변경사항 저장" : "저장됨"}</button></div>
+    <div className="flex flex-wrap items-start justify-between gap-3"><p className="min-w-0 truncate text-sm font-black">{index + 1}번 · {candidate.sourceTitle}</p><div className="flex flex-wrap gap-2"><button type="button" onClick={() => { videoRef.current?.pause(); setRedactionOpen((current) => !current); }} disabled={redacting || applyingRedaction || restoring} className={`inline-flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-md border px-3 text-[10px] font-black disabled:cursor-not-allowed disabled:opacity-50 ${redactionOpen ? "border-amber-500 bg-amber-50 text-amber-800" : "border-zinc-300 bg-white text-zinc-700"}`}><Eraser size={12} /> {redactionOpen ? "영역 선택 중" : redactionDone ? "다시 영역 선택" : "로고·자막 제거"}</button>{redactionDone && <button type="button" onClick={restore} disabled={redacting || applyingRedaction || restoring} className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-md border border-sky-300 bg-sky-50 px-3 text-[10px] font-black text-sky-800 disabled:cursor-not-allowed disabled:opacity-50">{restoring ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />} {restoring ? "복원 중…" : "원본으로 되돌리기"}</button>}<button type="button" onClick={saveRangeChanges} disabled={saving || !rangeChanged} className={`inline-flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-md border px-3 text-[10px] font-black ${rangeChanged ? "border-teal-500 bg-teal-50 text-teal-800" : "border-emerald-300 bg-emerald-50 text-emerald-700"} disabled:cursor-default disabled:opacity-75`}>{saving ? <Loader2 size={12} className="animate-spin" /> : rangeChanged ? <Save size={12} /> : <Check size={12} />} {saving ? "저장 중…" : rangeChanged ? "변경사항 저장" : "저장됨"}</button></div></div>
     <p className="mt-1 break-all text-[10px] text-muted-foreground">{candidate.localPath}</p>
     {videoFailed
       ? <div className="mt-3 flex aspect-video w-full flex-col items-center justify-center rounded-lg border border-dashed border-zinc-300 bg-zinc-100 text-[9px] font-bold text-zinc-500"><FileVideo2 size={18} className="mb-1" />로컬 도우미 재시작 후 재생 가능</div>
-      : <video ref={videoRef} src={streamUrl} controls preload="metadata" onLoadedMetadata={(event) => setDuration(event.currentTarget.duration || 0)} onError={() => setVideoFailed(true)} className="mt-3 aspect-video w-full rounded-lg bg-black" />}
+      : <div ref={videoStageRef} className="relative mt-3 aspect-video w-full overflow-hidden rounded-lg bg-black"><video ref={videoRef} src={streamUrl} controls={!redactionOpen} preload="metadata" onLoadedMetadata={(event) => { setDuration(event.currentTarget.duration || 0); syncContentBox(); }} onError={() => setVideoFailed(true)} className="h-full w-full object-contain" />{redactionOpen && contentBox.width > 0 && <div className="absolute touch-none cursor-crosshair border border-amber-300/70 bg-amber-300/5" style={{ left: contentBox.left, top: contentBox.top, width: contentBox.width, height: contentBox.height }} onPointerDown={beginRegion} onPointerMove={moveRegion} onPointerUp={finishRegion} onPointerCancel={() => { setDragStart(null); setDraftRegion(null); }}>{visibleRegions.map((region, regionIndex) => <div key={`${region.x}-${region.y}-${regionIndex}`} className="absolute border-2 border-yellow-300 bg-zinc-950/35 shadow-[0_0_0_1px_rgba(0,0,0,0.5)]" style={{ left: `${region.x * 100}%`, top: `${region.y * 100}%`, width: `${region.width * 100}%`, height: `${region.height * 100}%` }}>{regionIndex < redactionRegions.length && <button type="button" title="이 영역 삭제" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setRedactionRegions((current) => current.filter((_, itemIndex) => itemIndex !== regionIndex)); }} className="absolute -right-2 -top-2 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full bg-yellow-300 text-[11px] font-black text-black">×</button>}</div>)}</div>}</div>}
+    {redactionOpen && <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3"><p className="text-[10px] font-black text-amber-900">영상 위에서 지울 로고·자막을 드래그하세요. 고정 영역은 최대 8개까지 선택할 수 있습니다.</p><p className="mt-1 text-[9px] font-bold text-amber-700">AI 자연 제거는 주변 장면을 새로 복원해 사람·복잡한 배경 위 자막에 유리하며 시간이 더 걸립니다. 성공하면 편집본으로 교체되고 ‘원본으로 되돌리기’가 가능합니다.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => { setRedactionRegions([]); setDraftRegion(null); }} disabled={!redactionRegions.length || applyingRedaction || redacting} className="h-9 cursor-pointer rounded-lg border border-zinc-300 bg-white px-3 text-[10px] font-black disabled:cursor-not-allowed disabled:opacity-40">영역 전체 지우기</button><button type="button" onClick={() => { setRedactionOpen(false); setRedactionRegions([]); setDraftRegion(null); }} disabled={applyingRedaction || redacting} className="h-9 cursor-pointer rounded-lg border border-zinc-300 bg-white px-3 text-[10px] font-black disabled:cursor-not-allowed disabled:opacity-40">취소</button><button type="button" onClick={() => applyRedaction("fast")} disabled={!redactionRegions.length || applyingRedaction || redacting} className="inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg border border-amber-500 bg-white px-4 text-[10px] font-black text-amber-800 disabled:cursor-not-allowed disabled:opacity-40">{redactionMode === "fast" ? <Loader2 size={12} className="animate-spin" /> : <Eraser size={12} />} {redactionMode === "fast" ? "빠른 제거 중…" : `빠른 제거 (${redactionRegions.length}개)`}</button><button type="button" onClick={() => applyRedaction("ai")} disabled={!redactionRegions.length || applyingRedaction || redacting} className="inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg bg-violet-700 px-4 text-[10px] font-black text-white disabled:cursor-not-allowed disabled:opacity-40">{redactionMode === "ai" ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {redactionMode === "ai" ? "AI 복원 중…" : `AI 자연 제거 (${redactionRegions.length}개)`}</button></div></div>}
     {duration > 0 && <div className="mt-3"><TrimSlider duration={duration} clipStart={candidate.clipStart} clipEnd={clipEnd} update={update} seekWhenPaused={seekWhenPaused} /><p className="mt-1 text-[10px] font-bold text-muted-foreground">{candidate.clipStart.toFixed(1)}초 ~ {clipEnd.toFixed(1)}초 · 정지 상태에서 보라·파랑 손잡이를 누르면 해당 지점으로 이동합니다. 재생 중에는 아래 “현재” 버튼으로 지점을 찍을 수 있습니다.</p></div>}
     <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
       <label className="text-[10px] font-bold text-muted-foreground">시작(초)<div className="mt-1 flex gap-1"><input type="number" min={0} step={0.1} value={candidate.clipStart} onChange={(event) => update({ clipStart: Number(event.target.value) })} className="h-9 w-full min-w-0 rounded-lg border border-border px-3 text-xs" /><button type="button" onClick={() => videoRef.current && update({ clipStart: videoRef.current.currentTime })} disabled={!duration} className="shrink-0 rounded-lg border border-violet-300 bg-violet-50 px-2 text-[9px] font-black text-violet-700 disabled:opacity-40">현재</button></div></label>

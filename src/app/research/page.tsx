@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Search, Plus, ExternalLink, Trash2, Folder, AlertCircle, Check, X, Loader2, ChevronLeft, ChevronRight, ChevronDown, ArrowUp, ArrowDown, Download } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { useRouter } from 'next/navigation'
+import { queueSourceBoardImport } from '@/lib/source-board-import'
 
 interface Source {
   id: number
@@ -20,6 +22,7 @@ type DownloadStatus = 'downloaded' | 'pending' | 'failed'
 const supabase = createClient()
 
 export default function ResearchPage() {
+  const router = useRouter()
   // 상태 관리
   const [sources, setSources] = useState<Source[]>([])
   const [loading, setLoading] = useState(true)
@@ -153,6 +156,14 @@ export default function ResearchPage() {
     setToastMessage(msg)
     setTimeout(() => setToastMessage(null), 3000)
   }, [])
+
+  const connectToStudio = (source: { id: number; url: string; title: string | null; category: string; memo: string | null }) => {
+    try {
+      router.push(queueSourceBoardImport(source))
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '제작실에 전달할 소스를 준비하지 못했습니다.')
+    }
+  }
 
   const handleDownloadSource = async (source: Source) => {
     if (downloadingId !== null) return
@@ -714,7 +725,7 @@ export default function ResearchPage() {
                     {paginatedList.map((source) => (
                       <div
                         key={source.id}
-                        className="flex items-center justify-between px-4 py-1.5 hover:bg-gray-50/40 transition-colors group gap-3 min-w-0"
+                        className="flex flex-wrap sm:flex-nowrap items-center justify-between px-4 py-1.5 hover:bg-gray-50/40 transition-colors group gap-3 min-w-0"
                       >
                         {/* 제목, 작성자 닉네임 및 메모 정보 영역 (가로 병렬 정렬 구조) */}
                         <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -752,6 +763,14 @@ export default function ResearchPage() {
 
                         {/* 액션 버튼 영역 */}
                         <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => connectToStudio(source)}
+                            className="px-2 py-1 rounded-lg bg-[#7C8C4E]/10 text-[#6c7b44] hover:bg-[#7C8C4E]/20 text-[10px] sm:text-xs font-semibold"
+                            title="독백형 발굴에 이 영상 연결"
+                          >
+                            제작실로 연결
+                          </button>
                           {(() => {
                             const status = downloadStatuses[source.url] || 'pending'
                             const isDownloading = downloadingId === source.id
@@ -822,7 +841,7 @@ export default function ResearchPage() {
       {/* ─── 소스 추가/수정 팝업 모달 ─── */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl border border-gray-100 overflow-hidden transform transition-all animate-in zoom-in-95 duration-200">
+          <div className="bg-white rounded-3xl w-full max-w-lg max-h-[90dvh] shadow-2xl border border-gray-100 overflow-y-auto transform transition-all animate-in zoom-in-95 duration-200">
             {/* 모달 헤더 */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/50">
               <h3 className="text-base font-bold text-gray-800 flex items-center gap-2">
@@ -914,6 +933,19 @@ export default function ResearchPage() {
                   maxLength={500}
                 />
               </div>
+
+              {editingSourceId !== null && (
+                <div className="rounded-xl bg-[#7C8C4E]/5 p-3 space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => connectToStudio({ id: editingSourceId, url: formUrl, title: formTitle, category: formCategory === '__new__' ? newCategoryName : formCategory, memo: formMemo })}
+                    className="w-full py-2.5 rounded-lg border border-[#7C8C4E]/30 text-[#6c7b44] hover:bg-[#7C8C4E]/10 text-sm font-semibold"
+                  >
+                    제작실로 연결
+                  </button>
+                  <p className="text-[11px] text-gray-500">현재 제목과 주소로 독백형 발굴을 시작합니다. 게시판 수정은 ‘수정하기’로 저장하세요.</p>
+                </div>
+              )}
 
               {/* 푸터 버튼 */}
               <div className="flex gap-2.5 pt-4 border-t border-gray-100 mt-6">

@@ -11,6 +11,10 @@ import {
   listFamilyLibrary,
   listFamilyRecommendationLibrary,
   packageFamilyProject,
+  getFamilyAiInpaintStatus,
+  redactFamilyVideo,
+  redactFamilyVideoAi,
+  restoreRedactedFamilyVideo,
   resolveFamilyFolder,
   stageFamilyCandidate,
   stageUploadedReference,
@@ -261,7 +265,7 @@ const server = http.createServer(async (req, res) => {
       ok: true,
       service: 'source-finder-helper',
       version: 3,
-      capabilities: ['url-analysis', 'file-analysis', 'candidate-metadata', 'candidate-video-verification', 'asset-preview', 'source-board-download-status', 'source-board-download', 'shorts-family-library', 'shorts-family-download', 'shorts-family-split', 'shorts-family-package', 'shorts-family-local-vision', 'shorts-family-batch-originals', 'shorts-family-stream'],
+      capabilities: ['url-analysis', 'file-analysis', 'candidate-metadata', 'candidate-video-verification', 'asset-preview', 'source-board-download-status', 'source-board-download', 'shorts-family-library', 'shorts-family-download', 'shorts-family-split', 'shorts-family-package', 'shorts-family-redact', 'shorts-family-redact-ai', 'shorts-family-redact-restore', 'shorts-family-local-vision', 'shorts-family-batch-originals', 'shorts-family-stream'],
     });
     return;
   }
@@ -476,6 +480,41 @@ const server = http.createServer(async (req, res) => {
       const payload = await readJson(req, 4 * 1024 * 1024);
       const result = packageFamilyProject(payload);
       sendJson(res, 200, { ok: true, ...result });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error.message });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && requestUrl.pathname === '/shorts-family/redact') {
+    try {
+      const payload = await readJson(req, 2 * 1024 * 1024);
+      sendJson(res, 200, { ok: true, ...redactFamilyVideo(payload) });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error.message });
+    }
+    return;
+  }
+
+  if (req.method === 'GET' && requestUrl.pathname === '/shorts-family/redact-ai-status') {
+    sendJson(res, 200, { ok: true, ...getFamilyAiInpaintStatus() });
+    return;
+  }
+
+  if (req.method === 'POST' && requestUrl.pathname === '/shorts-family/redact-ai') {
+    try {
+      const payload = await readJson(req, 2 * 1024 * 1024);
+      sendJson(res, 200, { ok: true, ...redactFamilyVideoAi(payload) });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error.message });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && requestUrl.pathname === '/shorts-family/redact-restore') {
+    try {
+      const payload = await readJson(req);
+      sendJson(res, 200, { ok: true, ...restoreRedactedFamilyVideo(payload) });
     } catch (error) {
       sendJson(res, 500, { ok: false, error: error.message });
     }
