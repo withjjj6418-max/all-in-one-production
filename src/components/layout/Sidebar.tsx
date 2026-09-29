@@ -163,16 +163,16 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4 scrollbar-hide">
         <a
-          href="http://127.0.0.1:5186"
+          href="/personal-planner/index.html"
           target="_blank"
           rel="noopener noreferrer"
-          title="이 PC의 작업·루틴·간트차트 열기"
+          title="작업·루틴·간트차트 열기"
           onClick={() => setIsMobileOpen(false)}
           className="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition hover:bg-brand-cream hover:text-foreground"
         >
           <PanelsTopLeft size={18} />
           <span>개인 일정</span>
-          <span className="ml-auto text-[10px]">이 PC ↗</span>
+          <span className="ml-auto text-[10px]">열기 ↗</span>
         </a>
         <Link
           href="/research"

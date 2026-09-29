@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:web": "next dev",
-    "build": "next build",
+    "build": "npm --prefix personal-gantt ci --include=dev --no-audit --no-fund && npm --prefix personal-gantt run build && node scripts/publish-personal-gantt.mjs && next build",
     "start": "next start",
     "lint": "eslint",
     "source-finder": "node source-finder/helper_server.mjs",
