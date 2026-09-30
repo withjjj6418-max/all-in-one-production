@@ -2,6 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { schedule, addDays, validateData } from './scheduler.js';
 import {isDue,migrateRoutines,repeatLabel,validRule} from './recurrence.js';
+import {descendants,removeTasks,cloneTasks,connectTasks,validateRelations,treeRows} from './taskGraph.js';
+test('task tree copy/delete, cycles, and dependency scheduling',()=>{
+ const list=[task('parent'),task('child',{parentId:'parent'}),task('next',{predecessors:['child']})];
+ assert.deepEqual([...descendants(list,'parent')],['parent','child']);
+ const copies=cloneTasks(list,descendants(list,'parent'),'copy-project');assert.equal(copies[1].parentId,copies[0].id);
+ assert.deepEqual(removeTasks(list,descendants(list,'parent'))[0].predecessors,[]);
+ assert.throws(()=>validateRelations([task('a',{parentId:'b'}),task('b',{parentId:'a'})]));
+ assert.throws(()=>connectTasks(connectTasks(list,'parent','next'),'next','parent'));
+ assert.equal(treeRows(list,list,{parent:true}).some(r=>r.task.id==='child'),false);
+ const planned=schedule([task('b',{predecessors:['a'],priority:3}),task('a',{hours:12,priority:1})],settings);
+ assert.deepEqual(planned.map(t=>t.id),['a','b']);assert.equal(planned[1].start,'2026-09-30');
+});
 test('routine migration retains checks and is idempotent',()=>{const data={routines:[{id:'d',kind:'daily',checks:{'2026-09-29':true}},{id:'w',kind:'weekly',checks:{'2026-09-28':true}}]};const next=migrateRoutines(data);assert.equal(repeatLabel(next.routines[0]),'매일');assert.equal(repeatLabel(next.routines[1]),'1주일마다');assert.deepEqual(next.routines[0].checks,data.routines[0].checks);assert.deepEqual(migrateRoutines(next),next);assert.equal(isDue(next.routines[1],'2026-09-28'),true);assert.equal(isDue(next.routines[1],'2026-09-29'),false);});
 test('routine intervals, weekdays, start date and monthly short months',()=>{const r=repeat=>({repeat});assert.equal(isDue(r({type:'interval',interval:10,start:'2026-09-30'}),'2026-10-10'),true);assert.equal(isDue(r({type:'interval',interval:4,start:'2026-09-30'}),'2026-10-03'),false);assert.equal(isDue(r({type:'weekdays',weekdays:[1,3],start:'2026-09-30'}),'2026-09-28'),false);assert.equal(isDue(r({type:'weekdays',weekdays:[1,3],start:'2026-09-30'}),'2026-10-05'),true);assert.equal(isDue(r({type:'monthly',start:'2026-01-31'}),'2026-02-28'),true);assert.equal(isDue(r({type:'monthly',start:'2026-01-31'}),'2026-03-31'),true);assert.equal(isDue(r({type:'monthly',start:'2026-01-31'}),'2028-02-29'),true);assert.equal(validRule({type:'weekdays',weekdays:[],start:'2026-09-30'}),false);});
 const settings={start:'2026-09-28',deadline:'2026-10-02',hours:6,weekdays:[1,2,3,4,5]};

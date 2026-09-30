@@ -1,3 +1,4 @@
+import {validateRelations} from './taskGraph.js';
 import {validRule} from './recurrence.js';
 import { parseDate, formatDate, getDaysBetween } from './utils.js';
 export const addDays = (date, n) => { const d = parseDate(date); d.setDate(d.getDate() + n); return formatDate(d); };
@@ -21,10 +22,17 @@ export function schedule(tasks, settings, projectId = '') {
   const dueDate = t => t.deadline && t.deadline < deadline ? t.deadline : deadline;
   const candidates = tasks.filter(t => t.status !== 'done' && !t.locked && (!projectId || t.projectId === projectId))
     .sort((a,b) => dueDate(a).localeCompare(dueDate(b)) || b.priority - a.priority || a.start.localeCompare(b.start));
-  return candidates.map(task => {
+  validateRelations(tasks);
+  const ordered=[],visited=new Set(),candidateIds=new Set(candidates.map(t=>t.id));
+  const byId=new Map(tasks.map(t=>[t.id,t]));
+  function visit(task){if(visited.has(task.id))return;visited.add(task.id);for(const id of task.predecessors||[])if(candidateIds.has(id))visit(byId.get(id));ordered.push(task);}
+  candidates.forEach(visit);
+  const scheduled=new Map();
+  return ordered.map(task => {
     let remaining = Number(task.hours), first = '', last = '', allocations = [];
     if (!(remaining > 0 && remaining <= 10000)) throw Error('예상 시간은 0보다 크고 10,000 이하여야 합니다.');
     let d = task.start > start ? task.start : start;
+    for(const id of task.predecessors||[]){const predecessor=scheduled.get(id)||byId.get(id);const earliest=addDays(predecessor.end,1);if(earliest>d)d=earliest;}
     for (let count = 0; remaining > 0.00001; count++, d = addDays(d, 1)) {
       if (count > 3650) throw Error('10년 안에 배치할 수 없습니다. 작업 가능 시간을 늘려주세요.');
       if (!available(d)) continue;
@@ -35,7 +43,8 @@ export function schedule(tasks, settings, projectId = '') {
       occupied.set(d, (occupied.get(d) || 0) + used); remaining -= used;
     }
     const due = task.deadline && task.deadline < deadline ? task.deadline : deadline;
-    return { ...task, start:first, end:last, late: last > due, delay:Math.max(0,getDaysBetween(due,last)), allocations };
+    const result={ ...task, start:first, end:last, late: last > due, delay:Math.max(0,getDaysBetween(due,last)), allocations };
+    scheduled.set(task.id,result);return result;
   });
 }
 export function validateData(data) {
@@ -62,5 +71,6 @@ export function validateData(data) {
     }
   }
   if(data.matrix !== undefined && (!data.matrix || typeof data.matrix!=='object' || Array.isArray(data.matrix) || Object.entries(data.matrix).some(([key,value])=>!['q1','q2','q3','q4'].includes(key)||typeof value!=='string'))) throw Error('우선순위 매트릭스가 올바르지 않습니다.');
+  validateRelations(data.tasks);
   return data;
 }
