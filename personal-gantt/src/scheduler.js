@@ -1,3 +1,4 @@
+import {validRule} from './recurrence.js';
 import { parseDate, formatDate, getDaysBetween } from './utils.js';
 export const addDays = (date, n) => { const d = parseDate(date); d.setDate(d.getDate() + n); return formatDate(d); };
 export const today = () => formatDate(new Date());
@@ -55,7 +56,8 @@ export function validateData(data) {
   if(data.routines !== undefined) {
     if(!Array.isArray(data.routines)) throw Error('루틴 목록이 올바르지 않습니다.');
     for(const r of data.routines) {
-      if(typeof r.id!=='string'||!r.id||ids.has(r.id)||typeof r.title!=='string'||!r.title.trim()||!['daily','weekly'].includes(r.kind)||!r.checks||typeof r.checks!=='object'||Array.isArray(r.checks)||Object.entries(r.checks).some(([date,checked])=>!validDate(date)||typeof checked!=='boolean'||(r.kind==='weekly'&&parseDate(date).getDay()!==1))) throw Error('루틴 기록이 올바르지 않습니다.');
+      if(typeof r.id!=='string'||!r.id||ids.has(r.id)||typeof r.title!=='string'||!r.title.trim()||!['daily','weekly','scheduled'].includes(r.kind)||!r.checks||typeof r.checks!=='object'||Array.isArray(r.checks)||Object.entries(r.checks).some(([date,checked])=>!validDate(date)||typeof checked!=='boolean'||(r.kind==='weekly'&&!r.repeat&&parseDate(date).getDay()!==1))) throw Error('루틴 기록이 올바르지 않습니다.');
+      if((r.kind==='scheduled'||r.repeat!==undefined)&&!validRule(r.repeat))throw Error('루틴 반복 설정이 올바르지 않습니다.');
       ids.add(r.id);
     }
   }
