@@ -172,6 +172,7 @@ export function Sidebar() {
               { view: 'board', label: '작업 보드' },
               { view: 'routines', label: '루틴 보드' },
               { view: 'gantt', label: '간트차트' },
+              { view: 'scheduler', label: '스케줄러' },
             ].map(item => <Link key={item.view} href={`/planner/${item.view}`} onClick={() => setIsMobileOpen(false)} aria-current={pathname === `/planner/${item.view}` ? 'page' : undefined} className={`block rounded-lg px-3 py-2 text-sm transition hover:bg-brand-cream ${pathname === `/planner/${item.view}` ? 'bg-brand-pink/20 font-semibold text-brand-olive-dark' : 'text-muted-foreground'}`}>{item.label}</Link>)}
           </div>}
         </div>

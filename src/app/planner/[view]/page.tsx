@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 
-const views = { board: '작업 보드', routines: '루틴 보드', gantt: '간트차트' };
+const views = { board: '작업 보드', routines: '루틴 보드', gantt: '간트차트', scheduler: '스케줄러' };
 
 export function generateStaticParams() {
   return Object.keys(views).map(view => ({ view }));
