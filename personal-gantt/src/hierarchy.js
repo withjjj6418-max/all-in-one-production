@@ -14,5 +14,5 @@ export function migrateHierarchy(data) {
 }
 export function reorder(items,from,to,sameGroup=()=>true){
   const a=items.find(x=>x.id===from),b=items.find(x=>x.id===to);if(!a||!b||!sameGroup(a,b))return items;
-  const next=items.filter(x=>x.id!==from);next.splice(next.findIndex(x=>x.id===to),0,a);return next;
+  const targetIndex=items.findIndex(x=>x.id===to);const next=items.filter(x=>x.id!==from);next.splice(targetIndex,0,a);return next;
 }
