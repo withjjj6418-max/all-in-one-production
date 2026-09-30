@@ -49,6 +49,11 @@ export function schedule(tasks, settings, projectId = '') {
 }
 export function validateData(data) {
   if (data?.version !== 1 || !Array.isArray(data.projects) || !Array.isArray(data.tasks) || !Array.isArray(data.phases)) throw Error('지원하지 않는 백업 파일입니다.');
+  if(data.hierarchyVersion!==undefined){
+    if(data.hierarchyVersion!==1||!Array.isArray(data.works)||!data.works.length)throw Error('업무 분류가 올바르지 않습니다.');
+    const workIds=new Set();for(const w of data.works){if(typeof w.id!=='string'||!w.id||workIds.has(w.id)||typeof w.name!=='string'||!w.name.trim())throw Error('업무 분류가 올바르지 않습니다.');workIds.add(w.id);}
+    if(data.phases.some(p=>!workIds.has(p.workId)||!['차수','EP','상시'].includes(p.category))||data.projects.some(p=>!data.phases.some(ph=>ph.id===p.phaseId)))throw Error('업무·차수·프로젝트 연결을 확인해주세요.');
+  }
   const ids = new Set();
   for(const p of [...data.projects,...data.phases]) {
     if(typeof p.id !== 'string' || !p.id || ids.has(p.id) || typeof p.name !== 'string' || !p.name.trim()) throw Error('프로젝트·차수 정보가 올바르지 않습니다.');
