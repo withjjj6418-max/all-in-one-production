@@ -1,3 +1,4 @@
+import useCloudPlanner from './useCloudPlanner.js';
 import MonthlyScheduler from './MonthlyScheduler.jsx';
 import {migrateHierarchy,reorder} from './hierarchy.js';
 import HierarchyManager from './HierarchyManager.jsx';
@@ -17,6 +18,7 @@ import RoutineBoards from './RoutineBoards.jsx';
 const KEY='personal-gantt-v1';
 const params=new URLSearchParams(window.location.search);
 const embedded=params.get('embed')==='1';
+const cloudEnabled=!['5186','5187'].includes(window.location.port);
 const initialView=['board','routines','gantt','scheduler'].includes(params.get('view'))?params.get('view'):'board';
 const statuses = { waiting:'작업대기', progress:'작업중', done:'작업완료' };
 const colors=['#9684ff','#50c4b5','#e7ae64','#72aaff','#e885b5'];
@@ -37,16 +39,17 @@ function App(){
   const [selected,setSelected]=useState(null),[link,setLink]=useState(null);
   useEffect(()=>{const key=e=>{if(e.key==='Escape')setLink(null);};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[]);
   const [history,setHistory]=useState([]); const fileRef=useRef();
-  useEffect(()=>{if(blocked)return;try{localStorage.setItem(KEY,JSON.stringify(data));setSaveError('');}catch{setSaveError('저장 공간이 부족해 저장하지 못했습니다. 지금 백업을 내려받아주세요.');}},[data,blocked]);
+  useEffect(()=>{if(blocked||cloudEnabled)return;try{localStorage.setItem(KEY,JSON.stringify(data));setSaveError('');}catch{setSaveError('저장 공간이 부족해 저장하지 못했습니다. 지금 백업을 내려받아주세요.');}},[data,blocked]);
   useEffect(()=>{if(!message)return;const t=setTimeout(()=>setMessage(''),5000);return()=>clearTimeout(t);},[message]);
   useEffect(()=>{const f=e=>{if(e.key==='Escape'){setModal(null);setPreview(null);}};window.addEventListener('keydown',f);return()=>window.removeEventListener('keydown',f);},[]);
-  const commit=(next,record=true)=>{if(record)setHistory(h=>[...h.slice(-19),data]);setData(next);};
+  const cloud=useCloudPlanner({enabled:cloudEnabled,setData,clearHistory:()=>setHistory([])});
+  const commit=(next,record=true)=>{if(cloudEnabled){if(cloud.locked)return;cloud.save(next);} if(record)setHistory(h=>[...h.slice(-19),data]);setData(next);};
   const changeTask=(id,patch)=>commit({...data,tasks:data.tasks.map(t=>t.id===id?{...t,...patch}:t)});
   const filtered=data.tasks.filter(t=>(!project||t.projectId===project)&&visibleProjects.some(p=>p.id===t.projectId)&&t.title.toLowerCase().includes(query.toLowerCase()));
   const projectOf=t=>data.projects.find(p=>p.id===t.projectId);
   const phaseOf=t=>data.phases.find(p=>p.id===t.phaseId)?.name;
   const edit=t=>{setDraft(t?{...t}:{id:uid(),title:'',projectId:project||visibleProjects[0]?.id||data.projects[0]?.id||'',phaseId:phase||'',status:'waiting',start:today(),end:today(),deadline:'',hours:6,priority:2,notes:'',locked:false});setModal('task');};
-  const undo=()=>{if(!history.length)return;setData(history.at(-1));setHistory(h=>h.slice(0,-1));setMessage('이전 변경을 되돌렸습니다.');};
+  const undo=()=>{if(!history.length||cloud.locked)return;if(cloudEnabled)cloud.save(history.at(-1));setData(history.at(-1));setHistory(h=>h.slice(0,-1));setMessage('이전 변경을 되돌렸습니다.');};
   function backup(){const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=`나의작업실-${today()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
   async function restore(e){const file=e.target.files[0];e.target.value='';if(!file)return;try{const next=migrateHierarchy(migrateRoutines(validateData(JSON.parse(await file.text()))));setDraft(next);setModal('restore');}catch(err){setMessage(`복원 실패: ${err.message}`);}}
   function saveTask(e){e.preventDefault();if(draft.start>draft.end){setMessage('마감날짜는 시작날짜 이후로 지정해주세요.');return;}const next={...draft,phaseId:data.projects.find(p=>p.id===draft.projectId)?.phaseId||'',title:draft.title.trim(),hours:Math.min(10000,(getDaysBetween(draft.start,draft.end)+1)*data.settings.hours),deadline:'',priority:Number(draft.priority)};if(!next.title)return;if(JSON.stringify({...data,tasks:[...data.tasks.filter(t=>t.id!==next.id),next]}).length>2000000){setMessage('첨부 용량이 큽니다. 이미지를 줄인 뒤 다시 저장해주세요.');return;}const children=descendants(data.tasks,next.id);const tasks=data.tasks.some(t=>t.id===next.id)?data.tasks.map(t=>t.id===next.id?next:children.has(t.id)?{...t,projectId:next.projectId}:t):[...data.tasks,next];try{validateRelations(tasks);}catch(err){setMessage(err.message);return;}commit({...data,tasks});setModal(null);}
@@ -66,14 +69,14 @@ function App(){
   function movePan(e){if(pan.current){e.preventDefault();e.currentTarget.scrollLeft=pan.current.scroll+pan.current.x-e.clientX;}}
   function endPan(e){pan.current=null;e.currentTarget.classList.remove('panning');if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);}
   function autoPreview(e){e.preventDefault();try{const result=schedule(data.tasks,draft,project);setPreview({tasks:result,settings:{...draft}});setModal(null);}catch(err){setMessage(err.message);}}
-  return <div className={`app ${embedded?'embedded':''}`}>
+  return <>{cloudEnabled&&<div className="cloud-status" role="status">{cloud.state==='ready'?'☁ 서버 저장됨':cloud.state==='saving'?'☁ 서버 저장 중…':cloud.state==='loading'?'☁ 서버 일정 불러오는 중…':cloud.state==='import'?'이 브라우저의 일정을 서버에 저장하면 다른 기기에서도 볼 수 있습니다.':cloud.error}<button onClick={backup}>현재 내용 백업</button>{cloud.state==='import'&&<button disabled={blocked} onClick={()=>cloud.save(data)}>이 브라우저 일정 서버로 옮기기</button>}{cloud.state==='error'&&<button onClick={cloud.reload}>서버 일정 다시 불러오기</button>}</div>}<div inert={cloud.locked?'':undefined}><div className={`app ${embedded?'embedded':''}`}>
     <aside className="sidebar"><div className="brand"><span className="brand-icon">▥</span><div>나의 작업실<small>PERSONAL WORKSPACE</small></div></div>
       <div className="nav-label">WORKSPACE</div><button className={`nav ${view==='board'?'active':''}`} onClick={()=>setView('board')}>▦ <span>작업 보드</span><small>{data.tasks.length}</small></button><button aria-label="루틴 보드" title="루틴 보드" className={`nav ${view==='routines'?'active':''}`} onClick={()=>setView('routines')}>☀ <span>루틴 보드</span></button><button className={`nav ${view==='gantt'?'active':''}`} onClick={()=>setView('gantt')}>▤ <span>간트차트</span></button>
       <button className={`nav ${view==='scheduler'?'active':''}`} onClick={()=>setView('scheduler')}>▦ <span>스케줄러</span></button><div className="nav-label project-label">프로젝트<button aria-label="프로젝트 추가" onClick={()=>{setDraft({name:'',color:colors[data.projects.length%colors.length]});setModal('project');}}>＋</button></div>
       <button className={`project-nav ${!project?'selected':''}`} onClick={()=>{setProject('');if(view==='routines')setView('board');}}><span>◈</span>전체 프로젝트<small>{data.tasks.length}</small></button>
       {data.projects.map(p=><button key={p.id} className={`project-nav ${project===p.id?'selected':''}`} onClick={()=>{setProject(p.id);if(view==='routines')setView('board');}}><i style={{background:p.color}}/>{p.name}<small>{data.tasks.filter(t=>t.projectId===p.id).length}</small></button>)}
       <button className="manage" onClick={()=>{setDraft({name:''});setModal('manage');}}>업무 · 차수 · 프로젝트 관리 ↗</button>
-      <div className="sidebar-bottom"><div className="privacy-dot">● <span>{saveError?'저장 확인 필요':'이 브라우저에 자동 저장'}</span></div><div className="backup-actions"><button onClick={backup}>백업</button><button onClick={()=>fileRef.current.click()}>복원</button></div><input hidden type="file" accept=".json" ref={fileRef} onChange={restore}/></div>
+      <div className="sidebar-bottom"><div className="privacy-dot">● <span>{saveError?'저장 확인 필요':cloudEnabled?'계정에 서버 저장':'이 브라우저에 자동 저장'}</span></div><div className="backup-actions"><button onClick={backup}>백업</button><button onClick={()=>fileRef.current.click()}>복원</button></div><input hidden type="file" accept=".json" ref={fileRef} onChange={restore}/></div>
     </aside>
     <main><header><div className="breadcrumb">내 공간 <span>/</span> {{board:'작업 보드',routines:'루틴 보드',gantt:'간트차트',scheduler:'스케줄러'}[view]}</div><div className="header-right"><span>{today().replaceAll('-','.')} </span><span className="avatar">나</span></div></header>
       <section className="content"><div className="page-heading"><div><h1>{view==='routines'?'루틴 보드':project?data.projects.find(p=>p.id===project)?.name:view==='gantt'?'간트차트':view==='scheduler'?'스케줄러':'작업 보드'}</h1></div>{view!=='routines'&&<div className="heading-actions"><input className="heading-search" aria-label="작업 검색" placeholder="⌕  작업 검색" value={query} onChange={e=>setQuery(e.target.value)}/></div>}</div>
@@ -95,6 +98,6 @@ function App(){
       {modal==='restore'&&<><h2>백업 복원</h2><p>프로젝트 {draft.projects.length}개, 작업 {draft.tasks.length}개로 현재 내용을 교체합니다.</p><p className="muted">필요하면 먼저 현재 내용을 백업하세요. 복원 직후 되돌리기도 가능합니다.</p><div className="modal-actions"><button onClick={backup}>현재 내용 백업</button><button className="primary" onClick={()=>{commit(draft);setBlocked(false);setProject('');setPhase('');setWork('');setModal(null);setMessage('백업을 복원했습니다.');}}>이 백업으로 복원</button></div></>}
     </section></div>}
     {preview&&<div className="overlay"><section className="modal preview" role="dialog" aria-modal="true" aria-label="자동배치 미리보기"><button className="close" aria-label="닫기" onClick={()=>setPreview(null)}>×</button><h2>이 일정으로 진행할까요?</h2><p className="muted">{preview.tasks.length}개 작업 · 하루 {preview.settings.hours}시간 기준</p>{preview.tasks.some(t=>t.late)&&<div className="warning">{preview.tasks.filter(t=>t.late).length}개 작업이 목표 마감일을 넘깁니다. 작업 시간을 늘리거나 마감일을 조정해보세요.</div>}<div className="preview-list">{preview.tasks.map(t=><div className="preview-row" key={t.id}><strong>{t.title}<small>{t.hours}시간 · {t.allocations.length}일 작업</small></strong><span>{t.start} → {t.end}<small className={t.late?'overdue':'ok'}>{t.late?`${t.delay}일 마감 초과`:'마감 내 완료'}</small></span></div>)}{!preview.tasks.length&&<p>배치할 작업이 없습니다. 완료되었거나 고정된 작업은 제외됩니다.</p>}</div><div className="modal-actions"><button onClick={()=>{setDraft(preview.settings);setPreview(null);setModal('schedule');}}>조건 수정</button><button className="primary" disabled={!preview.tasks.length} onClick={()=>{const byId=new Map(preview.tasks.map(t=>[t.id,t]));commit({...data,settings:preview.settings,tasks:data.tasks.map(t=>byId.has(t.id)?{...t,start:byId.get(t.id).start,end:byId.get(t.id).end}:t)});setRange(addDays(preview.settings.start,-2));setView('gantt');setPreview(null);setMessage('자동배치를 적용했습니다. 되돌리기로 취소할 수 있습니다.');}}>일정 적용하기</button></div></section></div>}
-  </div>;
+  </div></div></>;
 }
 createRoot(document.getElementById('root')).render(<App/>);
