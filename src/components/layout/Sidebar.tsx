@@ -41,6 +41,7 @@ export function Sidebar() {
   const [isStoryStudioOpen, setIsStoryStudioOpen] = useState(false);
   const [isFamilyStudioOpen, setIsFamilyStudioOpen] = useState(() => pathname.startsWith("/studio/shorts-family"));
   const [isMonologueOpen, setIsMonologueOpen] = useState(true);
+  const [isPlannerOpen, setIsPlannerOpen] = useState(() => pathname.startsWith('/planner/'));
   const [isJapanStudioOpen, setIsJapanStudioOpen] = useState(false);
 
   useEffect(() => {
@@ -162,18 +163,18 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4 scrollbar-hide">
-        <a
-          href="/personal-planner/index.html"
-          target="_blank"
-          rel="noopener noreferrer"
-          title="작업·루틴·간트차트 열기"
-          onClick={() => setIsMobileOpen(false)}
-          className="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition hover:bg-brand-cream hover:text-foreground"
-        >
-          <PanelsTopLeft size={18} />
-          <span>개인 일정</span>
-          <span className="ml-auto text-[10px]">열기 ↗</span>
-        </a>
+        <div className="space-y-1">
+          <button type="button" onClick={() => setIsPlannerOpen(open => !open)} aria-expanded={isPlannerOpen} aria-controls="planner-menu" className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition hover:bg-brand-cream ${pathname.startsWith('/planner/') ? 'bg-brand-cream text-brand-olive-dark' : 'text-muted-foreground'}`}>
+            <PanelsTopLeft size={18} /><span>개인 일정</span><ChevronDown size={16} className={`ml-auto transition-transform ${isPlannerOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {isPlannerOpen && <div id="planner-menu" className="ml-4 space-y-0.5 border-l border-sidebar-border py-1 pl-3">
+            {[
+              { view: 'board', label: '작업 보드' },
+              { view: 'routines', label: '루틴 보드' },
+              { view: 'gantt', label: '간트차트' },
+            ].map(item => <Link key={item.view} href={`/planner/${item.view}`} onClick={() => setIsMobileOpen(false)} aria-current={pathname === `/planner/${item.view}` ? 'page' : undefined} className={`block rounded-lg px-3 py-2 text-sm transition hover:bg-brand-cream ${pathname === `/planner/${item.view}` ? 'bg-brand-pink/20 font-semibold text-brand-olive-dark' : 'text-muted-foreground'}`}>{item.label}</Link>)}
+          </div>}
+        </div>
         <Link
           href="/research"
           onClick={() => setIsMobileOpen(false)}

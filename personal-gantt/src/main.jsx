@@ -7,6 +7,9 @@ import TaskAttachments, { pasteImages } from './TaskAttachments.jsx';
 import RoutineBoards from './RoutineBoards.jsx';
 
 const KEY='personal-gantt-v1';
+const params=new URLSearchParams(window.location.search);
+const embedded=params.get('embed')==='1';
+const initialView=['board','routines','gantt'].includes(params.get('view'))?params.get('view'):'board';
 const statuses = { waiting:'작업대기', progress:'작업중', done:'작업완료' };
 const colors=['#9684ff','#50c4b5','#e7ae64','#72aaff','#e885b5'];
 const uid=()=>crypto.randomUUID();
@@ -15,7 +18,7 @@ function load(){try {const s=localStorage.getItem(KEY);return {data:s?validateDa
 const boot=load();
 function App(){
   const [data,setData]=useState(boot.data), [saveError,setSaveError]=useState(boot.error), [blocked,setBlocked]=useState(!!boot.error);
-  const [view,setView]=useState('board'),[project,setProject]=useState(''),[phase,setPhase]=useState(''),[query,setQuery]=useState('');
+  const [view,setView]=useState(initialView),[project,setProject]=useState(''),[phase,setPhase]=useState(''),[query,setQuery]=useState('');
   const [modal,setModal]=useState(null),[draft,setDraft]=useState(null),[message,setMessage]=useState(''),[preview,setPreview]=useState(null);
   const [range,setRange]=useState(addDays(today(),-3)),[days,setDays]=useState(42),[zoom,setZoom]=useState(42),[drag,setDrag]=useState(null);
   const [history,setHistory]=useState([]); const fileRef=useRef();
@@ -39,7 +42,7 @@ function App(){
   function autoPreview(e){e.preventDefault();try{const result=schedule(data.tasks,draft,project);setPreview({tasks:result,settings:{...draft}});setModal(null);}catch(err){setMessage(err.message);}}
   const stats=Object.keys(statuses).map(s=>filtered.filter(t=>t.status===s).length);
   const late=filtered.filter(t=>t.status!=='done'&&(t.deadline||t.end)<today()).length;
-  return <div className="app">
+  return <div className={`app ${embedded?'embedded':''}`}>
     <aside className="sidebar"><div className="brand"><span className="brand-icon">▥</span><div>나의 작업실<small>PERSONAL WORKSPACE</small></div></div>
       <div className="nav-label">WORKSPACE</div><button className={`nav ${view==='board'?'active':''}`} onClick={()=>setView('board')}>▦ <span>작업 보드</span><small>{data.tasks.length}</small></button><button aria-label="루틴 보드" title="루틴 보드" className={`nav ${view==='routines'?'active':''}`} onClick={()=>setView('routines')}>☀ <span>루틴 보드</span></button><button className={`nav ${view==='gantt'?'active':''}`} onClick={()=>setView('gantt')}>▤ <span>간트차트</span></button>
       <div className="nav-label project-label">프로젝트<button aria-label="프로젝트 추가" onClick={()=>{setDraft({name:'',color:colors[data.projects.length%colors.length]});setModal('project');}}>＋</button></div>
@@ -50,6 +53,7 @@ function App(){
     </aside>
     <main><header><div className="breadcrumb">내 공간 <span>/</span> {{board:'작업 보드',routines:'루틴 보드',gantt:'간트차트'}[view]}</div><div className="header-right"><span>{today().replaceAll('-','.')} </span><span className="avatar">나</span></div></header>
       <section className="content"><div className="page-heading"><div><div className="eyebrow">MAKE ROOM FOR YOUR NEXT IDEA</div><h1>{view==='routines'?'꾸준함을 만드는 작은 습관.':project?data.projects.find(p=>p.id===project)?.name:'오늘도, 차근차근.'}</h1><p>{view==='routines'?'매일의 루틴을 챙기고, 중요한 일에 집중해보세요.':'할 일을 정리하고, 나에게 맞는 일정을 만들어보세요.'}</p></div>{view!=='routines'&&<div className="heading-actions"><button className="secondary" onClick={()=>{setDraft({...data.settings,weekdays:[...data.settings.weekdays]});setModal('schedule');}}>✧ 자동배치</button><button className="primary" onClick={()=>edit()}>＋ 새 작업</button></div>}</div>
+      {embedded&&<div className="embedded-tools">{view!=='routines'&&<><select aria-label="프로젝트 필터" value={project} onChange={e=>setProject(e.target.value)}><option value="">전체 프로젝트</option>{data.projects.map(p=><option value={p.id} key={p.id}>{p.name}</option>)}</select><button onClick={()=>{setDraft({name:'',color:colors[data.projects.length%colors.length]});setModal('project');}}>＋ 프로젝트</button><button onClick={()=>{setDraft({name:''});setModal('manage');}}>프로젝트 · 차수 관리</button></>}<button onClick={backup}>백업</button><button onClick={()=>fileRef.current.click()}>복원</button></div>}
       {saveError&&<div className="warning" role="alert">{saveError} <button onClick={backup}>현재 내용 백업</button></div>}
       {view==='routines'?<><div className="routine-page-actions"><button title="최근 변경 되돌리기" disabled={!history.length} onClick={undo}>↶ 되돌리기</button></div><RoutineBoards data={data} commit={commit}/></>:<>
       <div className="stats">{Object.entries(statuses).map(([s,label],i)=><div className={`stat ${s}`} key={s}><span><i/>{label}</span><strong>{String(stats[i]).padStart(2,'0')}<small>개</small></strong><div className="stat-line"><div style={{width:`${filtered.length?stats[i]/filtered.length*100:0}%`}}/></div></div>)}<div className="stat deadline"><span>◷ 마감이 지난 작업</span><strong>{String(late).padStart(2,'0')}<small>개</small></strong><small>목표 마감일 기준으로 확인하세요</small></div></div>

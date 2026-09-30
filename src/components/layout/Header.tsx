@@ -4,6 +4,9 @@ import { usePathname } from "next/navigation";
 
 const pageTitles: Record<string, string> = {
   "/": "대시보드",
+  "/planner/board": "작업 보드",
+  "/planner/routines": "루틴 보드",
+  "/planner/gantt": "간트차트",
   "/studio/shorts-workshop": "쇼츠제작실",
   "/research": "영상소스모음",
   "/projects": "프로젝트",
