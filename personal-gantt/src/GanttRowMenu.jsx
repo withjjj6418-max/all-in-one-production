@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-export default function GanttRowMenu({name,onAdd,onCopy,onDelete,deleteDisabled=false,addLabel="추가"}) {
+export default function GanttRowMenu({name,onEdit,onAdd,onCopy,onDelete,deleteDisabled=false,addLabel="추가"}) {
   const [position,setPosition]=useState(null);
   const menu=useRef(null),trigger=useRef(null);
   useEffect(()=>{
@@ -12,5 +12,5 @@ export default function GanttRowMenu({name,onAdd,onCopy,onDelete,deleteDisabled=
     return()=>{document.removeEventListener('pointerdown',close);document.removeEventListener('keydown',key);window.removeEventListener('scroll',scroll,true);window.removeEventListener('resize',scroll);};
   },[position]);
   const run=fn=>{setPosition(null);fn();};
-  return <><button type="button" ref={trigger} className="gantt-menu-trigger" aria-label={`${name} 메뉴`} aria-expanded={!!position} aria-haspopup="menu" onClick={e=>{e.stopPropagation();const r=e.currentTarget.getBoundingClientRect();setPosition(position?null:{left:Math.max(8,Math.min(window.innerWidth-184,r.right-176)),top:Math.max(8,Math.min(window.innerHeight-146,r.bottom+4))});}}>☰</button>{position&&createPortal(<div ref={menu} className="gantt-row-menu" role="menu" style={position}><button role="menuitem" onClick={()=>run(onAdd)}>＋ {addLabel}</button><button role="menuitem" onClick={()=>run(onCopy)}>▣ 복사</button><button role="menuitem" disabled={deleteDisabled} onClick={()=>run(onDelete)}>× 삭제</button></div>,document.body)}</>;
+  return <><button type="button" ref={trigger} className="gantt-menu-trigger" aria-label={`${name} 메뉴`} aria-expanded={!!position} aria-haspopup="menu" onClick={e=>{e.stopPropagation();const r=e.currentTarget.getBoundingClientRect();setPosition(position?null:{left:Math.max(8,Math.min(window.innerWidth-184,r.right-176)),top:Math.max(8,Math.min(window.innerHeight-(onEdit?186:146),r.bottom+4))});}}>☰</button>{position&&createPortal(<div ref={menu} className="gantt-row-menu" role="menu" style={position}>{onEdit&&<button role="menuitem" onClick={()=>run(onEdit)}>✎ 수정</button>}<button role="menuitem" onClick={()=>run(onAdd)}>＋ {addLabel}</button><button role="menuitem" onClick={()=>run(onCopy)}>▣ 복사</button><button role="menuitem" disabled={deleteDisabled} onClick={()=>run(onDelete)}>× 삭제</button></div>,document.body)}</>;
 }

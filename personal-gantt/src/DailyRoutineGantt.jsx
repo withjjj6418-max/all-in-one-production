@@ -22,7 +22,7 @@ export default function DailyRoutineGantt({ data, commit, range, days, zoom, que
   return <>
     <div className="gantt-project daily-project" aria-label="루틴 프로젝트"><div className="gantt-label"><button className="gantt-collapse" aria-label={`루틴 ${collapsed?'펼치기':'접기'}`} aria-expanded={!collapsed} onClick={()=>setCollapsed(!collapsed)}>{collapsed?'▶':'▼'}</button><i style={{background:'#d6b576'}}/><span className="gantt-row-name">루틴</span><GanttRowMenu name="루틴" onAdd={add} onCopy={()=>copy(routines)} onDelete={()=>{if(window.confirm('루틴 전체를 삭제할까요?'))remove(routines);}} deleteDisabled={!routines.length}/></div><div className="project-track"/></div>
     {!collapsed&&visible.map(r => <div className="gantt-row daily-routine-row" key={r.id}>
-      <div className="gantt-label task-row-label"><button className="gantt-row-name task-name-button" onClick={()=>setEditor(r)}>{r.title}<small>{repeatLabel(r)}</small></button><GanttRowMenu name={r.title} onAdd={add} onCopy={()=>copy([r])} onDelete={()=>remove([r])}/></div>
+      <div className="gantt-label task-row-label"><button className="gantt-row-name task-name-button" onClick={()=>setEditor(r)}>{r.title}<small>{repeatLabel(r)}</small></button><GanttRowMenu onEdit={()=>setEditor(r)} name={r.title} onAdd={add} onCopy={()=>copy([r])} onDelete={()=>remove([r])}/></div>
       <div className="daily-routine-track">{dates.map(date => !isDue(r,date)&&!r.checks[date]?<div className="routine-off-day" key={date} style={{width:zoom}}/>:<button
         type="button" key={date} style={{width:zoom}}
         className={`daily-routine-cell ${r.checks[date]?'complete':''} ${date===today()?'current-day':''}`}
