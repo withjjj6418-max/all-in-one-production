@@ -1,8 +1,8 @@
 export function migrateHierarchy(data) {
   if(data.hierarchyVersion===1)return data;
   const works=[{id:'work-personal',name:'개인'}];
-  const phases=data.phases.map(p=>({...p,workId:works[0].id,category:'차수'}));
-  let fallback='phase-always';while(phases.some(p=>p.id===fallback))fallback+='-default';phases.push({id:fallback,name:'상시',category:'상시',workId:works[0].id});
+  const phases=data.phases.map(p=>({...p,workId:works[0].id}));
+  let fallback='phase-always';while(phases.some(p=>p.id===fallback))fallback+='-default';phases.push({id:fallback,name:'상시',workId:works[0].id});
   const projects=[],tasks=data.tasks.map(t=>({...t}));
   for(const project of data.projects){
     const own=tasks.filter(t=>t.projectId===project.id), byId=new Map(own.map(t=>[t.id,t]));
