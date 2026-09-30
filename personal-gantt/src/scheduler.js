@@ -65,6 +65,10 @@ export function validateData(data) {
     if(typeof t.id !== 'string' || ids.has(t.id) || !t.title?.trim() || !['waiting','progress','done'].includes(t.status) || !validDate(t.start) || !validDate(t.end) || t.start > t.end || (t.deadline && !validDate(t.deadline)) || !(Number(t.hours)>0 && Number(t.hours)<=10000) || ![1,2,3].includes(Number(t.priority)) || !data.projects.some(p=>p.id===t.projectId) || (t.phaseId && !data.phases.some(p=>p.id===t.phaseId))) throw Error('작업 데이터가 올바르지 않습니다.');
     ids.add(t.id);
   }
+  if(data.personalEvents!==undefined){
+    if(!Array.isArray(data.personalEvents))throw Error('개인 일정 목록이 올바르지 않습니다.');
+    for(const e of data.personalEvents){if(typeof e.id!=='string'||!e.id||ids.has(e.id)||typeof e.title!=='string'||!e.title.trim()||!validDate(e.start)||!validDate(e.end)||e.start>e.end||typeof e.allDay!=='boolean'||!/^#[0-9a-f]{6}$/i.test(e.color)||typeof e.location!=='string'||typeof e.notes!=='string'||(!e.allDay&&(!/^([01]\d|2[0-3]):[0-5]\d$/.test(e.startTime)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(e.endTime)||(e.start===e.end&&e.startTime>e.endTime))))throw Error('개인 일정 정보가 올바르지 않습니다.');ids.add(e.id);}
+  }
   const s = data.settings;
   if(!s || !validDate(s.start) || !validDate(s.deadline) || s.start>s.deadline || !(s.hours>0 && s.hours<=24) || !Array.isArray(s.weekdays) || !s.weekdays.length || s.weekdays.some(d=>!Number.isInteger(d)||d<0||d>6)) throw Error('작업 시간 설정이 올바르지 않습니다.');
   if(data.routines !== undefined) {
