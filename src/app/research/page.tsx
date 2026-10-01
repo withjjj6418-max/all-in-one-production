@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Search, Plus, ExternalLink, Trash2, Folder, AlertCircle, Check, X, Loader2, ChevronLeft, ChevronRight, ChevronDown, ArrowUp, ArrowDown, Download } from 'lucide-react'
+import { Search, Plus, ExternalLink, Trash2, Folder, AlertCircle, Check, X, Loader2, ChevronLeft, ChevronRight, ChevronDown, ArrowUp, ArrowDown, Download, Clapperboard } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { queueSourceBoardImport } from '@/lib/source-board-import'
@@ -18,6 +18,16 @@ interface Source {
 }
 
 type DownloadStatus = 'downloaded' | 'pending' | 'failed'
+
+function SourcePlatform({url}: {url: string}) {
+  let host = '';
+  try { host = new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).hostname.toLowerCase(); } catch { return null; }
+  const is = (domain: string) => host === domain || host.endsWith(`.${domain}`);
+  const platform = is('youtube.com') || is('youtu.be') ? {letter:'Y',name:'YouTube',style:'bg-red-50 text-red-600 border-red-100'}
+    : is('instagram.com') ? {letter:'I',name:'Instagram',style:'bg-pink-50 text-pink-600 border-pink-100'}
+    : is('tiktok.com') ? {letter:'T',name:'TikTok',style:'bg-gray-100 text-gray-800 border-gray-200'} : null;
+  return platform ? <span title={platform.name} aria-label={platform.name} className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[9px] font-bold ${platform.style}`}>{platform.letter}</span> : null;
+}
 
 const supabase = createClient()
 
@@ -740,6 +750,7 @@ export default function ResearchPage() {
                               </span>
                             )}
 
+                            <SourcePlatform url={source.url} />
                             {/* 제목 */}
                             <h3
                               onClick={() => openEditModal(source)}
@@ -767,9 +778,10 @@ export default function ResearchPage() {
                             type="button"
                             onClick={() => connectToStudio(source)}
                             className="px-2 py-1 rounded-lg bg-[#7C8C4E]/10 text-[#6c7b44] hover:bg-[#7C8C4E]/20 text-[10px] sm:text-xs font-semibold"
-                            title="독백형 발굴에 이 영상 연결"
+                            title="제작실로 연결"
+                            aria-label="제작실로 연결"
                           >
-                            제작실로 연결
+                            <Clapperboard size={14} aria-hidden="true" />
                           </button>
                           {(() => {
                             const status = downloadStatuses[source.url] || 'pending'
@@ -799,7 +811,8 @@ export default function ResearchPage() {
                                           ? 'bg-gray-50 border-gray-100 text-gray-400 cursor-not-allowed'
                                           : 'border-[#7C8C4E]/40 text-[#6c7b44] hover:bg-[#7C8C4E]/10 cursor-pointer'
                                 }`}
-                                title={status === 'pending' ? '이 영상을 소스 폴더에 다운로드' : label}
+                                aria-label={isDownloading ? '다운로드 중' : label}
+                                title={isDownloading ? '다운로드 중' : status === 'pending' ? '이 영상을 소스 폴더에 다운로드' : label}
                               >
                                 {downloadStatusLoading || isDownloading
                                   ? <Loader2 size={10} className="animate-spin" />
@@ -808,7 +821,7 @@ export default function ResearchPage() {
                                     : status === 'failed'
                                       ? <X size={10} />
                                       : <Download size={10} />}
-                                <span>{label}</span>
+                                <span className="sr-only">{label}</span>
                               </button>
                             )
                           })()}
@@ -939,9 +952,10 @@ export default function ResearchPage() {
                   <button
                     type="button"
                     onClick={() => connectToStudio({ id: editingSourceId, url: formUrl, title: formTitle, category: formCategory === '__new__' ? newCategoryName : formCategory, memo: formMemo })}
-                    className="w-full py-2.5 rounded-lg border border-[#7C8C4E]/30 text-[#6c7b44] hover:bg-[#7C8C4E]/10 text-sm font-semibold"
+                    aria-label="제작실로 연결" title="제작실로 연결"
+                    className="inline-flex items-center justify-center p-2.5 rounded-lg border border-[#7C8C4E]/30 text-[#6c7b44] hover:bg-[#7C8C4E]/10 text-sm font-semibold"
                   >
-                    제작실로 연결
+                    <Clapperboard size={16} aria-hidden="true" />
                   </button>
                   <p className="text-[11px] text-gray-500">현재 제목과 주소로 독백형 발굴을 시작합니다. 게시판 수정은 ‘수정하기’로 저장하세요.</p>
                 </div>
