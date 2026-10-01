@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Search, Plus, ExternalLink, Trash2, Folder, AlertCircle, Check, X, Loader2, ChevronLeft, ChevronRight, ChevronDown, ArrowUp, ArrowDown, Download, Clapperboard } from 'lucide-react'
+import { Search, Plus, Link2, Trash2, Folder, AlertCircle, Check, X, Loader2, ChevronLeft, ChevronRight, ChevronDown, ArrowUp, ArrowDown, Download, Clapperboard } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { queueSourceBoardImport } from '@/lib/source-board-import'
@@ -38,7 +38,7 @@ export default function ResearchPage() {
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('전체')
-  
+
   // 모달 상태 (추가 및 수정 모드 겸용)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingSourceId, setEditingSourceId] = useState<number | null>(null)
@@ -46,7 +46,7 @@ export default function ResearchPage() {
   const [formTitle, setFormTitle] = useState('')
   const [formUrl, setFormUrl] = useState('')
   const [formMemo, setFormMemo] = useState('')
-  
+
   // 유저 정보 및 토스트
   const [userId, setUserId] = useState<string | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
@@ -212,7 +212,7 @@ export default function ResearchPage() {
         return
       }
       setUserId(user.id)
-      
+
       // get_sources_with_nickname RPC 호출 (정렬 및 RLS 필터가 DB 내부에서 자동 수행됨)
       const { data, error } = await supabase.rpc('get_sources_with_nickname')
 
@@ -292,7 +292,7 @@ export default function ResearchPage() {
   // 폼 제출 (추가 또는 수정 처리 - 테이블 insert/update)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     if (!formUrl.trim()) {
       alert('링크 URL은 필수 입력 항목입니다.')
       return
@@ -422,7 +422,7 @@ export default function ResearchPage() {
 
   return (
     <div className="px-3 py-3 sm:p-5 space-y-4 max-w-7xl mx-auto min-w-0">
-      
+
       {/* ─── 1. 페이지 상단 헤더 영역 ─── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
@@ -554,16 +554,16 @@ export default function ResearchPage() {
         <div className="space-y-3">
           {sortedCategoryKeys.map((categoryName) => {
             const list = groupedSources[categoryName]
-            
+
             // 페이지네이션 관련 연산
             const itemsPerPage = 10
             const totalItems = list.length
             const totalPages = Math.ceil(totalItems / itemsPerPage)
-            
+
             // 검색 필터 등으로 아이템 개수 급감 시 현재 페이지 보정
             const currentPage = categoryPages[categoryName] || 1
             const activePage = Math.min(currentPage, Math.max(1, totalPages))
-            
+
             // 10개씩 페이징 처리된 리스트 슬라이싱
             const paginatedList = list.slice((activePage - 1) * itemsPerPage, activePage * itemsPerPage)
 
@@ -571,7 +571,7 @@ export default function ResearchPage() {
             const isSearching = searchQuery.trim() !== ''
             const isFiltering = selectedCategory !== '전체'
             const isSearchingOrFiltering = isSearching || isFiltering
-            
+
             const isCollapsed = collapsedCategories[categoryName] ?? true
             const activeCollapsed = isSearchingOrFiltering ? false : isCollapsed
 
@@ -588,7 +588,7 @@ export default function ResearchPage() {
                   {/* 왼쪽 영역: 아이콘, 카테고리명, 개수 뱃지 */}
                   <div className="flex items-center gap-1.5 min-w-0 flex-1">
                     <Folder size={14} className="text-[#7C8C4E] shrink-0" />
-                    
+
                     {editingCategory === categoryName ? (
                       /* 수정 모드 */
                       <div 
@@ -663,7 +663,7 @@ export default function ResearchPage() {
                         >
                           <ChevronLeft size={12} />
                         </button>
-                        
+
                         {getPageNumbers(activePage, totalPages).map((p, idx) => {
                           if (p === '...') {
                             return (
@@ -818,10 +818,10 @@ export default function ResearchPage() {
                           <button
                             onClick={() => window.open(source.url, '_blank')}
                             className="flex items-center gap-0.5 px-2 py-0.5 sm:py-1 rounded-lg border border-gray-200 text-[10px] sm:text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition font-semibold shrink-0"
-                            title="새 창에서 링크 열기"
+                            title="새 창에서 링크 열기" aria-label="새 창에서 링크 열기"
                           >
-                            <ExternalLink size={10} />
-                            <span className="hidden sm:inline">열기</span>
+                            <Link2 size={14} aria-hidden="true" />
+
                           </button>
                           <button
                             onClick={() => handleDeleteSource(source.id)}
