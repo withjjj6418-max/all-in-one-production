@@ -52,7 +52,7 @@ export function validateData(data) {
   if(data.hierarchyVersion!==undefined){
     if(data.hierarchyVersion!==1||!Array.isArray(data.works)||!data.works.length)throw Error('업무 분류가 올바르지 않습니다.');
     const workIds=new Set();for(const w of data.works){if(typeof w.id!=='string'||!w.id||workIds.has(w.id)||typeof w.name!=='string'||!w.name.trim())throw Error('업무 분류가 올바르지 않습니다.');workIds.add(w.id);}
-    if(data.phases.some(p=>!workIds.has(p.workId))||data.projects.some(p=>!data.phases.some(ph=>ph.id===p.phaseId)))throw Error('업무·차수·프로젝트 연결을 확인해주세요.');
+    if(data.phases.some(p=>p.workId!==''&&!workIds.has(p.workId))||data.projects.some(p=>p.phaseId!==''&&!data.phases.some(ph=>ph.id===p.phaseId)))throw Error('업무·차수·프로젝트 연결을 확인해주세요.');
   }
   const ids = new Set();
   for(const p of [...data.projects,...data.phases]) {
@@ -62,7 +62,7 @@ export function validateData(data) {
   for(const t of data.tasks) {
     if(t.links!==undefined && (!Array.isArray(t.links)||t.links.some(l=>typeof l.id!=='string'||typeof l.url!=='string'||!/^https?:\/\//i.test(l.url)))) throw Error('첨부 링크가 올바르지 않습니다.');
     if(t.images!==undefined && (!Array.isArray(t.images)||t.images.some(i=>typeof i.id!=='string'||typeof i.name!=='string'||typeof i.src!=='string'||!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(i.src)))) throw Error('첨부 이미지가 올바르지 않습니다.');
-    if(typeof t.id !== 'string' || ids.has(t.id) || !t.title?.trim() || !['waiting','progress','done'].includes(t.status) || !validDate(t.start) || !validDate(t.end) || t.start > t.end || (t.deadline && !validDate(t.deadline)) || !(Number(t.hours)>0 && Number(t.hours)<=10000) || ![1,2,3].includes(Number(t.priority)) || !data.projects.some(p=>p.id===t.projectId) || (t.phaseId && !data.phases.some(p=>p.id===t.phaseId))) throw Error('작업 데이터가 올바르지 않습니다.');
+    if(typeof t.id !== 'string' || ids.has(t.id) || !t.title?.trim() || !['waiting','progress','done'].includes(t.status) || !validDate(t.start) || !validDate(t.end) || t.start > t.end || (t.deadline && !validDate(t.deadline)) || !(Number(t.hours)>0 && Number(t.hours)<=10000) || ![1,2,3].includes(Number(t.priority)) || (t.projectId!==''&&!data.projects.some(p=>p.id===t.projectId)) || (t.phaseId && !data.phases.some(p=>p.id===t.phaseId))) throw Error('작업 데이터가 올바르지 않습니다.');
     ids.add(t.id);
   }
   if(data.personalEvents!==undefined){
