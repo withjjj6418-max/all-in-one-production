@@ -1,3 +1,4 @@
+import MemoBoard from './MemoBoard.jsx';
 import useCloudPlanner from './useCloudPlanner.js';
 import MonthlyScheduler from './MonthlyScheduler.jsx';
 import {migrateHierarchy,reorder} from './hierarchy.js';
@@ -79,7 +80,7 @@ function App(){
       <div className="sidebar-bottom"><div className="privacy-dot">● <span>{saveError?'저장 확인 필요':cloudEnabled?'계정에 서버 저장':'이 브라우저에 자동 저장'}</span></div><div className="backup-actions"><button onClick={backup}>백업</button><button onClick={()=>fileRef.current.click()}>복원</button></div><input hidden type="file" accept=".json" ref={fileRef} onChange={restore}/></div>
     </aside>
     <main><header><div className="breadcrumb">내 공간 <span>/</span> {{board:'작업 보드',routines:'루틴 보드',gantt:'간트차트',scheduler:'스케줄러'}[view]}</div><div className="header-right"><span>{today().replaceAll('-','.')} </span><span className="avatar">나</span></div></header>
-      <section className="content"><div className="page-heading"><div><h1>{view==='routines'?'루틴 보드':project?data.projects.find(p=>p.id===project)?.name:view==='gantt'?'간트차트':view==='scheduler'?'스케줄러':'작업 보드'}</h1></div>{view!=='routines'&&<div className="heading-actions"><input className="heading-search" aria-label="작업 검색" placeholder="⌕  작업 검색" value={query} onChange={e=>setQuery(e.target.value)}/></div>}</div>
+      <section className="content">{view==='board'&&<MemoBoard data={data} commit={commit}/>}<div className="page-heading"><div><h1>{view==='routines'?'루틴 보드':project?data.projects.find(p=>p.id===project)?.name:view==='gantt'?'간트차트':view==='scheduler'?'스케줄러':'작업 보드'}</h1></div>{view!=='routines'&&<div className="heading-actions"><input className="heading-search" aria-label="작업 검색" placeholder="⌕  작업 검색" value={query} onChange={e=>setQuery(e.target.value)}/></div>}</div>
       {(embedded||view!=='routines')&&<div className="embedded-tools planner-actions">{view!=='routines'&&view!=='scheduler'&&<><button onClick={()=>{setDraft({name:''});setModal('work');}}>＋ 업무</button><button onClick={()=>{setDraft({name:'',workId:''});setModal('phase');}}>＋ 차수</button><button onClick={()=>{setDraft({name:'',color:colors[data.projects.length%colors.length]});setModal('project');}}>＋ 프로젝트</button><button className="primary" onClick={()=>edit()}>＋ 태스크</button></>}<button onClick={backup}>백업</button><button onClick={()=>fileRef.current.click()}>복원</button></div>}
       {saveError&&<div className="warning" role="alert">{saveError} <button onClick={backup}>현재 내용 백업</button></div>}
       {view==='routines'?<><div className="routine-page-actions"><button title="최근 변경 되돌리기" disabled={!history.length} onClick={undo}>↶ 되돌리기</button></div><RoutineBoards data={data} commit={commit}/></>:<>

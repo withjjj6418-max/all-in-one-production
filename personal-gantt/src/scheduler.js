@@ -69,6 +69,10 @@ export function validateData(data) {
     if(!Array.isArray(data.personalEvents))throw Error('개인 일정 목록이 올바르지 않습니다.');
     for(const e of data.personalEvents){if(typeof e.id!=='string'||!e.id||ids.has(e.id)||typeof e.title!=='string'||!e.title.trim()||!validDate(e.start)||!validDate(e.end)||e.start>e.end||typeof e.allDay!=='boolean'||!/^#[0-9a-f]{6}$/i.test(e.color)||typeof e.location!=='string'||typeof e.notes!=='string'||(!e.allDay&&(!/^([01]\d|2[0-3]):[0-5]\d$/.test(e.startTime)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(e.endTime)||(e.start===e.end&&e.startTime>e.endTime))))throw Error('개인 일정 정보가 올바르지 않습니다.');ids.add(e.id);}
   }
+  if(data.notes!==undefined){
+    if(!Array.isArray(data.notes))throw Error('메모 목록이 올바르지 않습니다.');
+    for(const note of data.notes){if(typeof note.id!=='string'||!note.id||ids.has(note.id)||typeof note.text!=='string'||!['yellow','pink','blue','green','purple'].includes(note.color))throw Error('메모 정보가 올바르지 않습니다.');ids.add(note.id);}
+  }
   const s = data.settings;
   if(!s || !validDate(s.start) || !validDate(s.deadline) || s.start>s.deadline || !(s.hours>0 && s.hours<=24) || !Array.isArray(s.weekdays) || !s.weekdays.length || s.weekdays.some(d=>!Number.isInteger(d)||d<0||d>6)) throw Error('작업 시간 설정이 올바르지 않습니다.');
   if(data.routines !== undefined) {
