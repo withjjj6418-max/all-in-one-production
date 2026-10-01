@@ -737,19 +737,9 @@ export default function ResearchPage() {
                         key={source.id}
                         className="flex flex-wrap sm:flex-nowrap items-center justify-between px-4 py-1.5 hover:bg-gray-50/40 transition-colors group gap-3 min-w-0"
                       >
-                        {/* 제목, 작성자 닉네임 및 메모 정보 영역 (가로 병렬 정렬 구조) */}
+                        {/* 플랫폼, 제목 및 메모 정보 영역 */}
                         <div className="flex items-center gap-2.5 min-w-0 flex-1">
                           <div className="flex items-center gap-2 min-w-0 flex-1">
-                            {/* 닉네임 뱃지 */}
-                            {source.nickname && (
-                              <span 
-                                className="shrink-0 px-1.5 py-0.2 text-[9px] font-bold text-[#7C8C4E] bg-[#7C8C4E]/10 rounded border border-[#7C8C4E]/10 truncate max-w-[70px] sm:max-w-[100px]" 
-                                title={`작성자: ${source.nickname}`}
-                              >
-                                {source.nickname}
-                              </span>
-                            )}
-
                             <SourcePlatform url={source.url} />
                             {/* 제목 */}
                             <h3
