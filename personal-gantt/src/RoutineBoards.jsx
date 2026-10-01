@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { addDays, today } from './scheduler.js';
 import { parseDate } from './utils.js';
 import './routines.css';
@@ -12,6 +12,12 @@ const quadrants = [
   { id:'q4', title:'제4사분면', action:'제거 검토', label:'긴급하지도 중요하지도 않은 일', placeholder:'하지 않아도 괜찮은 일\n예: 목적 없이 피드 둘러보기' },
 ];
 
+function MatrixInput({value,onSave,...props}) {
+  const [text,setText]=useState(value),editing=useRef(false);
+  useEffect(()=>{if(!editing.current)setText(value);},[value]);
+  return <textarea {...props} value={text} onFocus={()=>{editing.current=true;}} onChange={e=>setText(e.target.value)} onBlur={e=>{editing.current=false;const next=e.currentTarget.value;if(next!==value)onSave(next);}}/>;
+}
+
 export default function RoutineBoards({data,commit}) {
   const [day,setDay]=useState(today()), [week,setWeek]=useState(today());
   return <section className="personal-planning" aria-label="개인 루틴과 우선순위">
@@ -19,7 +25,7 @@ export default function RoutineBoards({data,commit}) {
     <FlexibleRoutines data={data} commit={commit}/>
     <section className="matrix-panel" aria-label="아이젠하워 우선순위 매트릭스"><div className="matrix-heading"><div><h2>ϟ 아이젠하워 우선순위 매트릭스</h2></div></div>
       <div className="matrix-grid"><div className="matrix-corner">중요도 ↘ 긴급도</div><div className="matrix-axis">🔥 긴급함</div><div className="matrix-axis">🌱 긴급하지 않음</div><div className="matrix-side important">★ <span>중요함</span></div><div className="matrix-side not-important">↗ <span>중요하지 않음</span></div>
-      {quadrants.map((q,i)=><div key={q.id} className={`quadrant ${q.id}`} style={{gridColumn:2+i%2,gridRow:2+Math.floor(i/2)}}><h3><i/>{q.title}</h3><p>→ {q.action}</p><textarea aria-label={q.label} placeholder={q.placeholder} value={data.matrix?.[q.id]||''} onFocus={()=>commit(data)} onChange={e=>commit({...data,matrix:{...(data.matrix||{}),[q.id]:e.target.value}},false)} rows={4}/></div>)}</div>
+      {quadrants.map((q,i)=><div key={q.id} className={`quadrant ${q.id}`} style={{gridColumn:2+i%2,gridRow:2+Math.floor(i/2)}}><h3><i/>{q.title}</h3><p>→ {q.action}</p><MatrixInput aria-label={q.label} placeholder={q.placeholder} value={data.matrix?.[q.id]||''} onSave={text=>commit({...data,matrix:{...(data.matrix||{}),[q.id]:text}})} rows={4}/></div>)}</div>
     </section>
   </section>;
 }

@@ -27,6 +27,6 @@ export default function useCloudPlanner({enabled,setData,clearHistory}){
   }catch(e){setData(next);setError(e.message||'서버에 저장하지 못했습니다. 현재 내용을 백업해주세요.');status('error');return false;}finally{ref.current.busy=false;}
  };
  const reload=()=>{if(ref.current.pending&&!window.confirm('현재 변경을 백업하셨나요? 서버 일정으로 다시 불러옵니다.'))return;ref.current.pending=null;if(ref.current.userId)localStorage.removeItem('planner-pending-'+ref.current.userId);status('loading');refresh();};
- useEffect(()=>{if(!enabled)return;refresh();const poll=()=>{if(ref.current.state==='ready'&&!document.querySelector('[role="dialog"]')&&document.visibilityState==='visible')refresh();};const interval=setInterval(poll,20000);window.addEventListener('focus',poll);return()=>{clearInterval(interval);window.removeEventListener('focus',poll);};},[]);
+ useEffect(()=>{if(!enabled)return;refresh();const poll=()=>{if(ref.current.state==='ready'&&!document.querySelector('[role="dialog"]')&&!document.activeElement?.matches('input,textarea,select,[contenteditable="true"]')&&document.visibilityState==='visible')refresh();};const interval=setInterval(poll,20000);window.addEventListener('focus',poll);return()=>{clearInterval(interval);window.removeEventListener('focus',poll);};},[]);
  return {state,error,save,reload,locked:enabled&&state!=='ready'};
 }
