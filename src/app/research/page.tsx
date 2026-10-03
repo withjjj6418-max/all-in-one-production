@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Search, Plus, Link2, Trash2, Folder, AlertCircle, Check, X, Loader2, ChevronLeft, ChevronRight, ChevronDown, ArrowUp, ArrowDown, Download, Clapperboard } from 'lucide-react'
+import { Search, Plus, Link2, Trash2, Folder, AlertCircle, Check, X, Loader2, ChevronLeft, ChevronRight, ChevronDown, ArrowUp, ArrowDown, Copy, Clapperboard } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { queueSourceBoardImport } from '@/lib/source-board-import'
@@ -16,8 +16,6 @@ interface Source {
   nickname: string | null
   created_at: string
 }
-
-type DownloadStatus = 'downloaded' | 'pending' | 'failed'
 
 function SourcePlatform({url}: {url: string}) {
   let host = '';
@@ -50,10 +48,6 @@ export default function ResearchPage() {
   // 유저 정보 및 토스트
   const [userId, setUserId] = useState<string | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
-
-  const [downloadStatuses, setDownloadStatuses] = useState<Record<string, DownloadStatus>>({})
-  const [downloadStatusLoading, setDownloadStatusLoading] = useState(true)
-  const [downloadingId, setDownloadingId] = useState<number | null>(null)
 
   // 카테고리별 페이지 상태
   const [categoryPages, setCategoryPages] = useState<Record<string, number>>({})
@@ -175,29 +169,27 @@ export default function ResearchPage() {
     }
   }
 
-  const handleDownloadSource = async (source: Source) => {
-    if (downloadingId !== null) return
-    setDownloadingId(source.id)
+  const handleCopySourceUrl = async (source: Source) => {
     try {
-      const response = await fetch('http://localhost:8787/source-board/download', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: source.url, title: source.title, category: source.category }),
-        mode: 'cors',
-      })
-      const result = await response.json()
-      if (response.ok && result.ok) {
-        setDownloadStatuses((previous) => ({ ...previous, [source.url]: 'downloaded' }))
-        showToast('✅ 다운로드가 완료되었습니다.')
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(source.url)
       } else {
-        setDownloadStatuses((previous) => ({ ...previous, [source.url]: 'failed' }))
-        showToast(`❌ 다운로드 실패: ${result.reason || result.error || '다운로드할 수 없는 영상입니다.'}`)
+        const input = document.createElement('textarea')
+        const focused = document.activeElement as HTMLElement | null
+        input.value = source.url
+        input.style.cssText = 'position:fixed;left:-9999px;top:0'
+        document.body.append(input)
+        try {
+          input.select()
+          if (!document.execCommand('copy')) throw new Error('Copy failed')
+        } finally {
+          input.remove()
+          focused?.focus({ preventScroll: true })
+        }
       }
-    } catch (error) {
-      console.error(error)
-      showToast("❌ 다운로드 도우미에 연결할 수 없습니다. '조사도우미시작'을 확인해 주세요.")
-    } finally {
-      setDownloadingId(null)
+      showToast('주소를 복사했습니다.')
+    } catch {
+      showToast('주소를 복사하지 못했습니다. 브라우저의 클립보드 권한을 확인해주세요.')
     }
   }
 
@@ -231,30 +223,6 @@ export default function ResearchPage() {
   useEffect(() => {
     fetchSources()
   }, [fetchSources])
-
-  useEffect(() => {
-    let cancelled = false
-    const loadDownloadStatuses = async () => {
-      try {
-        const response = await fetch('http://localhost:8787/source-board/download-status', { mode: 'cors' })
-        const result = await response.json()
-        if (!response.ok || !result.ok || !Array.isArray(result.items)) throw new Error(result.error || '다운로드 상태를 불러오지 못했습니다.')
-        if (!cancelled) {
-          setDownloadStatuses(Object.fromEntries(result.items.map((item: { url: string; status: DownloadStatus }) => [item.url, item.status])))
-        }
-      } catch (error) {
-        console.error(error)
-        if (!cancelled) {
-          setToastMessage("❌ 다운로드 상태를 확인할 수 없습니다. '조사도우미시작'을 다시 실행해 주세요.")
-          setTimeout(() => setToastMessage(null), 3000)
-        }
-      } finally {
-        if (!cancelled) setDownloadStatusLoading(false)
-      }
-    }
-    void loadDownloadStatuses()
-    return () => { cancelled = true }
-  }, [])
 
   // 추가 모드 모달 열기
   const openAddModal = () => {
@@ -773,48 +741,15 @@ export default function ResearchPage() {
                           >
                             <Clapperboard size={14} aria-hidden="true" />
                           </button>
-                          {(() => {
-                            const status = downloadStatuses[source.url] || 'pending'
-                            const isDownloading = downloadingId === source.id
-                            const isDisabled = downloadStatusLoading || status !== 'pending' || downloadingId !== null
-                            const label = downloadStatusLoading
-                              ? '확인 중'
-                              : isDownloading
-                                ? '다운 중'
-                                : status === 'downloaded'
-                                  ? '다운완료'
-                                  : status === 'failed'
-                                    ? '실패'
-                                    : '다운로드'
-                            return (
-                              <button
-                                onClick={() => handleDownloadSource(source)}
-                                disabled={isDisabled}
-                                className={`flex items-center gap-0.5 px-2 py-0.5 sm:py-1 rounded-lg border text-[10px] sm:text-xs transition font-semibold shrink-0 ${
-                                  isDownloading
-                                    ? 'bg-amber-50 border-amber-300 text-amber-700 cursor-wait'
-                                    : status === 'downloaded'
-                                      ? 'bg-emerald-50 border-emerald-200 text-emerald-700 cursor-default'
-                                      : status === 'failed'
-                                        ? 'bg-red-50 border-red-200 text-red-600 cursor-default'
-                                        : isDisabled
-                                          ? 'bg-gray-50 border-gray-100 text-gray-400 cursor-not-allowed'
-                                          : 'border-[#7C8C4E]/40 text-[#6c7b44] hover:bg-[#7C8C4E]/10 cursor-pointer'
-                                }`}
-                                aria-label={isDownloading ? '다운로드 중' : label}
-                                title={isDownloading ? '다운로드 중' : status === 'pending' ? '이 영상을 소스 폴더에 다운로드' : label}
-                              >
-                                {downloadStatusLoading || isDownloading
-                                  ? <Loader2 size={10} className="animate-spin" />
-                                  : status === 'downloaded'
-                                    ? <Check size={10} />
-                                    : status === 'failed'
-                                      ? <X size={10} />
-                                      : <Download size={10} />}
-                                <span className="sr-only">{label}</span>
-                              </button>
-                            )
-                          })()}
+                          <button
+                            type="button"
+                            onClick={() => handleCopySourceUrl(source)}
+                            className="flex items-center px-2 py-0.5 sm:py-1 rounded-lg border border-[#7C8C4E]/40 text-[#6c7b44] hover:bg-[#7C8C4E]/10 transition shrink-0"
+                            aria-label="주소 복사"
+                            title="주소 복사"
+                          >
+                            <Copy size={14} aria-hidden="true" />
+                          </button>
                           <button
                             onClick={() => window.open(source.url, '_blank')}
                             className="flex items-center gap-0.5 px-2 py-0.5 sm:py-1 rounded-lg border border-gray-200 text-[10px] sm:text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition font-semibold shrink-0"
