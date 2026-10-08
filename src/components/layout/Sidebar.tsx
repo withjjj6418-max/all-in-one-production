@@ -26,6 +26,7 @@ import {
   Sparkles,
   Scissors,
   Activity,
+  MessageSquareText,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -189,6 +190,7 @@ export function Sidebar() {
           {pathname === "/research" && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-brand-pink" />}
         </Link>
 
+        <Link href="/comment-collector" onClick={() => setIsMobileOpen(false)} aria-current={pathname === '/comment-collector' ? 'page' : undefined} className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition hover:bg-brand-cream ${pathname === '/comment-collector' ? 'bg-brand-pink/20 text-brand-olive-dark' : 'text-muted-foreground'}`}><MessageSquareText size={18}/><span>댓글수집기</span></Link>
         <div className="space-y-1">
           <Link
             href="/studio"

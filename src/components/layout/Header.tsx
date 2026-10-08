@@ -10,6 +10,7 @@ const pageTitles: Record<string, string> = {
   "/planner/scheduler": "스케줄러",
   "/studio/shorts-workshop": "쇼츠제작실",
   "/research": "영상소스모음",
+  "/comment-collector": "댓글수집기",
   "/projects": "프로젝트",
   "/analytics": "영상 분석",
   "/scripts": "대본작성",
