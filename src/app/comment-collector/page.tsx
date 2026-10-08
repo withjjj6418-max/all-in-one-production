@@ -4,6 +4,7 @@ import { MessageSquareText, Search, LoaderCircle } from 'lucide-react';
 import { commentSource, mergeComments, type Collection, type CommentRow } from '@/lib/comment-collector';
 import { createClient } from '@/lib/supabase/client';
 import CommentPngEditor from '@/components/CommentPngEditor';
+import {useAutoCommentTranslation} from '@/hooks/useAutoCommentTranslation';
 
 export default function CommentCollector() {
   const [url,setUrl]=useState(''), [order,setOrder]=useState<'relevance'|'time'>('relevance');
@@ -12,6 +13,7 @@ export default function CommentCollector() {
   const [cardId,setCardId]=useState('');
   const [inputMode,setInputMode]=useState<'url'|'manual'>('url');
   const [manualText,setManualText]=useState(''),[manualTranslation,setManualTranslation]=useState(''),[manualRows,setManualRows]=useState<CommentRow[]>([]);
+  const manualAuto=useAutoCommentTranslation(manualText,manualTranslation,setManualTranslation,inputMode==='manual');
   const [history,setHistory]=useState<Collection[]>([]), [storageKey,setStorageKey]=useState('');
   useEffect(()=>{ let live=true; createClient().auth.getUser().then(({data})=>{
     if(!live||!data.user)return; const key=`comment-collector-v1:${data.user.id}`;setStorageKey(key);
@@ -56,8 +58,9 @@ export default function CommentCollector() {
     <section aria-label="댓글 수집" className="space-y-3 border-b border-border pb-4">
       <div className="flex rounded-xl bg-background p-1" role="group" aria-label="댓글 입력 방법">{(['url','manual'] as const).map(mode=><button key={mode} onClick={()=>setInputMode(mode)} aria-pressed={inputMode===mode} className={`flex-1 rounded-lg py-2 text-xs font-semibold ${inputMode===mode?'bg-brand-olive text-white':'text-muted-foreground'}`}>{mode==='url'?'주소로 수집':'직접 입력'}</button>)}</div>
       {inputMode==='manual'?<form onSubmit={e=>{e.preventDefault();addManual();}} className="space-y-2">
-        <label className="block text-xs font-medium">영어 원문 / 댓글 문구<textarea value={manualText} onChange={e=>setManualText(e.target.value)} required maxLength={500} placeholder="댓글을 직접 입력하세요. 한글만 입력해도 됩니다." className="mt-1 h-20 w-full rounded-xl border border-border px-3 py-2 text-sm"/></label>
-        <label className="block text-xs font-medium">한국어 번역 (선택)<textarea value={manualTranslation} onChange={e=>setManualTranslation(e.target.value)} maxLength={700} placeholder="직접 입력하거나 추가 후 자동 번역하세요." className="mt-1 h-16 w-full rounded-xl border border-border px-3 py-2 text-sm"/></label>
+        <label className="block text-xs font-medium">영어 원문 / 댓글 문구<textarea value={manualText} onChange={e=>{setManualText(e.target.value);setManualTranslation('');}} required maxLength={500} placeholder="댓글을 직접 입력하세요. 한글만 입력해도 됩니다." className="mt-1 h-20 w-full rounded-xl border border-border px-3 py-2 text-sm"/></label>
+        <label className="block text-xs font-medium">한국어 번역 (선택)<textarea value={manualTranslation} onChange={e=>setManualTranslation(e.target.value)} maxLength={700} placeholder="영어 입력 시 자동으로 번역됩니다. 직접 수정도 가능합니다." className="mt-1 h-16 w-full rounded-xl border border-border px-3 py-2 text-sm"/></label>
+        <p role="status" className="text-[11px] text-muted-foreground">{manualAuto.translating?'한국어로 번역 중…':'영어를 입력하면 한국어가 자동으로 채워집니다.'}</p>{manualAuto.error&&<p role="alert" className="text-xs text-rose-700">{manualAuto.error} <button type="button" className="underline" onClick={()=>void manualAuto.translate()}>다시 번역</button></p>}
         <button disabled={!manualText.trim()} className="w-full rounded-xl bg-brand-olive py-2.5 text-xs font-semibold text-white disabled:opacity-40">입력한 댓글 추가</button>
       </form>:<>
       <form onSubmit={e=>{e.preventDefault();void collect();}} className="flex gap-2">

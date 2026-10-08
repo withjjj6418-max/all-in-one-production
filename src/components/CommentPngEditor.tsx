@@ -1,6 +1,7 @@
 "use client";
 import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {drawComment,randomIdentity,type CardStyle} from '@/lib/comment-png';
+import {useAutoCommentTranslation} from '@/hooks/useAutoCommentTranslation';
 import type {CommentRow} from '@/lib/comment-collector';
 
 export default function CommentPngEditor({comment,controls}:{comment:CommentRow;controls?:ReactNode}) {
@@ -9,15 +10,10 @@ export default function CommentPngEditor({comment,controls}:{comment:CommentRow;
     try{const saved=JSON.parse(localStorage.getItem('comment-overlay-layout-v1')||'{}');for(const key of ['width','font','dialogueEnd','gap','opacity'] as const)if(typeof saved[key]==='number'&&Number.isFinite(saved[key]))initial[key]=saved[key];}catch{/* Use defaults when browser storage is unavailable. */}
     return initial;
   });
-  const canvas=useRef<HTMLCanvasElement>(null),previewCanvas=useRef<HTMLCanvasElement>(null),[previewMode,setPreviewMode]=useState<'card'|'position'>('card'),[error,setError]=useState(''),[ready,setReady]=useState(false),[translating,setTranslating]=useState(false),[translationError,setTranslationError]=useState('');
-  const latestSource=useRef(style.text);useEffect(()=>{latestSource.current=style.text;},[style.text]);
+  const canvas=useRef<HTMLCanvasElement>(null),previewCanvas=useRef<HTMLCanvasElement>(null),[previewMode,setPreviewMode]=useState<'card'|'position'>('card'),[error,setError]=useState(''),[ready,setReady]=useState(false);
+  const {translating,error:translationError,translate}=useAutoCommentTranslation(style.text,style.translation,value=>{setReady(false);setStyle(old=>({...old,translation:value}));},style.bilingual);
   const patch=(data:Partial<CardStyle>)=>{setReady(false);const next={...style,...data};setStyle(next);try{localStorage.setItem('comment-overlay-layout-v1',JSON.stringify({width:next.width,font:next.font,dialogueEnd:next.dialogueEnd,gap:next.gap,opacity:next.opacity}));}catch{/* Export remains usable without storage. */}};
   useEffect(()=>{let live=true;document.fonts.ready.then(()=>{if(!live||!canvas.current)return;try{drawComment(canvas.current,style);if(previewCanvas.current)drawComment(previewCanvas.current,{...style,fullFrame:previewMode==='position'});setError('');setReady(true);}catch(e){setReady(false);canvas.current.getContext('2d')?.clearRect(0,0,canvas.current.width,canvas.current.height);if(previewCanvas.current)previewCanvas.current.getContext('2d')?.clearRect(0,0,previewCanvas.current.width,previewCanvas.current.height);setError(e instanceof Error?e.message:'미리보기를 만들지 못했습니다.');}});return()=>{live=false};},[style,previewMode]);
-  async function translate() {
-    const source=style.text;setTranslating(true);setTranslationError('');
-    try{const response=await fetch('/api/comment-collector/translate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:source})});const data=await response.json();if(!response.ok)throw Error(data.error);if(latestSource.current!==source){setTranslationError('원문이 바뀌었습니다. 다시 번역하세요.');return;}setReady(false);setStyle(old=>({...old,translation:data.translation}));}
-    catch(e){setTranslationError(e instanceof Error?e.message:'번역하지 못했습니다.');}finally{setTranslating(false);}
-  }
   function save() {
     if(!canvas.current||!ready)return;
     const form=document.createElement('form');form.method='POST';form.action='/api/comment-collector/png';form.hidden=true;
@@ -28,9 +24,9 @@ export default function CommentPngEditor({comment,controls}:{comment:CommentRow;
       <div className="space-y-3 rounded-2xl border border-border bg-white p-4">
         {controls}
         <h3 className="text-sm font-semibold">댓글 편집</h3>
-        <label className="block text-xs">영어 원문 / PNG 문구<textarea className={`${field} mt-1 h-16`} value={style.text} disabled={translating} maxLength={4000} onChange={e=>patch({text:e.target.value,translation:''})}/></label>
+        <label className="block text-xs">영어 원문 / PNG 문구<textarea className={`${field} mt-1 h-16`} value={style.text} maxLength={4000} onChange={e=>patch({text:e.target.value,translation:'',bilingual:/[A-Za-z]/.test(e.target.value)})}/></label>
         <label className="block text-xs">댓글 표시<select className={`${field} mt-1`} value={style.bilingual?'bilingual':'original'} onChange={e=>patch({bilingual:e.target.value==='bilingual'})}><option value="bilingual">영어 작게 노란색 + 한국어 크게 흰색</option><option value="original">원문만</option></select></label>
-        {style.bilingual&&<div className="space-y-2"><button disabled={translating||!style.text.trim()} onClick={()=>void translate()} className="rounded-xl border border-border bg-white px-3 py-2 text-xs disabled:opacity-40">{translating?'번역 중…':'한국어 자동 번역'}</button><label className="block text-xs">한국어 번역<textarea className={`${field} mt-1 h-16`} value={style.translation} disabled={translating} maxLength={6000} onChange={e=>patch({translation:e.target.value})}/></label><p className="text-[11px] text-muted-foreground">번역은 확인 후 직접 다듬을 수 있습니다.</p>{translationError&&<p role="alert" className="text-xs text-rose-700">{translationError}</p>}</div>}
+        {style.bilingual&&<div className="space-y-2"><button disabled={translating||!style.text.trim()} onClick={()=>void translate()} className="rounded-xl border border-border bg-white px-3 py-2 text-xs disabled:opacity-40">{translating?'번역 중…':'한국어 자동 번역'}</button><label className="block text-xs">한국어 번역<textarea className={`${field} mt-1 h-16`} value={style.translation} maxLength={6000} onChange={e=>patch({translation:e.target.value})}/></label><p className="text-[11px] text-muted-foreground">영어를 입력하면 자동 번역됩니다. 번역은 직접 다듬을 수 있습니다.</p>{translationError&&<p role="alert" className="text-xs text-rose-700">{translationError}</p>}</div>}
         <p className="text-[11px] text-muted-foreground">PNG 문구만 편집합니다. 수집한 원문은 보존됩니다.</p>
         <div className="flex gap-2"><label className="min-w-0 flex-1 text-xs">표시 닉네임<input className={`${field} mt-1`} maxLength={40} value={style.nickname} onChange={e=>patch({nickname:e.target.value})}/></label><button className="self-end rounded-xl border border-border bg-white px-3 py-2 text-xs" onClick={()=>patch(randomIdentity())}>닉네임·색상 랜덤</button></div>
         <details className="rounded-xl border border-border bg-background/50 p-3"><summary className="cursor-pointer text-xs font-medium">위치 · 크기 · 블러 설정 <span className="text-muted-foreground">/ 불투명도 {style.opacity}%</span></summary><div className="mt-3 grid grid-cols-2 gap-3">{([['대사 자막 끝 위치 (px)','dialogueEnd',0,1800],['자막 아래 간격 (px)','gap',0,200],['카드 너비 (px)','width',480,1000],['글자 크기 (px)','font',24,64],['불투명도 (%)','opacity',10,100]] as const).map(([label,key,min,max])=><label key={key} className="text-xs">{label}<input className={`${field} mt-1`} type="number" min={min} max={max} value={style[key]} onChange={e=>patch({[key]:Number(e.target.value)})}/></label>)}<label className="text-xs">프로필 색상<input aria-label="프로필 색상" type="color" className="mt-1 h-9 w-full rounded-xl" value={style.color} onChange={e=>patch({color:e.target.value})}/></label></div>
