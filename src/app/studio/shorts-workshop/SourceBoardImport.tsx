@@ -30,21 +30,25 @@ export default function SourceBoardImport({ studio, frame, ready, connectionAtte
         return;
       }
       const title = data.source_board.title || "선택한 영상";
-      if (data.complete) { setState({ phase: "complete", title, message: "원본으로 연결됐습니다. 원본찾기 없이 원본으로 시작을 누르세요." }); return; }
+      if (data.complete) { setState({ phase: "complete", title, message: "연결한 영상을 아래에서 확인하세요. 새 영상은 레퍼런스인지 원본인지 선택한 뒤 프로젝트를 만듭니다." }); return; }
       if (!ready || !frame.current?.contentWindow) { setState({ phase: "waiting", title, message: "제작실에 연결되면 소스를 가져옵니다." }); return; }
-      setState({ phase: "sending", title, message: "선택한 원본을 제작실에 연결하는 중…" });
+      setState({ phase: "sending", title, message: "선택한 영상을 제작실에 연결하는 중…" });
       receive = (event: MessageEvent) => {
         if (cancelled || event.origin !== studio || event.source !== frame.current?.contentWindow || event.data?.type !== "shorts-studio:reference-result" || event.data.id !== token) return;
         clearTimeout(timer);
         if (event.data.error) { setState({ phase: "error", title, message: event.data.error }); return; }
         try { sessionStorage.setItem(sourceBoardImportKey(token), JSON.stringify({ ...data, complete: true })); } catch { /* The local studio already saved the video; URL deduplication makes retries safe. */ }
-        setState({ phase: "complete", title, message: "원본으로 연결됐습니다. 원본으로 시작 → 영상 저장·댓글 수집 → 기획하기 순서로 진행하세요." });
+        const extras = data.source_board.extra_sources?.length ? ` 추가원본 ${data.source_board.extra_sources.length}개는 프로젝트를 만들 때 함께 붙습니다.` : "";
+        setState({ phase: "complete", title, message: event.data.duplicate ? "이미 연결한 영상입니다. 아래 카드에서 기존 프로젝트를 이어서 진행하세요." + extras
+          : event.data.input_role === "pending" ? "제작실에서 레퍼런스인지 원본인지 선택한 뒤 프로젝트 만들기를 누르세요." + extras
+          : event.data.input_role === "source" ? "원본으로 연결했습니다. 아래 카드에서 원본으로 시작을 누르세요." + extras
+          : "레퍼런스로 연결했습니다. 아래 카드에서 프로젝트로 저장하거나 원본찾기를 진행하세요." + extras });
       };
       window.addEventListener("message", receive);
       timer = setTimeout(() => {
         if (!cancelled) setState({ phase: "error", title, message: "연결 결과를 아직 받지 못했습니다. 다시 시도해도 영상은 중복으로 추가되지 않습니다." });
       }, 60000);
-      frame.current.contentWindow.postMessage({ type: "shorts-studio:reference", id: token, url: data.url, source_board: data.source_board }, studio);
+      frame.current.contentWindow.postMessage({ type: "shorts-studio:reference", id: token, url: data.url, source_board: data.source_board, ...(data.input_role ? { input_role: data.input_role } : {}) }, studio);
     }, 0);
     return () => { cancelled = true; clearTimeout(start); clearTimeout(timer); if (receive) window.removeEventListener("message", receive); };
   }, [token, ready, connectionAttempt, retry, frame, studio]);

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Search, Plus, Link2, Trash2, Folder, AlertCircle, Check, X, Loader2, ChevronLeft, ChevronRight, ChevronDown, ArrowUp, ArrowDown, Copy, Clapperboard } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { queueSourceBoardImport } from '@/lib/source-board-import'
+import { queueSourceBoardImport, extraSourceError, extraSourceLabel, cleanExtraSources, MAX_EXTRA_SOURCES, MAX_PLAN_DIRECTION, type SourceRole } from '@/lib/source-board-import'
 
 interface Source {
   id: number
@@ -15,7 +15,14 @@ interface Source {
   memo: string | null
   nickname: string | null
   created_at: string
+  source_role?: SourceRole
+  extra_sources?: string[] | null
+  plan_direction?: string | null
 }
+
+type SourceExtras = Pick<Source, 'id' | 'source_role' | 'extra_sources' | 'plan_direction'>
+
+const ROLE_LABEL: Record<'original' | 'reference', string> = { original: '원본', reference: '레퍼런스' }
 
 function SourcePlatform({url}: {url: string}) {
   let host = '';
@@ -43,7 +50,10 @@ export default function ResearchPage() {
   const [formCategory, setFormCategory] = useState('')
   const [formTitle, setFormTitle] = useState('')
   const [formUrl, setFormUrl] = useState('')
-  const [formMemo, setFormMemo] = useState('')
+  // 링크 종류(원본/레퍼런스), 추가원본1·2…, 기획방향
+  const [formRole, setFormRole] = useState<SourceRole>(null)
+  const [formExtras, setFormExtras] = useState<string[]>([])
+  const [formPlan, setFormPlan] = useState('')
 
   // 유저 정보 및 토스트
   const [userId, setUserId] = useState<string | null>(null)
@@ -161,12 +171,23 @@ export default function ResearchPage() {
     setTimeout(() => setToastMessage(null), 3000)
   }, [])
 
-  const connectToStudio = (source: { id: number; url: string; title: string | null; category: string; memo: string | null }) => {
+  const connectToStudio = (source: Parameters<typeof queueSourceBoardImport>[0]) => {
     try {
       router.push(queueSourceBoardImport(source))
     } catch (error) {
       showToast(error instanceof Error ? error.message : '제작실에 전달할 소스를 준비하지 못했습니다.')
     }
+  }
+
+  const connectToShortStudio = (source: Source) => {
+    // Transfer only this selected source; the studio asks reference/original role.
+    const target = new URL('https://desktop-0rsvmmb.tail329180.ts.net/shortstudio')
+    // role이 있으면 숏튜디오가 묻지 않고 바로 채운다(레퍼런스면 추가원본1이 메인 원본).
+    target.hash = new URLSearchParams({ sourceImport: JSON.stringify({
+      id: source.id, title: source.title, url: source.url, category: source.category, memo: source.memo,
+      role: source.source_role ?? null, extra_sources: cleanExtraSources(source.extra_sources), plan_direction: source.plan_direction || '',
+    }) }).toString()
+    window.location.assign(target.href)
   }
 
   const handleCopySourceUrl = async (source: Source) => {
@@ -211,7 +232,14 @@ export default function ResearchPage() {
       if (error) {
         console.error('소스 조회 중 오류 발생:', error.message)
       } else {
-        setSources(data || [])
+        // 링크 종류·추가원본·기획방향은 기존 목록 함수(RPC)와 별도로 불러와 합친다.
+        const rows: Source[] = data || []
+        const { data: extras, error: extrasError } = await supabase
+          .from('research_sources')
+          .select('id, source_role, extra_sources, plan_direction')
+        if (extrasError) console.error('추가원본/기획방향 조회 실패 (Supabase 칸 추가 필요할 수 있음):', extrasError.message)
+        const byId = new Map(((extras || []) as SourceExtras[]).map((row) => [row.id, row]))
+        setSources(rows.map((row) => ({ ...row, ...(byId.get(row.id) ?? {}) })))
       }
     } catch (err) {
       console.error(err)
@@ -231,7 +259,9 @@ export default function ResearchPage() {
     setNewCategoryName('')
     setFormTitle('')
     setFormUrl('')
-    setFormMemo('')
+    setFormRole(null)
+    setFormExtras([])
+    setFormPlan('')
     setIsModalOpen(true)
   }
 
@@ -242,7 +272,9 @@ export default function ResearchPage() {
     setNewCategoryName('')
     setFormTitle('')
     setFormUrl('')
-    setFormMemo('')
+    setFormRole(null)
+    setFormExtras([])
+    setFormPlan('')
     setIsModalOpen(true)
   }
 
@@ -253,7 +285,9 @@ export default function ResearchPage() {
     setNewCategoryName('')
     setFormTitle(source.title || '')
     setFormUrl(source.url || '')
-    setFormMemo(source.memo || '')
+    setFormRole(source.source_role ?? null)
+    setFormExtras(cleanExtraSources(source.extra_sources))
+    setFormPlan(source.plan_direction || '')
     setIsModalOpen(true)
   }
 
@@ -268,7 +302,23 @@ export default function ResearchPage() {
 
     const finalCategory = (formCategory === '__new__' ? newCategoryName.trim() : formCategory.trim()) || '미분류'
     const finalTitle = formTitle.trim() || null
-    const finalMemo = formMemo.trim() || null
+    const finalExtras = cleanExtraSources(formExtras)
+    for (const [index, value] of finalExtras.entries()) {
+      const problem = extraSourceError(value)
+      if (problem) {
+        alert(`${extraSourceLabel(index)}: ${problem}`)
+        return
+      }
+    }
+    const extraFields = {
+      source_role: formRole,
+      extra_sources: finalExtras,
+      plan_direction: formPlan.trim() || null,
+    }
+    const columnHint = (message: string) =>
+      /source_role|extra_sources|plan_direction/.test(message)
+        ? `${message}\n\nSupabase에 새 칸(링크 종류·추가원본·기획방향)을 먼저 추가해 주세요.`
+        : message
 
     try {
       if (editingSourceId) {
@@ -279,12 +329,12 @@ export default function ResearchPage() {
             category: finalCategory,
             title: finalTitle,
             url: formUrl.trim(),
-            memo: finalMemo
+            ...extraFields
           })
           .eq('id', editingSourceId)
 
         if (error) {
-          alert(`소스 수정 실패: ${error.message}`)
+          alert(`소스 수정 실패: ${columnHint(error.message)}`)
         } else {
           showToast('✏️ 소스가 정상적으로 수정되었습니다!')
           setIsModalOpen(false)
@@ -297,11 +347,11 @@ export default function ResearchPage() {
           category: finalCategory,
           title: finalTitle,
           url: formUrl.trim(),
-          memo: finalMemo
+          ...extraFields
         })
 
         if (error) {
-          alert(`소스 추가 실패: ${error.message}`)
+          alert(`소스 추가 실패: ${columnHint(error.message)}`)
         } else {
           showToast('🎉 새로운 소스가 안전하게 저장되었습니다!')
           setIsModalOpen(false)
@@ -344,9 +394,9 @@ export default function ResearchPage() {
   const filteredSources = sources.filter((source) => {
     const titleMatch = source.title?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false
     const urlMatch = source.url.toLowerCase().includes(searchQuery.toLowerCase())
-    const memoMatch = source.memo?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false
+    const planMatch = source.plan_direction?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false
     const nicknameMatch = source.nickname?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false
-    const keywordMatch = searchQuery === '' || titleMatch || urlMatch || memoMatch || nicknameMatch
+    const keywordMatch = searchQuery === '' || titleMatch || urlMatch || planMatch || nicknameMatch
 
     const categoryMatch = selectedCategory === '전체' || (source.category || '미분류') === selectedCategory
 
@@ -705,10 +755,23 @@ export default function ResearchPage() {
                         key={source.id}
                         className="flex flex-wrap sm:flex-nowrap items-center justify-between px-4 py-1.5 hover:bg-gray-50/40 transition-colors group gap-3 min-w-0"
                       >
-                        {/* 플랫폼, 제목 및 메모 정보 영역 */}
+                        {/* 플랫폼, 제목 및 기획방향 정보 영역 */}
                         <div className="flex items-center gap-2.5 min-w-0 flex-1">
                           <div className="flex items-center gap-2 min-w-0 flex-1">
                             <SourcePlatform url={source.url} />
+                            {source.source_role && (
+                              <span
+                                className={`shrink-0 rounded px-1 py-px text-[9px] font-bold ${source.source_role === 'original' ? 'bg-emerald-50 text-emerald-700' : 'bg-sky-50 text-sky-700'}`}
+                                title={`링크 종류: ${ROLE_LABEL[source.source_role]}`}
+                              >
+                                {source.source_role === 'original' ? '원본' : '레퍼'}
+                              </span>
+                            )}
+                            {(source.extra_sources?.length ?? 0) > 0 && (
+                              <span className="shrink-0 rounded bg-gray-100 px-1 py-px text-[9px] font-bold text-gray-500" title={`추가원본 ${source.extra_sources!.length}개`}>
+                                +{source.extra_sources!.length}
+                              </span>
+                            )}
                             {/* 제목 */}
                             <h3
                               onClick={() => openEditModal(source)}
@@ -718,13 +781,13 @@ export default function ResearchPage() {
                               {source.title || source.url}
                             </h3>
 
-                            {/* 메모 */}
-                            {source.memo && (
+                            {/* 기획방향 (예전 메모는 기획방향으로 옮김) */}
+                            {source.plan_direction && (
                               <span 
                                 className="text-[10px] sm:text-[11px] text-gray-400 truncate font-medium flex-1 min-w-0" 
-                                title={source.memo}
+                                title={source.plan_direction}
                               >
-                                {source.memo}
+                                {source.plan_direction}
                               </span>
                             )}
                           </div>
@@ -732,6 +795,9 @@ export default function ResearchPage() {
 
                         {/* 액션 버튼 영역 */}
                         <div className="flex items-center gap-1.5 shrink-0">
+                          <button type="button" onClick={() => connectToShortStudio(source)}
+                            className="px-3 py-2 rounded-lg bg-emerald-700 text-white text-xs font-semibold"
+                            title="Tailscale 연결 후 숏튜디오로 가져오기">숏튜디오로 만들기</button>
                           <button
                             type="button"
                             onClick={() => connectToStudio(source)}
@@ -845,9 +911,29 @@ export default function ResearchPage() {
 
               {/* URL 입력 */}
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">
-                  링크 URL (필수)
-                </label>
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">
+                    링크 URL (필수)
+                  </label>
+                  {/* 링크 종류: 다시 누르면 선택 해제(미선택 = 연결할 때 물어봄) */}
+                  <div className="flex items-center gap-1" role="group" aria-label="링크 종류">
+                    {(['original', 'reference'] as const).map((role) => (
+                      <button
+                        key={role}
+                        type="button"
+                        aria-pressed={formRole === role}
+                        onClick={() => setFormRole((prev) => (prev === role ? null : role))}
+                        className={`px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition ${
+                          formRole === role
+                            ? 'bg-[#7C8C4E] border-[#7C8C4E] text-white'
+                            : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                        }`}
+                      >
+                        {ROLE_LABEL[role]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <input
                   type="url"
                   required
@@ -856,33 +942,79 @@ export default function ResearchPage() {
                   placeholder="https://example.com"
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-olive/20 focus:border-[#7C8C4E] transition-all bg-gray-50/30 font-medium"
                 />
+                <p className="mt-1 text-[11px] text-gray-400">
+                  {formRole === null
+                    ? '원본/레퍼런스를 고르지 않으면 제작실·숏튜디오로 연결할 때 물어봐요.'
+                    : formRole === 'reference'
+                      ? '레퍼런스로 연결하면 추가원본1이 메인 원본이 돼요.'
+                      : '원본으로 연결하면 이 링크가 메인 원본이 돼요.'}
+                </p>
+
+                {/* 추가원본1, 추가원본2 … */}
+                {formExtras.length > 0 && (
+                  <div className="mt-2 space-y-2">
+                    {formExtras.map((value, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        <span className="shrink-0 w-16 text-[11px] font-bold text-gray-500">{extraSourceLabel(index)}</span>
+                        <input
+                          type="url"
+                          value={value}
+                          onChange={(e) => setFormExtras((prev) => prev.map((item, i) => (i === index ? e.target.value : item)))}
+                          placeholder="https://www.youtube.com/shorts/..."
+                          aria-label={extraSourceLabel(index)}
+                          className="min-w-0 flex-1 px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-olive/20 focus:border-[#7C8C4E] transition-all bg-gray-50/30"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setFormExtras((prev) => prev.filter((_, i) => i !== index))}
+                          className="shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
+                          aria-label={`${extraSourceLabel(index)} 삭제`}
+                          title={`${extraSourceLabel(index)} 삭제`}
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {formExtras.length < MAX_EXTRA_SOURCES && (
+                  <button
+                    type="button"
+                    onClick={() => setFormExtras((prev) => [...prev, ''])}
+                    className="mt-2 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-dashed border-[#7C8C4E]/50 text-[11px] font-semibold text-[#6c7b44] hover:bg-[#7C8C4E]/10 transition"
+                  >
+                    <Plus size={12} className="stroke-[2.5]" />
+                    <span>추가원본</span>
+                  </button>
+                )}
               </div>
 
-              {/* 메모 입력 */}
+              {/* 기획방향 입력 → 제작실·숏튜디오 프로젝트의 기획 방향으로 전달 */}
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">
-                  메모 (선택)
+                  기획방향 (선택)
                 </label>
                 <textarea
-                  value={formMemo}
-                  onChange={(e) => setFormMemo(e.target.value)}
-                  placeholder="참고할 점 / 선정 이유"
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-olive/20 focus:border-[#7C8C4E] transition-all bg-gray-50/30 h-24 resize-none"
-                  maxLength={500}
+                  value={formPlan}
+                  onChange={(e) => setFormPlan(e.target.value)}
+                  placeholder="예: 오빠가 동생 대신 주사를 맞겠다고 나서는 장면부터 보여주기"
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-olive/20 focus:border-[#7C8C4E] transition-all bg-gray-50/30 h-24 resize-y"
+                  maxLength={MAX_PLAN_DIRECTION}
                 />
+                <p className="mt-1 text-[11px] text-gray-400">제작실이나 숏튜디오로 연결하면 프로젝트의 기획 방향에 들어가요.</p>
               </div>
 
               {editingSourceId !== null && (
                 <div className="rounded-xl bg-[#7C8C4E]/5 p-3 space-y-2">
                   <button
                     type="button"
-                    onClick={() => connectToStudio({ id: editingSourceId, url: formUrl, title: formTitle, category: formCategory === '__new__' ? newCategoryName : formCategory, memo: formMemo })}
+                    onClick={() => connectToStudio({ id: editingSourceId, url: formUrl, title: formTitle, category: formCategory === '__new__' ? newCategoryName : formCategory, memo: '', source_role: formRole, extra_sources: formExtras, plan_direction: formPlan })}
                     aria-label="제작실로 연결" title="제작실로 연결"
                     className="inline-flex items-center justify-center p-2.5 rounded-lg border border-[#7C8C4E]/30 text-[#6c7b44] hover:bg-[#7C8C4E]/10 text-sm font-semibold"
                   >
                     <Clapperboard size={16} aria-hidden="true" />
                   </button>
-                  <p className="text-[11px] text-gray-500">현재 제목과 주소로 독백형 발굴을 시작합니다. 게시판 수정은 ‘수정하기’로 저장하세요.</p>
+                  <p className="text-[11px] text-gray-500">현재 제목·주소·추가원본·기획방향으로 독백형 발굴을 시작합니다. 게시판 수정은 ‘수정하기’로 저장하세요.</p>
                 </div>
               )}
 
