@@ -233,20 +233,32 @@ export default function ResearchPage() {
         console.error('소스 조회 중 오류 발생:', error.message)
       } else {
         // 링크 종류·추가원본·기획방향은 기존 목록 함수(RPC)와 별도로 불러와 합친다.
+        // Supabase는 한 번에 최대 1000개만 돌려주므로 id 순서로 끝까지 나눠 불러온다.
         const rows: Source[] = data || []
-        const { data: extras, error: extrasError } = await supabase
-          .from('research_sources')
-          .select('id, source_role, extra_sources, plan_direction')
-        if (extrasError) console.error('추가원본/기획방향 조회 실패 (Supabase 칸 추가 필요할 수 있음):', extrasError.message)
-        const byId = new Map(((extras || []) as SourceExtras[]).map((row) => [row.id, row]))
-        setSources(rows.map((row) => ({ ...row, ...(byId.get(row.id) ?? {}) })))
+        const byId = new Map<string, SourceExtras>()
+        const pageSize = 1000
+        for (let from = 0; ; from += pageSize) {
+          const { data: extras, error: extrasError } = await supabase
+            .from('research_sources')
+            .select('id, source_role, extra_sources, plan_direction')
+            .order('id', { ascending: true })
+            .range(from, from + pageSize - 1)
+          if (extrasError) {
+            console.error('원본/레퍼런스·추가원본·기획방향 조회 실패:', extrasError.message)
+            showToast(`원본/레퍼런스·추가원본·기획방향을 불러오지 못했어요: ${extrasError.message}`)
+            break
+          }
+          for (const row of (extras || []) as SourceExtras[]) byId.set(String(row.id), row)
+          if (!extras || extras.length < pageSize) break
+        }
+        setSources(rows.map((row) => ({ ...row, ...(byId.get(String(row.id)) ?? {}) })))
       }
     } catch (err) {
       console.error(err)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [showToast])
 
   useEffect(() => {
     fetchSources()
@@ -323,7 +335,7 @@ export default function ResearchPage() {
     try {
       if (editingSourceId) {
         // 수정 모드
-        const { error } = await supabase
+        const { data: savedRows, error } = await supabase
           .from('research_sources')
           .update({
             category: finalCategory,
@@ -332,9 +344,13 @@ export default function ResearchPage() {
             ...extraFields
           })
           .eq('id', editingSourceId)
+          .select('id, source_role, extra_sources, plan_direction')
 
         if (error) {
           alert(`소스 수정 실패: ${columnHint(error.message)}`)
+        } else if (!savedRows?.length) {
+          // 오류 없이 0개가 바뀌면 Supabase 권한 설정이 수정을 막은 것
+          alert('저장되지 않았어요. 이 글을 수정할 권한이 없거나 글이 삭제됐어요. (Supabase 권한 설정 확인 필요)')
         } else {
           showToast('✏️ 소스가 정상적으로 수정되었습니다!')
           setIsModalOpen(false)
@@ -342,16 +358,18 @@ export default function ResearchPage() {
         }
       } else {
         // 추가 모드
-        const { error } = await supabase.from('research_sources').insert({
+        const { data: savedRows, error } = await supabase.from('research_sources').insert({
           user_id: userId,
           category: finalCategory,
           title: finalTitle,
           url: formUrl.trim(),
           ...extraFields
-        })
+        }).select('id, source_role, extra_sources, plan_direction')
 
         if (error) {
           alert(`소스 추가 실패: ${columnHint(error.message)}`)
+        } else if (!savedRows?.length) {
+          alert('저장 결과를 확인하지 못했어요. 목록을 새로고침해서 확인해 주세요. (Supabase 권한 설정 확인 필요)')
         } else {
           showToast('🎉 새로운 소스가 안전하게 저장되었습니다!')
           setIsModalOpen(false)
@@ -753,7 +771,7 @@ export default function ResearchPage() {
                     {paginatedList.map((source) => (
                       <div
                         key={source.id}
-                        className="flex flex-wrap sm:flex-nowrap items-center justify-between px-4 py-1.5 hover:bg-gray-50/40 transition-colors group gap-3 min-w-0"
+                        className="flex items-center justify-between px-3 sm:px-4 py-1.5 hover:bg-gray-50/40 transition-colors group gap-2 min-w-0"
                       >
                         {/* 플랫폼, 제목 및 기획방향 정보 영역 */}
                         <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -775,7 +793,7 @@ export default function ResearchPage() {
                             {/* 제목 */}
                             <h3
                               onClick={() => openEditModal(source)}
-                              className="text-xs sm:text-sm font-semibold text-gray-700 hover:text-[#7C8C4E] hover:underline cursor-pointer truncate shrink-0 max-w-[45%] transition-colors"
+                              className="text-xs sm:text-sm font-semibold text-gray-700 hover:text-[#7C8C4E] hover:underline cursor-pointer truncate min-w-0 shrink sm:max-w-[45%] transition-colors"
                               title="클릭하여 소스 수정하기"
                             >
                               {source.title || source.url}
@@ -794,40 +812,41 @@ export default function ResearchPage() {
                         </div>
 
                         {/* 액션 버튼 영역 */}
-                        <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="flex items-center gap-0.5 shrink-0">
                           <button type="button" onClick={() => connectToShortStudio(source)}
-                            className="px-3 py-2 rounded-lg bg-emerald-700 text-white text-xs font-semibold"
-                            title="Tailscale 연결 후 숏튜디오로 가져오기">숏튜디오로 만들기</button>
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md transition shrink-0 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold"
+                            title="숏튜디오로 만들기" aria-label="숏튜디오로 만들기">숏</button>
                           <button
                             type="button"
                             onClick={() => connectToStudio(source)}
-                            className="px-2 py-1 rounded-lg bg-[#7C8C4E]/10 text-[#6c7b44] hover:bg-[#7C8C4E]/20 text-[10px] sm:text-xs font-semibold"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md transition shrink-0 bg-[#7C8C4E]/15 text-[#5f6d3c] hover:bg-[#7C8C4E]/25 text-xs font-bold"
                             title="제작실로 연결"
                             aria-label="제작실로 연결"
                           >
-                            <Clapperboard size={14} aria-hidden="true" />
+                            제
                           </button>
                           <button
                             type="button"
                             onClick={() => handleCopySourceUrl(source)}
-                            className="flex items-center px-2 py-0.5 sm:py-1 rounded-lg border border-[#7C8C4E]/40 text-[#6c7b44] hover:bg-[#7C8C4E]/10 transition shrink-0"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md transition shrink-0 text-[#6c7b44] hover:bg-[#7C8C4E]/10"
                             aria-label="주소 복사"
                             title="주소 복사"
                           >
-                            <Copy size={14} aria-hidden="true" />
+                            <Copy size={13} aria-hidden="true" />
                           </button>
                           <button
+                            type="button"
                             onClick={() => window.open(source.url, '_blank')}
-                            className="flex items-center gap-0.5 px-2 py-0.5 sm:py-1 rounded-lg border border-gray-200 text-[10px] sm:text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition font-semibold shrink-0"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md transition shrink-0 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
                             title="새 창에서 링크 열기" aria-label="새 창에서 링크 열기"
                           >
-                            <Link2 size={14} aria-hidden="true" />
-
+                            <Link2 size={13} aria-hidden="true" />
                           </button>
                           <button
+                            type="button"
                             onClick={() => handleDeleteSource(source.id)}
-                            className="p-1 rounded-lg border border-transparent text-gray-300 hover:text-red-500 hover:bg-red-50 hover:border-red-100 transition-all md:opacity-0 md:group-hover:opacity-100"
-                            title="소스 삭제"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md transition shrink-0 text-gray-300 hover:text-red-500 hover:bg-red-50 md:opacity-0 md:group-hover:opacity-100"
+                            title="소스 삭제" aria-label="소스 삭제"
                           >
                             <Trash2 size={12} />
                           </button>
