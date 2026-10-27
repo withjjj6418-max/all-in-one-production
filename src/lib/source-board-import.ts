@@ -1,6 +1,6 @@
 export const sourceBoardImportKey = (id: string) => `shorts-studio:source-board:${id}`;
 
-/** 소스 게시판 링크 종류. null = 미선택(연결할 때 용도를 물어봄) */
+/** 소스 게시판 링크 종류. 기본은 원본이고 null(기존 글)도 원본으로 처리 */
 export type SourceRole = "original" | "reference" | null;
 
 export const MAX_EXTRA_SOURCES = 19;
@@ -72,7 +72,8 @@ export function queueSourceBoardImport(source: BoardSource) {
   const id = crypto.randomUUID();
   const data: SourceBoardTransfer = {
     url: url.href,
-    ...(source.source_role === "original" ? { input_role: "source" as const } : source.source_role === "reference" ? { input_role: "reference" as const } : {}),
+    // 기본은 원본. 레퍼런스로 표시한 글만 레퍼런스(미선택인 기존 글도 원본).
+    input_role: source.source_role === "reference" ? "reference" : "source",
     source_board: {
       id: String(source.id), title: (source.title || "").trim(), category: source.category, memo: source.memo || "",
       extra_sources: extras, plan_direction: (source.plan_direction || "").trim().slice(0, MAX_PLAN_DIRECTION),

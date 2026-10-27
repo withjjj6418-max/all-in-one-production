@@ -22,7 +22,6 @@ interface Source {
 
 type SourceExtras = Pick<Source, 'id' | 'source_role' | 'extra_sources' | 'plan_direction'>
 
-const ROLE_LABEL: Record<'original' | 'reference', string> = { original: '원본', reference: '레퍼런스' }
 
 function SourcePlatform({url}: {url: string}) {
   let host = '';
@@ -185,7 +184,7 @@ export default function ResearchPage() {
     // role이 있으면 숏튜디오가 묻지 않고 바로 채운다(레퍼런스면 추가원본1이 메인 원본).
     target.hash = new URLSearchParams({ sourceImport: JSON.stringify({
       id: source.id, title: source.title, url: source.url, category: source.category, memo: source.memo,
-      role: source.source_role ?? null, extra_sources: cleanExtraSources(source.extra_sources), plan_direction: source.plan_direction || '',
+      role: source.source_role === 'reference' ? 'reference' : 'original', extra_sources: cleanExtraSources(source.extra_sources), plan_direction: source.plan_direction || '',
     }) }).toString()
     window.location.assign(target.href)
   }
@@ -323,7 +322,7 @@ export default function ResearchPage() {
       }
     }
     const extraFields = {
-      source_role: formRole,
+      source_role: formRole === 'reference' ? 'reference' : 'original',
       extra_sources: finalExtras,
       plan_direction: formPlan.trim() || null,
     }
@@ -777,19 +776,6 @@ export default function ResearchPage() {
                         <div className="flex items-center gap-2.5 min-w-0 flex-1">
                           <div className="flex items-center gap-2 min-w-0 flex-1">
                             <SourcePlatform url={source.url} />
-                            {source.source_role && (
-                              <span
-                                className={`shrink-0 rounded px-1 py-px text-[9px] font-bold ${source.source_role === 'original' ? 'bg-emerald-50 text-emerald-700' : 'bg-sky-50 text-sky-700'}`}
-                                title={`링크 종류: ${ROLE_LABEL[source.source_role]}`}
-                              >
-                                {source.source_role === 'original' ? '원본' : '레퍼'}
-                              </span>
-                            )}
-                            {(source.extra_sources?.length ?? 0) > 0 && (
-                              <span className="shrink-0 rounded bg-gray-100 px-1 py-px text-[9px] font-bold text-gray-500" title={`추가원본 ${source.extra_sources!.length}개`}>
-                                +{source.extra_sources!.length}
-                              </span>
-                            )}
                             {/* 제목 */}
                             <h3
                               onClick={() => openEditModal(source)}
@@ -934,24 +920,19 @@ export default function ResearchPage() {
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">
                     링크 URL (필수)
                   </label>
-                  {/* 링크 종류: 다시 누르면 선택 해제(미선택 = 연결할 때 물어봄) */}
-                  <div className="flex items-center gap-1" role="group" aria-label="링크 종류">
-                    {(['original', 'reference'] as const).map((role) => (
-                      <button
-                        key={role}
-                        type="button"
-                        aria-pressed={formRole === role}
-                        onClick={() => setFormRole((prev) => (prev === role ? null : role))}
-                        className={`px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition ${
-                          formRole === role
-                            ? 'bg-[#7C8C4E] border-[#7C8C4E] text-white'
-                            : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
-                        }`}
-                      >
-                        {ROLE_LABEL[role]}
-                      </button>
-                    ))}
-                  </div>
+                  {/* 기본은 원본. 레퍼런스일 때만 켠다(다시 누르면 꺼짐). */}
+                  <button
+                    type="button"
+                    aria-pressed={formRole === 'reference'}
+                    onClick={() => setFormRole((prev) => (prev === 'reference' ? 'original' : 'reference'))}
+                    className={`px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition ${
+                      formRole === 'reference'
+                        ? 'bg-[#7C8C4E] border-[#7C8C4E] text-white'
+                        : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                    }`}
+                  >
+                    레퍼런스
+                  </button>
                 </div>
                 <input
                   type="url"
@@ -962,11 +943,9 @@ export default function ResearchPage() {
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-olive/20 focus:border-[#7C8C4E] transition-all bg-gray-50/30 font-medium"
                 />
                 <p className="mt-1 text-[11px] text-gray-400">
-                  {formRole === null
-                    ? '원본/레퍼런스를 고르지 않으면 제작실·숏튜디오로 연결할 때 물어봐요.'
-                    : formRole === 'reference'
-                      ? '레퍼런스로 연결하면 추가원본1이 메인 원본이 돼요.'
-                      : '원본으로 연결하면 이 링크가 메인 원본이 돼요.'}
+                  {formRole === 'reference'
+                    ? '레퍼런스예요. 연결하면 추가원본1이 메인 원본이 돼요.'
+                    : '원본이에요. 레퍼런스일 때만 위의 레퍼런스 버튼을 눌러 주세요.'}
                 </p>
 
                 {/* 추가원본1, 추가원본2 … */}
