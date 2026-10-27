@@ -814,7 +814,7 @@ export default function ResearchPage() {
                           <button
                             type="button"
                             onClick={() => handleCopySourceUrl(source)}
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-md transition shrink-0 text-[#6c7b44] hover:bg-[#7C8C4E]/10"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md transition shrink-0 bg-sky-50 text-sky-700 hover:bg-sky-100"
                             aria-label="주소 복사"
                             title="주소 복사"
                           >
@@ -823,7 +823,7 @@ export default function ResearchPage() {
                           <button
                             type="button"
                             onClick={() => window.open(source.url, '_blank')}
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-md transition shrink-0 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md transition shrink-0 bg-gray-100 text-gray-600 hover:bg-gray-200"
                             title="새 창에서 링크 열기" aria-label="새 창에서 링크 열기"
                           >
                             <Link2 size={13} aria-hidden="true" />
@@ -831,7 +831,7 @@ export default function ResearchPage() {
                           <button
                             type="button"
                             onClick={() => handleDeleteSource(source.id)}
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-md transition shrink-0 text-gray-300 hover:text-red-500 hover:bg-red-50 md:opacity-0 md:group-hover:opacity-100"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md transition shrink-0 bg-red-50 text-red-400 hover:bg-red-100 hover:text-red-600 md:opacity-0 md:group-hover:opacity-100"
                             title="소스 삭제" aria-label="소스 삭제"
                           >
                             <Trash2 size={12} />
