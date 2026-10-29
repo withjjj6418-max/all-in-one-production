@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Search, Plus, Link2, Trash2, Folder, AlertCircle, Check, X, Loader2, ChevronLeft, ChevronRight, ChevronDown, ArrowUp, ArrowDown, Copy, Clapperboard } from 'lucide-react'
+import { Search, Plus, Link2, Trash2, Folder, AlertCircle, Check, X, Loader2, ChevronLeft, ChevronRight, ChevronDown, ArrowUp, ArrowDown, Copy } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { queueSourceBoardImport, extraSourceError, extraSourceLabel, cleanExtraSources, MAX_EXTRA_SOURCES, MAX_PLAN_DIRECTION, type SourceRole } from '@/lib/source-board-import'
@@ -1002,19 +1002,6 @@ export default function ResearchPage() {
                 <p className="mt-1 text-[11px] text-gray-400">제작실이나 숏튜디오로 연결하면 프로젝트의 기획 방향에 들어가요.</p>
               </div>
 
-              {editingSourceId !== null && (
-                <div className="rounded-xl bg-[#7C8C4E]/5 p-3 space-y-2">
-                  <button
-                    type="button"
-                    onClick={() => connectToStudio({ id: editingSourceId, url: formUrl, title: formTitle, category: formCategory === '__new__' ? newCategoryName : formCategory, memo: '', source_role: formRole, extra_sources: formExtras, plan_direction: formPlan })}
-                    aria-label="제작실로 연결" title="제작실로 연결"
-                    className="inline-flex items-center justify-center p-2.5 rounded-lg border border-[#7C8C4E]/30 text-[#6c7b44] hover:bg-[#7C8C4E]/10 text-sm font-semibold"
-                  >
-                    <Clapperboard size={16} aria-hidden="true" />
-                  </button>
-                  <p className="text-[11px] text-gray-500">현재 제목·주소·추가원본·기획방향으로 독백형 발굴을 시작합니다. 게시판 수정은 ‘수정하기’로 저장하세요.</p>
-                </div>
-              )}
 
               {/* 푸터 버튼 */}
               <div className="flex gap-2.5 pt-4 border-t border-gray-100 mt-6">
