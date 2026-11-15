@@ -57,3 +57,14 @@ test('category migration preserves tasks, routines and legacy associations, and 
  assert.deepEqual(categories(migrateCategories(added)).slice(-2).map(c=>c.name),['새 분류','미분류']);
  const removed=removePhase(next,'category-1');assert.equal(validateData(removed),removed);assert.equal(removed.projects[0].phaseId,'');assert.equal(removed.tasks[0].phaseId,'');
 });
+import {flattenProjects} from './hierarchy.js';
+test('flattening projects preserves every task field except container and inherited color',()=>{
+ const source={version:1,hierarchyVersion:1,categoryVersion:1,works:[{id:'w',name:'개인'}],phases:[{id:'cat',name:'가족해짜',workId:''}],projects:[{id:'p',name:'기존 프로젝트',phaseId:'cat',color:'#e885b5'}],tasks:[task('a',{phaseId:'cat',notes:'내용',locked:true}),task('b',{phaseId:'cat',parentId:'a',predecessors:['a'],links:[{id:'link',url:'https://example.com'}]}),task('loose',{projectId:'',phaseId:'cat'})],routines:[{id:'r',title:'매일',kind:'daily',checks:{'2026-09-28':true}}],settings};
+ const before=structuredClone(source),next=flattenProjects(source);
+ assert.equal(validateData(next),next);assert.deepEqual(next.projects,[]);assert.deepEqual(next.legacyProjects,source.projects);
+ assert.deepEqual(next.tasks,source.tasks.map(t=>({...t,projectId:'',color:t.projectId?'#e885b5':'#9684ff'})));
+ assert.deepEqual(next.routines,source.routines);assert.deepEqual(source,before);assert.equal(flattenProjects(next),next);
+ assert.equal(treeRows(next.tasks,next.tasks,{}).length,3);
+ assert.throws(()=>validateRelations(next.tasks.map(t=>t.id==='b'?{...t,phaseId:''}:t)),/카테고리/);
+ const deleted=removePhase(next,'cat');assert.equal(validateData(deleted),deleted);assert.ok(deleted.tasks.every(t=>t.phaseId===''));
+});

@@ -11,7 +11,7 @@ export function removeTasks(tasks,ids) {
 export function validateRelations(tasks) {
   const byId=new Map(tasks.map(t=>[t.id,t]));
   for(const t of tasks){
-    if(t.parentId&&(!byId.has(t.parentId)||byId.get(t.parentId).projectId!==t.projectId))throw Error('상위 작업은 같은 프로젝트에 있어야 합니다.');
+    if(t.parentId&&(!byId.has(t.parentId)||byId.get(t.parentId).projectId!==t.projectId||(!t.projectId&&(byId.get(t.parentId).phaseId||'')!==(t.phaseId||''))))throw Error('상위 작업은 같은 카테고리에 있어야 합니다.');
     if(t.predecessors!==undefined&&(!Array.isArray(t.predecessors)||t.predecessors.some(id=>typeof id!=='string'||!byId.has(id))))throw Error('선행 작업 정보가 올바르지 않습니다.');
   }
   function cycles(neighbors,label){

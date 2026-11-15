@@ -1,8 +1,8 @@
 import {useEffect,useRef,useState} from 'react';
 import {validateData} from './scheduler.js';
-import {migrateHierarchy,migrateCategories} from './hierarchy.js';
+import {migrateHierarchy,migrateCategories,flattenProjects} from './hierarchy.js';
 import {migrateRoutines} from './recurrence.js';
-const normalize=d=>migrateCategories(migrateHierarchy(migrateRoutines(validateData(d))));
+const normalize=d=>flattenProjects(migrateCategories(migrateHierarchy(migrateRoutines(validateData(d)))));
 export default function useCloudPlanner({enabled,setData,clearHistory}){
  const [state,setState]=useState(enabled?'loading':'local'),[error,setError]=useState('');
  const ref=useRef({revision:0,userId:null,busy:false,pending:null,state:enabled?'loading':'local'});
@@ -14,7 +14,7 @@ export default function useCloudPlanner({enabled,setData,clearHistory}){
    ref.current.userId=body.userId;ref.current.revision=body.revision;
    const recovery=localStorage.getItem('planner-pending-'+body.userId);
    if(recovery){ref.current.pending=normalize(JSON.parse(recovery));setData(ref.current.pending);status('error');setError('이 기기에 저장하지 못한 변경이 있습니다. 백업 후 서버 일정을 불러와주세요.');return;}
-   if(body.payload){const next=normalize(body.payload);setData(next);if(body.payload.categoryVersion!==1)migrated=next;clearHistory();status('ready');}else status('import');setError('');
+   if(body.payload){const next=normalize(body.payload);setData(next);if(body.payload.categoryVersion!==1||body.payload.taskLayoutVersion!==1)migrated=next;clearHistory();status('ready');}else status('import');setError('');
   }catch(e){status('error');setError(e.message||'서버에 연결하지 못했습니다.');}finally{ref.current.busy=false;}
   if(migrated&&ref.current.state==='ready')await save(migrated);
  };

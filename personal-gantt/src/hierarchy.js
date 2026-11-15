@@ -52,3 +52,11 @@ export function migrateCategories(data){
     tasks:data.tasks.map(t=>({...t,phaseId:projects.find(p=>p.id===t.projectId)?.phaseId||''})),
   };
 }
+
+export function flattenProjects(data){
+  if(data.taskLayoutVersion===1)return data;
+  const byId=new Map(data.projects.map(p=>[p.id,p]));
+  return {...data,taskLayoutVersion:1,legacyProjects:data.projects,projects:[],
+    tasks:data.tasks.map(t=>({...t,projectId:'',phaseId:byId.get(t.projectId)?.phaseId??t.phaseId??'',color:t.color||byId.get(t.projectId)?.color||'#9684ff'})),
+  };
+}
