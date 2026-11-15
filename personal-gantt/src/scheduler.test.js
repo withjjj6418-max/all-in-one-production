@@ -43,3 +43,17 @@ test('removing an occupied phase preserves projects, task trees, dates and depen
  assert.equal(removePhase(next,'missing'),next);
  assert.equal(validateData(removePhase(next,'c')).phases.length,0);
 });
+import {migrateCategories,categories} from './hierarchy.js';
+test('category migration preserves tasks, routines and legacy associations, and is idempotent',()=>{
+ const source={version:1,hierarchyVersion:1,works:[{id:'w',name:'가족해짜'},{id:'y',name:'야담'}],phases:[{id:'v',name:'v26-10',workId:'w'},{id:'c',name:'c26-10',workId:'w'},{id:'y',name:'26-10',workId:'y'}],projects:[{id:'p',name:'해짜가족한국',phaseId:'v'},{id:'code',name:'바이브코딩',phaseId:'c'},{id:'story',name:'야담제꼬',phaseId:'y'}],tasks:[task('parent',{phaseId:'v'}),task('child',{phaseId:'v',parentId:'parent',predecessors:['parent'],notes:'keep'})],routines:[{id:'r',title:'영어',kind:'daily',checks:{'2026-09-29':true}}],settings};
+ const before=structuredClone(source),next=migrateCategories(source);
+ assert.equal(validateData(next),next);
+ assert.deepEqual(categories(next).map(c=>c.name),['가족해짜','동물지식','거제아씨야담','영어학습','동물해짜','미분류']);
+ assert.deepEqual(next.projects.map(p=>p.phaseId),['category-1','','category-3']);
+ assert.deepEqual(next.tasks,source.tasks.map(t=>({...t,phaseId:'category-1'})));
+ assert.deepEqual(next.routines,source.routines);assert.deepEqual(source,before);
+ assert.equal(migrateCategories(next),next);
+ const added={...next,phases:[...next.phases,{id:'new',name:'새 분류',workId:''}]};
+ assert.deepEqual(categories(migrateCategories(added)).slice(-2).map(c=>c.name),['새 분류','미분류']);
+ const removed=removePhase(next,'category-1');assert.equal(validateData(removed),removed);assert.equal(removed.projects[0].phaseId,'');assert.equal(removed.tasks[0].phaseId,'');
+});

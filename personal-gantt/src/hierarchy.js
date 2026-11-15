@@ -26,3 +26,29 @@ export function removePhase(data,id){
     tasks:data.tasks.map(t=>t.phaseId===id||projectIds.has(t.projectId)?{...t,phaseId:''}:t),
   };
 }
+
+// Keep the stored phaseId field for backup compatibility; it now identifies a category.
+export function categories(data){return [...data.phases,{id:'',name:'미분류',workId:''}];}
+export function migrateCategories(data){
+  if(data.categoryVersion===1)return data;
+  const names=['가족해짜','동물지식','거제아씨야담','영어학습','동물해짜'];
+  const phases=names.map((name,i)=>({id:`category-${i+1}`,name,workId:''}));
+  const match=name=>{
+    if(/코딩|개발|국뽕|국뻥/.test(name||''))return '';
+    const normalized=(name||'').replace(/\s/g,'');
+    if(/가족해짜|해짜가족/.test(normalized))return phases[0].id;
+    if(/동물지식/.test(normalized))return phases[1].id;
+    if(/야담|거제아씨/.test(normalized))return phases[2].id;
+    if(/영어/.test(normalized))return phases[3].id;
+    if(/동물해짜|해짜동물/.test(normalized))return phases[4].id;
+    return null;
+  };
+  const projects=data.projects.map(p=>{
+    const phase=data.phases.find(ph=>ph.id===p.phaseId),work=data.works.find(w=>w.id===phase?.workId);
+    return {...p,phaseId:match(p.name)??match(work?.name)??match(phase?.name)??''};
+  });
+  return {...data,categoryVersion:1,legacyHierarchy:{works:data.works,phases:data.phases,projects:data.projects.map(({id,phaseId})=>({id,phaseId}))},
+    works:[{id:'legacy-work',name:'개인'}],phases,projects,
+    tasks:data.tasks.map(t=>({...t,phaseId:projects.find(p=>p.id===t.projectId)?.phaseId||''})),
+  };
+}

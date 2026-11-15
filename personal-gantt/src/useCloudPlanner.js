@@ -1,21 +1,22 @@
 import {useEffect,useRef,useState} from 'react';
 import {validateData} from './scheduler.js';
-import {migrateHierarchy} from './hierarchy.js';
+import {migrateHierarchy,migrateCategories} from './hierarchy.js';
 import {migrateRoutines} from './recurrence.js';
-const normalize=d=>migrateHierarchy(migrateRoutines(validateData(d)));
+const normalize=d=>migrateCategories(migrateHierarchy(migrateRoutines(validateData(d))));
 export default function useCloudPlanner({enabled,setData,clearHistory}){
  const [state,setState]=useState(enabled?'loading':'local'),[error,setError]=useState('');
  const ref=useRef({revision:0,userId:null,busy:false,pending:null,state:enabled?'loading':'local'});
  const status=s=>{ref.current.state=s;setState(s);};
  const read=async()=>{const r=await fetch('/api/planner',{cache:'no-store',credentials:'same-origin',redirect:'error'});const body=await r.json();if(!r.ok)throw Error(body.error||'서버 연결을 확인해주세요.');return body;};
  const refresh=async()=>{
-  if(ref.current.busy)return;ref.current.busy=true;status('loading');
+  if(ref.current.busy)return;ref.current.busy=true;status('loading');let migrated=null;
   try{const body=await read();if(ref.current.pending)throw Error('저장하지 못한 변경이 있습니다. 백업 후 서버 일정을 불러와주세요.');
    ref.current.userId=body.userId;ref.current.revision=body.revision;
    const recovery=localStorage.getItem('planner-pending-'+body.userId);
    if(recovery){ref.current.pending=normalize(JSON.parse(recovery));setData(ref.current.pending);status('error');setError('이 기기에 저장하지 못한 변경이 있습니다. 백업 후 서버 일정을 불러와주세요.');return;}
-   if(body.payload){setData(normalize(body.payload));clearHistory();status('ready');}else status('import');setError('');
+   if(body.payload){const next=normalize(body.payload);setData(next);if(body.payload.categoryVersion!==1)migrated=next;clearHistory();status('ready');}else status('import');setError('');
   }catch(e){status('error');setError(e.message||'서버에 연결하지 못했습니다.');}finally{ref.current.busy=false;}
+  if(migrated&&ref.current.state==='ready')await save(migrated);
  };
  const save=async next=>{
   if(!enabled)return true;if(ref.current.busy||!['ready','import'].includes(ref.current.state))return false;
