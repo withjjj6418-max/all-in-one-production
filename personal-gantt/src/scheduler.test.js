@@ -26,8 +26,20 @@ test('month/year and leap date boundaries',()=>{assert.equal(addDays('2026-12-31
 test('backup validation checks references and dates',()=>{const data={version:1,projects:[{id:'p',name:'Project'}],phases:[],tasks:[task('a')],settings};assert.equal(validateData(data),data);assert.throws(()=>validateData({...data,tasks:[task('a',{projectId:'missing'})]}));assert.throws(()=>validateData({...data,tasks:[task('a',{start:'2026-02-30'})]}));});
 test('legacy backups remain compatible; routine history and matrix are validated',()=>{const data={version:1,projects:[{id:'p',name:'Project'}],phases:[],tasks:[],settings};assert.equal(validateData(data),data);const updated={...data,routines:[{id:'r',kind:'weekly',title:'Review',checks:{'2026-09-28':true}}],matrix:{q1:'Upload',q2:''}};assert.equal(validateData(updated),updated);assert.throws(()=>validateData({...updated,routines:[{...updated.routines[0],checks:{'2026-09-29':true}}]}));assert.throws(()=>validateData({...updated,matrix:{q1:42}}));});
 
-import {migrateHierarchy,reorder} from './hierarchy.js';
+import {migrateHierarchy,reorder,removePhase} from './hierarchy.js';
 test('hierarchy migration preserves task dates and dependencies; sibling sorting',()=>{
  const source={phases:[{id:'ph',name:'2차'}],projects:[{id:'p',name:'프로젝트'}],tasks:[{id:'a',projectId:'p',phaseId:'ph',start:'2026-09-30',end:'2026-10-01',predecessors:[]},{id:'b',projectId:'p',phaseId:'',parentId:'a',start:'2026-10-01',end:'2026-10-01',predecessors:['a']},{id:'c',projectId:'p',phaseId:'',start:'2026-10-02',end:'2026-10-02'}]};
  const next=migrateHierarchy(source);assert.equal(next.projects.length,2);assert.equal(next.tasks[0].projectId,next.tasks[1].projectId);assert.notEqual(next.tasks[0].projectId,next.tasks[2].projectId);assert.deepEqual(next.tasks[1].predecessors,['a']);assert.equal(next.tasks[0].start,source.tasks[0].start);assert.deepEqual(migrateHierarchy(next),next);assert.equal(source.tasks[2].projectId,'p');assert.deepEqual(reorder([{id:'a'},{id:'b'}],'b','a').map(x=>x.id),['b','a']);
+});
+
+test('removing an occupied phase preserves projects, task trees, dates and dependencies',()=>{
+ const data={version:1,hierarchyVersion:1,works:[{id:'w',name:'영상'}],phases:[{id:'v',name:'v26-10',workId:'w'},{id:'c',name:'c26-10',workId:'w'}],projects:[{id:'p',name:'영상',phaseId:'v'},{id:'q',name:'코딩',phaseId:'c'}],tasks:[task('a',{phaseId:'v'}),task('b',{phaseId:'v',parentId:'a',predecessors:['a']}),task('other',{projectId:'q',phaseId:'c'})],settings};
+ const snapshot=structuredClone(data),next=removePhase(data,'v');
+ assert.equal(validateData(next),next);
+ assert.deepEqual(next.phases,[data.phases[1]]);
+ assert.deepEqual(next.projects,[{...data.projects[0],phaseId:''},data.projects[1]]);
+ assert.deepEqual(next.tasks,[{...data.tasks[0],phaseId:''},{...data.tasks[1],phaseId:''},data.tasks[2]]);
+ assert.deepEqual(data,snapshot);
+ assert.equal(removePhase(next,'missing'),next);
+ assert.equal(validateData(removePhase(next,'c')).phases.length,0);
 });

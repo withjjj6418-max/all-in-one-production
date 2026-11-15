@@ -16,3 +16,13 @@ export function reorder(items,from,to,sameGroup=()=>true){
   const a=items.find(x=>x.id===from),b=items.find(x=>x.id===to);if(!a||!b||!sameGroup(a,b))return items;
   const targetIndex=items.findIndex(x=>x.id===to);const next=items.filter(x=>x.id!==from);next.splice(targetIndex,0,a);return next;
 }
+
+export function removePhase(data,id){
+  if(!id||!data.phases.some(p=>p.id===id))return data;
+  const projectIds=new Set(data.projects.filter(p=>p.phaseId===id).map(p=>p.id));
+  return {...data,
+    phases:data.phases.filter(p=>p.id!==id),
+    projects:data.projects.map(p=>projectIds.has(p.id)?{...p,phaseId:''}:p),
+    tasks:data.tasks.map(t=>t.phaseId===id||projectIds.has(t.projectId)?{...t,phaseId:''}:t),
+  };
+}
